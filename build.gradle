@@ -7,6 +7,42 @@ plugins {
 sourceCompatibility = 21
 targetCompatibility = 21
 
+// Get version from property, CI environment variable, or default
+def getPluginVersion() {
+    return gradle.pluginVersion
+}
+
+def getPluginRevision() {
+    def hash = findProperty('commitHash') ?: 
+        System.getenv('GIT_COMMIT') ?:
+        System.getenv('CI_COMMIT_SHORT_SHA') ?:
+        System.getenv('GITHUB_SHA')?.take(8) ?:
+        getGitCommitHash()
+}
+
+def getGitCommitHash() {
+    try {
+        def stdout = new ByteArrayOutputStream()
+        def execResult = exec {
+            commandLine 'git', 'rev-parse', '--is-inside-work-tree'
+            standardOutput = stdout
+            ignoreExitValue = true 
+        }
+        
+        if (execResult.exitValue != 0) {
+            println "Not in a git repository, using 'dev' as commit hash"
+            return 'dev'
+        }
+        def hashLength = 8
+        return "git rev-parse HEAD".execute().text.take(hashLength)
+    } catch (Exception e) {
+        return e
+    }
+}
+
+group = 'net.phylax.credible'
+version = "${getPluginVersion()}-${getPluginRevision()}"
+
 repositories {
     mavenCentral()
     maven {
@@ -87,6 +123,40 @@ jar {
     exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA'
 }
 
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+            groupId = project.group
+            artifactId = 'credible-layer-besu-plugin'
+            version = project.version
+            
+            pom {
+                name = 'Credible Layer Besu Plugin'
+                description = 'Hyperledger Besu plugin for integrating the Credible Sidecar'
+                url = 'https://github.com/phylaxsystems/credible-layer-besu-plugin'
+                licenses {
+                    license {
+                        name = 'Apache License 2.0'
+                        url = 'https://www.apache.org/licenses/LICENSE-2.0'
+                    }
+                }
+            }
+        }
+    }
+    
+    repositories {
+        maven {
+            name = "GitHubPackages"
+            url = "https://maven.pkg.github.com/phylaxsystems/credible-layer-besu-plugin"
+            credentials {
+                username = System.getenv("GH_ACTOR")
+                password = System.getenv("GH_TOKEN")
+            }
+        }
+    }
+}
+
 task buildBesuSubmodule(type: Exec) {
     workingDir 'libs/besu'
     commandLine './gradlew', 'plugin-api:assemble', 'datatypes:assemble', 'ethereum:core:assemble', 'evm:assemble'
@@ -111,52 +181,6 @@ task installPlugin(type: Copy, dependsOn: jar) {
         println "Plugin installed to: ${System.getProperty('user.home')}/.besu/plugins/${jar.archiveFileName.get()}"
     }
 }
-
-// Get version from property, CI environment variable, or default
-def getPluginVersion() {
-    return findProperty('pluginVersion') ?: 
-           System.getenv('PLUGIN_VERSION') ?: 
-           'dev'
-}
-
-// Get commit hash from property, CI environment variable, or git command
-def getCommitHash() {
-    def hash = findProperty('commitHash') ?: 
-              System.getenv('GIT_COMMIT') ?:
-              System.getenv('CI_COMMIT_SHORT_SHA') ?:
-              System.getenv('GITHUB_SHA')?.take(8) ?:
-              getGitCommitHash()
-    
-    return hash
-}
-
-static def getCheckedOutGitCommitHash() {
-  def hashLength = 8
-  "git rev-parse HEAD".execute().text.take(hashLength)
-}
-
-def getGitCommitHash() {
-    try {
-        def stdout = new ByteArrayOutputStream()
-        def execResult = exec {
-            commandLine 'git', 'rev-parse', '--is-inside-work-tree'
-            standardOutput = stdout
-            ignoreExitValue = true 
-        }
-        
-        if (execResult.exitValue != 0) {
-            println "Not in a git repository, using 'dev' as commit hash"
-            return 'dev'
-        }
-        
-        return getCheckedOutGitCommitHash()
-    } catch (Exception e) {
-        return e
-    }
-}
-
-group = 'net.phylax.credible'
-version = "${getPluginVersion()}-${getCommitHash()}"
 
 compileJava.dependsOn buildBesuSubmodule
 build.finalizedBy copyPlugin
