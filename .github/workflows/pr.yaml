@@ -1,0 +1,53 @@
+name: PR checks
+
+on:
+  pull_request:
+
+jobs:
+  verify-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code with submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Cache Besu build outputs
+        uses: actions/cache@v4
+        with:
+          path: |
+            libs/besu/**/build/libs/*.jar
+            libs/besu/.gradle
+          key: ${{ runner.os }}-besu-${{ hashFiles('libs/besu/**/build.gradle', 'libs/besu/gradle.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-besu-
+
+      - name: Cache plugin build outputs
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/libs
+            .gradle
+          key: ${{ runner.os }}-plugin-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'src/**/*.java') }}
+          restore-keys: |
+            ${{ runner.os }}-plugin-
+
+      - name: Build plugin
+        run: ./gradlew build
