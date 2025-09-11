@@ -1,0 +1,186 @@
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+}
+
+// Configure Java compilation
+sourceCompatibility = 21
+targetCompatibility = 21
+
+// Get version from property, CI environment variable, or default
+def getPluginVersion() {
+    return gradle.pluginVersion
+}
+
+def getPluginRevision() {
+    def hash = findProperty('commitHash') ?: 
+        System.getenv('GIT_COMMIT') ?:
+        System.getenv('CI_COMMIT_SHORT_SHA') ?:
+        System.getenv('GITHUB_SHA')?.take(8) ?:
+        getGitCommitHash()
+}
+
+def getGitCommitHash() {
+    try {
+        def stdout = new ByteArrayOutputStream()
+        def execResult = exec {
+            commandLine 'git', 'rev-parse', '--is-inside-work-tree'
+            standardOutput = stdout
+            ignoreExitValue = true 
+        }
+        
+        if (execResult.exitValue != 0) {
+            println "Not in a git repository, using 'dev' as commit hash"
+            return 'dev'
+        }
+        def hashLength = 8
+        return "git rev-parse HEAD".execute().text.take(hashLength)
+    } catch (Exception e) {
+        return e
+    }
+}
+
+group = 'net.phylax.credible'
+version = "${getPluginVersion()}-${getPluginRevision()}"
+
+repositories {
+    mavenCentral()
+    maven {
+        name = 'hyperledger'
+        url = 'https://hyperledger.jfrog.io/artifactory/besu-maven/'
+    }
+}
+
+dependencies {
+    // Besu Plugin API and core dependencies
+    // NOTE: not published so we use the local paths
+    // compileOnly 'org.hyperledger.besu:plugin-api:25.6.0'
+    // compileOnly 'org.hyperledger.besu:evm:25.6.0'
+    // compileOnly 'org.hyperledger.besu:besu-datatypes:25.6.0'
+
+    // Local
+    // compileOnly files('libs/besu/plugin-api/build/libs/besu-plugin-api-25.9-develop-3f53857.jar')
+    // compileOnly files('libs/besu/evm/build/libs/besu-evm-25.9-develop-3f53857.jar')
+    // compileOnly files('libs/besu/datatypes/build/libs/besu-datatypes-25.9-develop-3f53857.jar')
+    // compileOnly files('libs/besu/ethereum/core/build/libs/besu-ethereum-core-25.9-develop-3f53857.jar')
+
+    compileOnly fileTree(dir: 'libs/besu/plugin-api/build/libs', include: 'besu-plugin-api-*.jar')
+    compileOnly fileTree(dir: 'libs/besu/evm/build/libs', include: 'besu-evm-*.jar')
+    compileOnly fileTree(dir: 'libs/besu/datatypes/build/libs', include: 'besu-datatypes-*.jar')
+    compileOnly fileTree(dir: 'libs/besu/ethereum/core/build/libs', include: 'besu-ethereum-core-*.jar')
+
+    implementation 'io.consensys.tuweni:tuweni-units:2.7.1'
+    
+    // CLI Support
+    compileOnly 'info.picocli:picocli:4.7.0'
+    
+    // HTTP Client
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    
+    // JSON Processing (including JDK8 support)
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.15.2'
+    implementation 'com.fasterxml.jackson.core:jackson-annotations:2.15.2'
+    implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jdk8:2.15.2'
+    
+    // Caching (Caffeine)
+    implementation 'com.github.ben-manes.caffeine:caffeine:3.1.8'
+    
+    // Logging (including Lombok support)
+    implementation 'org.slf4j:slf4j-api:1.7.36'
+    compileOnly 'org.projectlombok:lombok:1.18.30'
+    
+    // Auto Service
+    implementation 'com.google.auto.service:auto-service:1.1.1'
+    compileOnly 'com.google.auto.service:auto-service-annotations:1.1.1'
+    
+    // Testing
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.9.2'
+    testImplementation 'org.mockito:mockito-core:5.1.1'
+    testImplementation 'org.assertj:assertj-core:3.24.2'
+}
+
+
+jar {
+    manifest {
+        attributes(
+            'Implementation-Title': 'Credible Layer Plugin',
+            'Implementation-Version': project.version,
+            'Implementation-Vendor': 'Phylax',
+            'Specification-Title': 'Besu Plugin API',
+            'Specification-Version': '0.1.0',
+            'Main-Class': 'net.phylax.credible.CredibleLayerPlugin'
+        )
+    }
+    
+    // Include all dependencies in fat jar (optional)
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+    
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    
+    // Exclude signing files
+    exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA'
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+            groupId = project.group
+            artifactId = 'credible-layer-besu-plugin'
+            version = project.version
+            
+            pom {
+                name = 'Credible Layer Besu Plugin'
+                description = 'Hyperledger Besu plugin for integrating the Credible Sidecar'
+                url = 'https://github.com/phylaxsystems/credible-layer-besu-plugin'
+                licenses {
+                    license {
+                        name = 'Apache License 2.0'
+                        url = 'https://www.apache.org/licenses/LICENSE-2.0'
+                    }
+                }
+            }
+        }
+    }
+    
+    repositories {
+        maven {
+            name = "GitHubPackages"
+            url = "https://maven.pkg.github.com/phylaxsystems/credible-layer-besu-plugin"
+            credentials {
+                username = System.getenv("GH_ACTOR")
+                password = System.getenv("GH_TOKEN")
+            }
+        }
+    }
+}
+
+task buildBesuSubmodule(type: Exec) {
+    workingDir 'libs/besu'
+    commandLine './gradlew', 'plugin-api:assemble', 'datatypes:assemble', 'ethereum:core:assemble', 'evm:assemble'
+    
+    // Only run if the submodule exists
+    onlyIf { file('libs/besu').exists() }
+}
+
+// Custom tasks
+task copyPlugin(type: Copy) {
+    from jar
+    into "${rootProject.projectDir}/build/plugins"
+    doLast {
+        println "Plugin JAR copied to: ${rootProject.projectDir}/build/plugins/${jar.archiveFileName.get()}"
+    }
+}
+
+task installPlugin(type: Copy, dependsOn: jar) {
+    from jar
+    into System.getProperty('user.home') + '/.besu/plugins'
+    doLast {
+        println "Plugin installed to: ${System.getProperty('user.home')}/.besu/plugins/${jar.archiveFileName.get()}"
+    }
+}
+
+compileJava.dependsOn buildBesuSubmodule
+build.finalizedBy copyPlugin

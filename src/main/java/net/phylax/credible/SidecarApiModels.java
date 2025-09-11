@@ -1,0 +1,443 @@
+package net.phylax.credible;
+
+import com.fasterxml.jackson.databind.*;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.databind.cfg.ConstructorDetector;
+
+import java.util.List;
+import java.util.ArrayList;
+import java.math.BigInteger;
+
+public class SidecarApiModels {
+    /**
+     * Java equivalent of Rust TxEnv struct
+     * Updated to match API specification field names
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class TxEnv {
+        
+        @JsonProperty("caller")
+        private String caller; // Address as hex string
+        
+        @JsonProperty("gas_limit")
+        private Long gasLimit; // u64 -> Long
+        
+        @JsonProperty("gas_price")
+        private String gasPrice; // Hex string (e.g., "0x5f5e100")
+        
+        @JsonProperty("transact_to")
+        private String transactTo; // Address as hex string (null for contract creation)
+        
+        @JsonProperty("value")
+        private String value; // Hex string (e.g., "0x0", "0x1bc16d674ec80000")
+        
+        @JsonProperty("data")
+        private String data; // Bytes as hex string
+        
+        @JsonProperty("nonce")
+        private Long nonce; // u64 -> Long
+        
+        @JsonProperty("chain_id")
+        private Long chainId; // u64 -> Long
+        
+        @JsonProperty("access_list")
+        private List<AccessListEntry> accessList; // AccessList
+        
+        // Constructors
+        public TxEnv() {
+            this.accessList = new ArrayList<>();
+        }
+        
+        @JsonCreator
+        public TxEnv(@JsonProperty("caller") String caller, @JsonProperty("gas_limit") Long gasLimit, @JsonProperty("gas_price") String gasPrice,
+            @JsonProperty("transact_to") String transactTo, @JsonProperty("value") String value, @JsonProperty("data") String data,
+            @JsonProperty("nonce") Long nonce, @JsonProperty("chain_id") Long chainId, @JsonProperty("access_list") List<AccessListEntry> accessList) {
+            this.caller = caller;
+            this.gasLimit = gasLimit;
+            this.gasPrice = gasPrice;
+            this.transactTo = transactTo;
+            this.value = value;
+            this.data = data;
+            this.nonce = nonce;
+            this.chainId = chainId;
+            this.accessList = accessList != null ? accessList : new ArrayList<>();
+        }
+        
+        // Getters and Setters
+        public String getCaller() { return caller; }
+        public void setCaller(String caller) { this.caller = caller; }
+        
+        public Long getGasLimit() { return gasLimit; }
+        public void setGasLimit(Long gasLimit) { this.gasLimit = gasLimit; }
+        
+        public String getGasPrice() { return gasPrice; }
+        public void setGasPrice(String gasPrice) { this.gasPrice = gasPrice; }
+        
+        public String getTransactTo() { return transactTo; }
+        public void setTransactTo(String transactTo) { this.transactTo = transactTo; }
+        
+        public String getValue() { return value; }
+        public void setValue(String value) { this.value = value; }
+        
+        public String getData() { return data; }
+        public void setData(String data) { this.data = data; }
+        
+        public Long getNonce() { return nonce; }
+        public void setNonce(Long nonce) { this.nonce = nonce; }
+        
+        public Long getChainId() { return chainId; }
+        public void setChainId(Long chainId) { this.chainId = chainId; }
+        
+        public List<AccessListEntry> getAccessList() { return accessList; }
+        public void setAccessList(List<AccessListEntry> accessList) { 
+            this.accessList = accessList != null ? accessList : new ArrayList<>(); 
+        }
+        
+        @Override
+        public String toString() {
+            return String.format("TxEnv{caller='%s', gasLimit=%d, gasPrice='%s', transactTo='%s', value='%s', data='%s', nonce=%d, chainId=%d}",
+                    caller, gasLimit, gasPrice, transactTo, value, data, nonce, chainId);
+        }
+    }
+        
+    // AccessList Entry
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class AccessListEntry {
+        @JsonProperty("address")
+        private String address;
+        
+        @JsonProperty("storage_keys")
+        private List<String> storageKeys;
+        
+        public AccessListEntry() {}
+        
+        @JsonCreator
+        public AccessListEntry(@JsonProperty("address") String address, @JsonProperty("storage_keys") List<String> storageKeys) {
+            this.address = address;
+            this.storageKeys = storageKeys != null ? storageKeys : new ArrayList<>();
+        }
+        
+        public String getAddress() { return address; }
+        public void setAddress(String address) { this.address = address; }
+        
+        public List<String> getStorageKeys() { return storageKeys; }
+        public void setStorageKeys(List<String> storageKeys) { 
+            this.storageKeys = storageKeys != null ? storageKeys : new ArrayList<>(); 
+        }
+        
+        @Override
+        public String toString() { 
+            return "AccessListEntry{address='" + address + "', storageKeys=" + storageKeys + "}"; 
+        }
+    }
+
+    // ==================== REQUEST MODELS ====================
+
+    /**
+     * Request model for sendTransactions endpoint
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class SendTransactionsRequest {
+        @JsonProperty("transactions")
+        private List<TransactionWithHash> transactions;
+        
+        public SendTransactionsRequest() {}
+        
+        @JsonCreator
+        public SendTransactionsRequest(@JsonProperty("transactions") List<TransactionWithHash> transactions) {
+            this.transactions = transactions;
+        }
+        
+        public List<TransactionWithHash> getTransactions() { return transactions; }
+        public void setTransactions(List<TransactionWithHash> transactions) { this.transactions = transactions; }
+    }
+
+    /**
+     * Request model for getTransactions endpoint
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class GetTransactionsRequest {
+        @JsonProperty("hashes")
+        private List<String> hashes;
+        
+        public GetTransactionsRequest() {}
+        
+        @JsonCreator
+        public GetTransactionsRequest(@JsonProperty("hashes") List<String> hashes) {
+            this.hashes = hashes;
+        }
+        
+        public List<String> getHashes() { return hashes; }
+        public void setHashes(List<String> hashes) { this.hashes = hashes; }
+    }
+
+    /**
+     * Request model for sendBlockEnv endpoint
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class SendBlockEnvRequest {
+        @JsonProperty("number")
+        private Long number;
+        
+        @JsonProperty("beneficiary")
+        private String beneficiary;
+        
+        @JsonProperty("timestamp")
+        private Long timestamp;
+        
+        @JsonProperty("gas_limit")
+        private Long gasLimit;
+        
+        @JsonProperty("basefee")
+        private Long baseFee;
+        
+        @JsonProperty("difficulty")
+        private String difficulty;
+        
+        @JsonProperty("prevrandao")
+        private String prevrandao;
+
+        @JsonProperty("blob_excess_gas_and_price")
+        private BlobExcessGasAndPrice blobExcessGasAndPrice;
+        
+        public SendBlockEnvRequest() {}
+
+        @JsonCreator
+        public SendBlockEnvRequest(@JsonProperty("number") Long number, @JsonProperty("beneficiary") String beneficiary, @JsonProperty("timestamp") Long timestamp,
+            @JsonProperty("gas_limit")Long gasLimit, @JsonProperty("basefee") Long baseFee, @JsonProperty("difficulty") String difficulty,
+            @JsonProperty("prevrandao") String prevrandao, @JsonProperty("blob_excess_gas_and_price") BlobExcessGasAndPrice blobExcessGasAndPrice) {
+            this.number = number;
+            this.beneficiary = beneficiary;
+            this.timestamp = timestamp;
+            this.gasLimit = gasLimit;
+            this.baseFee = baseFee;
+            this.difficulty = difficulty;
+            this.prevrandao = prevrandao;
+            this.blobExcessGasAndPrice = blobExcessGasAndPrice;
+        }
+        
+        // Getters and setters
+        public Long getNumber() { return number; }
+        public void setNumber(Long number) { this.number = number; }
+        
+        public String getBeneficiary() { return beneficiary; }
+        public void setBeneficiary(String beneficiary) { this.beneficiary = beneficiary; }
+        
+        public Long getTimestamp() { return timestamp; }
+        public void setTimestamp(Long timestamp) { this.timestamp = timestamp; }
+        
+        public Long getGasLimit() { return gasLimit; }
+        public void setGasLimit(Long gasLimit) { this.gasLimit = gasLimit; }
+        
+        public Long getBaseFee() { return baseFee; }
+        public void setBaseFee(Long baseFee) { this.baseFee = baseFee; }
+        
+        public String getDifficulty() { return difficulty; }
+        public void setDifficulty(String difficulty) { this.difficulty = difficulty; }
+        
+        public String getPrevrandao() { return prevrandao; }
+        public void setPrevrandao(String prevrandao) { this.prevrandao = prevrandao; }
+    }
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class BlobExcessGasAndPrice {
+        @JsonProperty("excess_blob_gas")
+        private Long excessBlobGas;
+        
+        @JsonProperty("blob_gasprice")
+        private Long blobGasPrice;
+        
+        public BlobExcessGasAndPrice() {}
+        
+        @JsonCreator
+        public BlobExcessGasAndPrice(@JsonProperty("excess_blob_gas") Long excessBlobGas, @JsonProperty("blob_gasprice") Long blobGasPrice) {
+            this.excessBlobGas = excessBlobGas;
+            this.blobGasPrice = blobGasPrice;
+        }
+        
+        public Long getExcessBlobGas() { return excessBlobGas; }
+        public void setExcessBlobGas(Long excessBlobGas) { this.excessBlobGas = excessBlobGas; }
+        
+        public Long getBlobGasPrice() { return blobGasPrice; }
+        public void setBlobGasPrice(Long blobGasPrice) { this.blobGasPrice = blobGasPrice; }
+        
+        @Override
+        public String toString() {
+            return String.format("BlobExcessGasAndPrice{excessBlobGas=%d, blobGasPrice=%d}", excessBlobGas, blobGasPrice);
+        }
+    }
+
+    // ==================== RESPONSE MODELS ====================
+
+    /**
+     * Response model for sendTransactions endpoint
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class SendTransactionsResponse {
+        @JsonProperty("status")
+        private String status;
+        
+        @JsonProperty("message")
+        private String message;
+
+        @JsonProperty("transaction_count")
+        private Long transactionCount;
+        
+        @JsonCreator
+        public SendTransactionsResponse(@JsonProperty("status") String status, @JsonProperty("message") String message,
+            @JsonProperty("transaction_count") Long transactionCount) {
+            this.status = status;
+            this.message = message;
+            this.transactionCount = transactionCount;
+        }
+        
+        public String getStatus() { return status; }
+        
+        public String getMessage() { return message; }
+        public Long getTransactionCount() { return transactionCount; }
+    }
+
+    /**
+     * Response model for getTransactions endpoint
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class GetTransactionsResponse {
+        @JsonProperty("results")
+        private List<TransactionResult> results;
+        
+        @JsonProperty("not_found")
+        private List<String> notFound;
+        
+        public GetTransactionsResponse() {}
+        
+        @JsonCreator
+        public GetTransactionsResponse(@JsonProperty("results") List<TransactionResult> results, @JsonProperty("not_found") List<String> notFound) {
+            this.results = results;
+            this.notFound = notFound;
+        }
+        
+        public List<TransactionResult> getResults() { return results; }
+        public void setResults(List<TransactionResult> results) { this.results = results; }
+        
+        public List<String> getNotFound() { return notFound; }
+        public void setNotFound(List<String> notFound) { this.notFound = notFound; }
+    }
+
+    /**
+     * Response model for sendBlockEnv endpoint
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class SendBlockEnvResponse {
+        @JsonProperty("success")
+        private Boolean success;
+        
+        @JsonProperty("error")
+        private String error;
+        
+        public SendBlockEnvResponse() {}
+
+        @JsonCreator
+        public SendBlockEnvResponse(@JsonProperty("success") Boolean success, @JsonProperty("error") String error) {
+            this.success = success;
+            this.error = error;
+        }
+        
+        public Boolean getSuccess() { return success; }
+        public void setSuccess(Boolean success) { this.success = success; }
+        
+        public String getError() { return error; }
+        public void setError(String error) { this.error = error; }
+    }
+
+    // ==================== NESTED MODELS ====================
+
+    /**
+     * Individual transaction result in getTransactions response
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class TransactionResult {
+        @JsonProperty("hash")
+        private String hash;
+        
+        @JsonProperty("status")
+        private String status; // "success", "assertion_failed", "failed"
+        
+        @JsonProperty("gas_used")
+        private Long gasUsed;
+        
+        @JsonProperty("error")
+        private String error;
+        
+        public TransactionResult() {}
+        
+        @JsonCreator
+        public TransactionResult(@JsonProperty("hash") String hash, @JsonProperty("status") String status,
+            @JsonProperty("gas_used") Long gasUsed, @JsonProperty("error") String error) {
+            this.hash = hash;
+            this.status = status;
+            this.gasUsed = gasUsed;
+            this.error = error;
+        }
+        
+        public String getHash() { return hash; }
+        public void setHash(String hash) { this.hash = hash; }
+        
+        public String getStatus() { return status; }
+        public void setStatus(String status) { this.status = status; }
+        
+        public Long getGasUsed() { return gasUsed; }
+        public void setGasUsed(Long gasUsed) { this.gasUsed = gasUsed; }
+        
+        public String getError() { return error; }
+        public void setError(String error) { this.error = error; }
+    }
+
+    /**
+     * Transaction with hash wrapper for sendTransactions
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class TransactionWithHash {
+        @JsonProperty("txEnv")
+        private TxEnv txEnv;
+        
+        @JsonProperty("hash")
+        private String hash;
+        @JsonCreator
+        public TransactionWithHash(@JsonProperty("txEnv") TxEnv txEnv, @JsonProperty("hash") String hash) {
+            this.txEnv = txEnv;
+            this.hash = hash;
+        }
+        
+        public TxEnv getTxEnv() { return txEnv; }
+        public void setTxEnv(TxEnv txEnv) { this.txEnv = txEnv; }
+        
+        public String getHash() { return hash; }
+        public void setHash(String hash) { this.hash = hash; }
+    }
+
+    // ==================== ENUMS & CONSTANTS ====================
+
+    /**
+     * Transaction status constants
+     */
+    public static class TransactionStatus {
+        public static final String SUCCESS = "success";
+        public static final String ASSERTION_FAILED = "assertion_failed";
+        public static final String FAILED = "failed";
+        
+        private TransactionStatus() {} // Utility class
+    }
+
+    /**
+     * JSON-RPC method names
+     */
+    public static class CredibleLayerMethods {
+        public static final String SEND_TRANSACTIONS = "sendTransactions";
+        public static final String GET_TRANSACTIONS = "getTransactions";
+        public static final String SEND_BLOCK_ENV = "sendBlockEnv";
+        
+        private CredibleLayerMethods() {} // Utility class
+    }
+}
