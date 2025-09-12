@@ -43,6 +43,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
     private SidecarClient sidecarClient;
     private TransactionSelectionService transactionSelectionService;
     
+    
     @CommandLine.Command(
         name = PLUGIN_NAME,
         description = "Configuration options for CredibleBlockPlugin",
@@ -144,11 +145,24 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
     @Override
     public void onBlockAdded(final AddedBlockContext block) {
         var blockHeader = block.getBlockHeader();
+        var blockBody = block.getBlockBody();
+        var transactions = blockBody.getTransactions();
 
         String blockHash = blockHeader.getBlockHash().toHexString();
         long blockNumber = blockHeader.getNumber();
         
         LOG.debug("Processing new block - Hash: {}, Number: {}", blockHash, blockNumber);
+        
+        // Get transaction information from the actual block
+        int transactionCount = transactions.size();
+        String lastTxHash = null;
+        
+        if (!transactions.isEmpty()) {
+            lastTxHash = transactions.get(transactions.size() - 1).getHash().toHexString();
+        }
+        
+        LOG.debug("Sending block env with {} transactions, last tx hash: {}", 
+                  transactionCount, lastTxHash);
         
         // NOTE: maybe move to some converter
         SendBlockEnvRequest blockEnv = new SendBlockEnvRequest(
@@ -159,7 +173,9 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
             blockHeader.getBaseFee().map(quantity -> quantity.getAsBigInteger().longValue()).orElse(1L), // 1 Gwei
             blockHeader.getDifficulty().toString(),
             blockHeader.getMixHash().toHexString(),
-            new BlobExcessGasAndPrice(0L, 1L)
+            new BlobExcessGasAndPrice(0L, 1L),
+            transactionCount,
+            lastTxHash
         );
 
         try {
