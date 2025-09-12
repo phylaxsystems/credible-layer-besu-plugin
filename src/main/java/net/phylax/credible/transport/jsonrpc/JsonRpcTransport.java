@@ -1,4 +1,4 @@
-package net.phylax.credible;
+package net.phylax.credible.transport.jsonrpc;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -22,12 +22,15 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
+import net.phylax.credible.transport.ISidecarTransport;
+import net.phylax.credible.types.SidecarApiModels.*;
+
 /**
  * Sidecar JSON RPC client
  * Requires dependencies: okhttp3 and jackson-databind
  */
-public class SidecarClient {
-    private static final Logger LOG = LoggerFactory.getLogger(SidecarClient.class);
+public class JsonRpcTransport implements ISidecarTransport {
+    private static final Logger LOG = LoggerFactory.getLogger(JsonRpcTransport.class);
     
     // JSON RPC Request class
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -160,11 +163,11 @@ public class SidecarClient {
     private final ObjectMapper objectMapper;
     private final String baseUrl;
     
-    public SidecarClient(String baseUrl) {
+    public JsonRpcTransport(String baseUrl) {
         this(baseUrl, createDefaultHttpClient());
     }
     
-    public SidecarClient(String baseUrl, OkHttpClient httpClient) {
+    public JsonRpcTransport(String baseUrl, OkHttpClient httpClient) {
         this.baseUrl = baseUrl;
         this.httpClient = httpClient;
         this.objectMapper = JsonMapper.builder()
@@ -425,7 +428,7 @@ public class SidecarClient {
             return this;
         }
         
-        public SidecarClient build() {
+        public JsonRpcTransport build() {
             if (baseUrl == null) {
                 throw new IllegalArgumentException("baseUrl is required");
             }
@@ -439,12 +442,27 @@ public class SidecarClient {
                 clientBuilder.authenticator(authenticator);
             }
             
-            return new SidecarClient(baseUrl, clientBuilder.build());
+            return new JsonRpcTransport(baseUrl, clientBuilder.build());
         }
     }
     
     public void close() {
         httpClient.dispatcher().executorService().shutdown();
         httpClient.connectionPool().evictAll();
+    }
+
+    @Override
+    public CompletableFuture<SendBlockEnvResponse> sendBlockEnv(SendBlockEnvRequest blockEnv) throws TransportException {
+        return CompletableFuture.completedFuture(null);
+    }
+
+    @Override
+    public CompletableFuture<SendTransactionsResponse> sendTransactions(SendTransactionsRequest transactions) throws TransportException {
+        return CompletableFuture.completedFuture(null);
+    }
+
+    @Override
+    public CompletableFuture<GetTransactionsResponse> getTransactions(List<String> txHashes) throws TransportException {
+        return CompletableFuture.completedFuture(null);
     }
 }

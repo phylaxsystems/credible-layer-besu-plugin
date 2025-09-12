@@ -26,8 +26,8 @@ import org.hyperledger.besu.plugin.services.PicoCLIOptions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine;
-import net.phylax.credible.SidecarClient;
-import net.phylax.credible.SidecarApiModels.*;
+import net.phylax.credible.transport.jsonrpc.JsonRpcTransport;
+import net.phylax.credible.types.SidecarApiModels.*;
 import net.phylax.credible.txselection.*;
 
 /**
@@ -40,7 +40,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
 
     private ServiceManager serviceManager;
     private BesuEvents besuEvents;
-    private SidecarClient sidecarClient;
+    private JsonRpcTransport sidecarClient;
     private TransactionSelectionService transactionSelectionService;
     
     @CommandLine.Command(
@@ -113,7 +113,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
             .getService(BesuEvents.class)
             .ifPresentOrElse(this::startEvents, () -> LOG.error("BesuEvents service not available"));
 
-        this.sidecarClient = new SidecarClient.Builder()
+        this.sidecarClient = new JsonRpcTransport.Builder()
             .baseUrl(config.getRpcEndpoint())
             .build();
 
@@ -165,7 +165,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         try {
             Map<String, Object> response = this.sidecarClient.call("sendBlockEnv", blockEnv, new TypeReference<Map<String, Object>>() {});
                 LOG.debug("Sidecar response {}", response);
-            } catch (SidecarClient.JsonRpcException e) {
+            } catch (JsonRpcTransport.JsonRpcException e) {
                 LOG.debug("JsonRpcException for {}: {}: {}", blockHash, e.getMessage(), e.getError());
             } catch (Exception e) {
                 LOG.error("Error handling sendBlockEnv {}", e.getMessage());

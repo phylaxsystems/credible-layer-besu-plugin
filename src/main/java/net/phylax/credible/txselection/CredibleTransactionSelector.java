@@ -1,22 +1,9 @@
-/*
- * Copyright Consensys Software Inc.
- *
- * This file is dual-licensed under either the MIT license or Apache License 2.0.
- * See the LICENSE-MIT and LICENSE-APACHE files in the repository root for details.
- *
- * SPDX-License-Identifier: MIT OR Apache-2.0
- */
-
 package net.phylax.credible.txselection;
 
 import org.hyperledger.besu.plugin.data.TransactionProcessingResult;
 import org.hyperledger.besu.plugin.data.TransactionSelectionResult;
 import org.hyperledger.besu.plugin.services.txselection.PluginTransactionSelector;
 import org.hyperledger.besu.plugin.services.txselection.TransactionEvaluationContext;
-import net.phylax.credible.SidecarClient;
-import net.phylax.credible.*;
-import net.phylax.credible.TransactionConverter;
-import net.phylax.credible.SidecarApiModels.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.util.concurrent.CompletableFuture;
@@ -26,15 +13,19 @@ import java.util.Map;
 import java.util.List;
 import java.util.Arrays;
 import java.util.concurrent.TimeoutException;
+import net.phylax.credible.transport.jsonrpc.JsonRpcTransport;
+import net.phylax.credible.*;
+import net.phylax.credible.types.TransactionConverter;
+import net.phylax.credible.types.SidecarApiModels.*;
 
 public class CredibleTransactionSelector implements PluginTransactionSelector {
   private static final Logger LOG = LoggerFactory.getLogger(CredibleTransactionSelector.class);
 
   public static class Config {
     private final int processingTimeout;
-    private SidecarClient sidecarClient;
+    private JsonRpcTransport sidecarClient;
 
-    public Config(SidecarClient sidecarClient, int processingTimeout) {
+    public Config(JsonRpcTransport sidecarClient, int processingTimeout) {
       this.processingTimeout = processingTimeout;
       this.sidecarClient = sidecarClient;
     }
@@ -43,7 +34,7 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
       return processingTimeout;
     }
 
-    public SidecarClient getSidecarClient() {
+    public JsonRpcTransport getSidecarClient() {
       return sidecarClient;
     }
   }
@@ -99,7 +90,7 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
         pendingTxRequests.put(txHash, future);
         
         LOG.debug("Started async transaction processing for {}", txHash);
-    } catch (SidecarClient.JsonRpcException e) {
+    } catch (JsonRpcTransport.JsonRpcException e) {
         LOG.warn("JsonRpcException for {}: {}: {}", txHash, e.getMessage(), e.getError());
     } catch (Exception e) {
         LOG.error("Error in transaction preprocessing for {}: {}", txHash, e.getMessage());

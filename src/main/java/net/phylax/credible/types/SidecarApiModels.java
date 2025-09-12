@@ -1,4 +1,4 @@
-package net.phylax.credible;
+package net.phylax.credible.types;
 
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.annotation.JsonInclude;
