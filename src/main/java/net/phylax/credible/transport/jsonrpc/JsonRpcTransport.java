@@ -21,6 +21,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.CompletionException;
 
 import net.phylax.credible.transport.ISidecarTransport;
 import net.phylax.credible.types.SidecarApiModels.*;
@@ -302,23 +303,23 @@ public class JsonRpcTransport implements ISidecarTransport {
     }
     
     // Asynchronous call
-    public <T> CompletableFuture<T> callAsync(String method, Object params, TypeReference<T> resultType) {
+    public <T> CompletableFuture<T> callAsync(String method, Object params, TypeReference<T> resultType) throws TransportException {
         return CompletableFuture.supplyAsync(() -> {
             try {
                 return call(method, params, resultType);
             } catch (JsonRpcException e) {
-                throw new RuntimeException(e);
+                throw new CompletionException(new TransportException(e));
             }
         });
     }
     
     // Asynchronous call with Class result type
-    public <T> CompletableFuture<T> callAsync(String method, Object params, Class<T> resultClass) {
+    public <T> CompletableFuture<T> callAsync(String method, Object params, Class<T> resultClass) throws TransportException {
         return CompletableFuture.supplyAsync(() -> {
             try {
                 return call(method, params, resultClass);
             } catch (JsonRpcException e) {
-                throw new RuntimeException(e);
+                throw new CompletionException(new TransportException(e));
             }
         });
     }
@@ -453,16 +454,28 @@ public class JsonRpcTransport implements ISidecarTransport {
 
     @Override
     public CompletableFuture<SendBlockEnvResponse> sendBlockEnv(SendBlockEnvRequest blockEnv) throws TransportException {
-        return CompletableFuture.completedFuture(null);
+        return this.callAsync(
+            CredibleLayerMethods.SEND_BLOCK_ENV, 
+            blockEnv,
+            SendBlockEnvResponse.class
+        );
     }
 
     @Override
     public CompletableFuture<SendTransactionsResponse> sendTransactions(SendTransactionsRequest transactions) throws TransportException {
-        return CompletableFuture.completedFuture(null);
+        return this.callAsync(
+          CredibleLayerMethods.SEND_TRANSACTIONS, 
+          transactions, 
+          SendTransactionsResponse.class
+        );
     }
 
     @Override
     public CompletableFuture<GetTransactionsResponse> getTransactions(List<String> txHashes) throws TransportException {
-        return CompletableFuture.completedFuture(null);
+        return this.callAsync(
+            CredibleLayerMethods.GET_TRANSACTIONS,
+            txHashes,
+            GetTransactionsResponse.class
+        );
     }
 }
