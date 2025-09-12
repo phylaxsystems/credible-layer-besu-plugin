@@ -104,7 +104,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                     ex.getCause() != null ? ex.getCause().getMessage() : "");
                 } else {
                     LOG.debug("SendTransactions response: count - {}, message - {}", 
-                        result.getTransactionCount(), 
+                        result.getRequestCount(), 
                         result.getMessage());
                 }
             }).join();

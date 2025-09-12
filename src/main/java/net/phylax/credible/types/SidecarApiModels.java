@@ -282,21 +282,21 @@ public class SidecarApiModels {
         @JsonProperty("message")
         private String message;
 
-        @JsonProperty("transaction_count")
-        private Long transactionCount;
+        @JsonProperty("request_count")
+        private Long requestCount;
         
         @JsonCreator
         public SendTransactionsResponse(@JsonProperty("status") String status, @JsonProperty("message") String message,
-            @JsonProperty("transaction_count") Long transactionCount) {
+            @JsonProperty("request_count") Long requestCount) {
             this.status = status;
             this.message = message;
-            this.transactionCount = transactionCount;
+            this.requestCount = requestCount;
         }
         
         public String getStatus() { return status; }
         
         public String getMessage() { return message; }
-        public Long getTransactionCount() { return transactionCount; }
+        public Long getRequestCount() { return requestCount; }
     }
 
     /**
