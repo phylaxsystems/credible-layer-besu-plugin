@@ -202,12 +202,19 @@ public class SidecarApiModels {
         @JsonProperty("blob_excess_gas_and_price")
         private BlobExcessGasAndPrice blobExcessGasAndPrice;
         
+        @JsonProperty("n_transactions")
+        private Integer nTransactions;
+        
+        @JsonProperty("last_tx_hash")
+        private String lastTxHash;
+        
         public SendBlockEnvRequest() {}
 
         @JsonCreator
         public SendBlockEnvRequest(@JsonProperty("number") Long number, @JsonProperty("beneficiary") String beneficiary, @JsonProperty("timestamp") Long timestamp,
             @JsonProperty("gas_limit")Long gasLimit, @JsonProperty("basefee") Long baseFee, @JsonProperty("difficulty") String difficulty,
-            @JsonProperty("prevrandao") String prevrandao, @JsonProperty("blob_excess_gas_and_price") BlobExcessGasAndPrice blobExcessGasAndPrice) {
+            @JsonProperty("prevrandao") String prevrandao, @JsonProperty("blob_excess_gas_and_price") BlobExcessGasAndPrice blobExcessGasAndPrice,
+            @JsonProperty("n_transactions") Integer nTransactions, @JsonProperty("last_tx_hash") String lastTxHash) {
             this.number = number;
             this.beneficiary = beneficiary;
             this.timestamp = timestamp;
@@ -216,6 +223,8 @@ public class SidecarApiModels {
             this.difficulty = difficulty;
             this.prevrandao = prevrandao;
             this.blobExcessGasAndPrice = blobExcessGasAndPrice;
+            this.nTransactions = nTransactions;
+            this.lastTxHash = lastTxHash;
         }
         
         // Getters and setters
@@ -239,6 +248,12 @@ public class SidecarApiModels {
         
         public String getPrevrandao() { return prevrandao; }
         public void setPrevrandao(String prevrandao) { this.prevrandao = prevrandao; }
+
+        public Integer getNTransactions() { return nTransactions; }
+        public void setNTransactions(Integer nTransactions) { this.nTransactions = nTransactions; }
+        
+        public String getLastTxHash() { return lastTxHash; }
+        public void setLastTxHash(String lastTxHash) { this.lastTxHash = lastTxHash; }
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)

@@ -43,6 +43,24 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
     private SidecarClient sidecarClient;
     private TransactionSelectionService transactionSelectionService;
     
+    // Track transactions sent to sidecar during block production
+    // These are static so they persist across transaction selector instances
+    private static volatile int transactionCountForCurrentBlock = 0;
+    private static volatile String lastSentTransactionHash = null;
+    
+    // Called by CredibleTransactionSelector when it sends transactions
+    public static synchronized void recordTransactionSent(String txHash) {
+        transactionCountForCurrentBlock++;
+        lastSentTransactionHash = txHash;
+    }
+    
+    // Get count and reset for next block
+    private static synchronized int getAndResetTransactionCount() {
+        int count = transactionCountForCurrentBlock;
+        transactionCountForCurrentBlock = 0;
+        return count;
+    }
+    
     @CommandLine.Command(
         name = PLUGIN_NAME,
         description = "Configuration options for CredibleBlockPlugin",
@@ -150,6 +168,12 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         
         LOG.debug("Processing new block - Hash: {}, Number: {}", blockHash, blockNumber);
         
+        // Get count of transactions sent during this block's production and reset for next block
+        int transactionsFromPreviousBlock = getAndResetTransactionCount();
+        
+        LOG.debug("Sending block env with {} transactions from previous block, last tx hash: {}", 
+                  transactionsFromPreviousBlock, lastSentTransactionHash);
+        
         // NOTE: maybe move to some converter
         SendBlockEnvRequest blockEnv = new SendBlockEnvRequest(
             blockHeader.getNumber(),
@@ -159,7 +183,9 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
             blockHeader.getBaseFee().map(quantity -> quantity.getAsBigInteger().longValue()).orElse(1L), // 1 Gwei
             blockHeader.getDifficulty().toString(),
             blockHeader.getMixHash().toHexString(),
-            new BlobExcessGasAndPrice(0L, 1L)
+            new BlobExcessGasAndPrice(0L, 1L),
+            transactionsFromPreviousBlock,
+            lastSentTransactionHash
         );
 
         try {
