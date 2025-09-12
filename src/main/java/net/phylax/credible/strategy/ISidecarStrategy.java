@@ -6,11 +6,10 @@ import net.phylax.credible.transport.ISidecarTransport;
 import net.phylax.credible.types.SidecarApiModels.*;
 
 public interface ISidecarStrategy {
-    CompletableFuture<Void> sendBlockEnv(SendBlockEnvRequest blockEnvRequest, List<ISidecarTransport> transports);
+    CompletableFuture<Void> sendBlockEnv(SendBlockEnvRequest blockEnvRequest);
 
     List<CompletableFuture<GetTransactionsResponse>> dispatchTransactions(
-        SendTransactionsRequest sendTxRequest, List<ISidecarTransport> activeTransports);
+        SendTransactionsRequest sendTxRequest);
 
-    void handleTransportResponses(List<CompletableFuture<GetTransactionsResponse>> futures, 
-        List<ISidecarTransport> activeTransports);
+    List<TransactionResult> handleTransportResponses(List<CompletableFuture<GetTransactionsResponse>> futures);
 }

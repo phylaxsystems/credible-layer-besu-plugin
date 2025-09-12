@@ -1,17 +1,26 @@
 package net.phylax.credible.strategy;
 
 import java.util.List;
+import java.util.ArrayList;
 import java.util.stream.Collectors;
 import java.util.Collections;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.TimeUnit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import net.phylax.credible.transport.ISidecarTransport;
 import net.phylax.credible.types.SidecarApiModels.*;
 
 public class DefaultSidecarStrategy implements ISidecarStrategy {
+    private static final Logger LOG = LoggerFactory.getLogger(DefaultSidecarStrategy.class);
+
+    private List<ISidecarTransport> transports = new ArrayList<>();
     private List<ISidecarTransport> activeTransports = new CopyOnWriteArrayList<>();
+    private int processingTimeout;
 
     public static class TransportResponse {
         private final ISidecarTransport transport;
@@ -32,10 +41,14 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         public long getLatencyMs() { return latencyMs; }
     }
 
-    public DefaultSidecarStrategy() {}
+    public DefaultSidecarStrategy(List<ISidecarTransport> transports, int processingTimeout) {
+        this.transports = transports;
+        this.activeTransports = new CopyOnWriteArrayList<>();
+        this.processingTimeout = processingTimeout;
+    }
     
     @Override
-    public CompletableFuture<Void> sendBlockEnv(SendBlockEnvRequest blockEnv, List<ISidecarTransport> transports) {
+    public CompletableFuture<Void> sendBlockEnv(SendBlockEnvRequest blockEnv) {
         List<CompletableFuture<TransportResponse>> futures = transports.stream()
             .map(transport -> sendBlockEnvToTransport(blockEnv, transport))
             .collect(Collectors.toList());
@@ -52,54 +65,49 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                 // Update active transports list
                 activeTransports.clear();
                 activeTransports.addAll(successfulTransports);
+                LOG.debug("Updated active sidecars - count {}", successfulTransports.size());
             });
     }
     
     private CompletableFuture<TransportResponse> sendBlockEnvToTransport(SendBlockEnvRequest blockEnv, ISidecarTransport transport) {
         long startTime = System.currentTimeMillis();
         
-        try {
-            return transport.sendBlockEnv(blockEnv)
-                .thenApply(voidResult -> {
-                    long latency = System.currentTimeMillis() - startTime;
-                    return new TransportResponse(transport, true, "Success", latency);
-                })
-                .exceptionally(ex -> {
-                    // TODO: log
-                    long latency = System.currentTimeMillis() - startTime;
-                    return new TransportResponse(transport, false, ex.getMessage(), latency);
-                });
-        } catch (ISidecarTransport.TransportException e) {
-            // TODO: log
-            long latency = System.currentTimeMillis() - startTime;
-            return CompletableFuture.completedFuture(
-                new TransportResponse(transport, false, e.getMessage(), latency)
-            );
-        }
+        return transport.sendBlockEnv(blockEnv)
+            .thenApply(voidResult -> {
+                long latency = System.currentTimeMillis() - startTime;
+                return new TransportResponse(transport, true, "Success", latency);
+            })
+            .exceptionally(ex -> {
+                LOG.debug("SendBlockEnv error: {} - {}",
+                    ex.getMessage(),
+                    ex.getCause() != null ? ex.getCause().getMessage() : "");
+                long latency = System.currentTimeMillis() - startTime;
+                return new TransportResponse(transport, false, ex.getMessage(), latency);
+            });
     }
     
     @Override
     public List<CompletableFuture<GetTransactionsResponse>> dispatchTransactions(
-            SendTransactionsRequest sendTxRequest, List<ISidecarTransport> activeTransports) {
+            SendTransactionsRequest sendTxRequest) {
         
         if (activeTransports.isEmpty()) {
-            // TODO: log empty active sidecars
+            LOG.warn("Active sidecars empty");
             return Collections.emptyList();
         }
         
         // Fire and forget sendTransactions to all active transports
-        activeTransports.forEach(transport -> {
-            try {
-                // TODO: retry logic
-                transport.sendTransactions(sendTxRequest)
-                .exceptionally(ex -> {
-                    // TODO: LOG ERROR
-                    return null;
-                });
-            } catch(ISidecarTransport.TransportException ex) {
-                // TODO: log
-                // TODO: should remove from active?
-            }
+        activeTransports.parallelStream().forEach(transport -> {
+            transport.sendTransactions(sendTxRequest).whenComplete((result, ex) -> {
+                if (ex != null) {
+                    LOG.debug("SendTransactions error: {} - {}",
+                    ex.getMessage(),
+                    ex.getCause() != null ? ex.getCause().getMessage() : "");
+                } else {
+                    LOG.debug("SendTransactions response: count - {}, message - {}", 
+                        result.getTransactionCount(), 
+                        result.getMessage());
+                }
+            }).join();
         });
         
         List<String> hashes = sendTxRequest.getTransactions().stream()
@@ -115,48 +123,47 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
     
     private CompletableFuture<GetTransactionsResponse> getTransactionsFromTransport(ISidecarTransport transport, List<String> txHashes) {
         long startTime = System.currentTimeMillis();
-        try {
-            return transport.getTransactions(txHashes)
-                .thenApply(result -> {
-                    long latency = System.currentTimeMillis() - startTime;
-                    return result;
-                })
-                .exceptionally(ex -> {
-                    // TODO: log
-                    long latency = System.currentTimeMillis() - startTime;
-                    return null;
-                });
-        } catch (ISidecarTransport.TransportException e) {
-            // TODO: log
-            long latency = System.currentTimeMillis() - startTime;
-            return CompletableFuture.completedFuture(null);
-        }
+        return transport.getTransactions(txHashes)
+            .thenApply(result -> {
+                long latency = System.currentTimeMillis() - startTime;
+                return result;
+            })
+            .orTimeout(processingTimeout, TimeUnit.MILLISECONDS)
+            .exceptionally(ex -> {
+                long latency = System.currentTimeMillis() - startTime;
+                LOG.debug("Timeout or error getting transactions: latency {} -{}", 
+                    latency, ex.getMessage());
+                return null;
+            });
     }
     
     @Override
-    public void handleTransportResponses(List<CompletableFuture<GetTransactionsResponse>> futures, 
-        List<ISidecarTransport> activeTransports) {
-
+    public List<TransactionResult> handleTransportResponses(List<CompletableFuture<GetTransactionsResponse>> futures) {
+        if (futures.isEmpty()) {
+            return Collections.emptyList();
+        }
+        
+        CompletableFuture<GetTransactionsResponse> anySuccess = CompletableFuture.anyOf(futures.toArray(new CompletableFuture[0]))
+            .thenApply(result -> {
+                if (result instanceof GetTransactionsResponse) {
+                    return (GetTransactionsResponse) result;
+                }
+                return null;
+            });
+        
         try {
-            CompletableFuture<Object> firstSuccessFuture = CompletableFuture.anyOf(
-                futures.toArray(new CompletableFuture[0])
-            );
-
-            // Wait for first response (success or failure)
-            // TODO: use proper config timeout
-            Object firstResult = firstSuccessFuture.get(1, TimeUnit.SECONDS);
+            GetTransactionsResponse response = anySuccess.get();
             
-            if (firstResult instanceof GetTransactionsResponse) {
-                GetTransactionsResponse response = (GetTransactionsResponse) firstResult;
-                // TODO: process response
-            } else {
-                // TODO: log
+            if (response == null || response.getResults() == null || response.getResults().isEmpty()) {
+                LOG.debug("No valid results from sidecar");
+                return Collections.emptyList();
             }
             
-        } catch (TimeoutException e) {
-            System.err.println("Timeout waiting for first response");
-        } catch (Exception e) {
-            System.err.println("Error waiting for first response: " + e.getMessage());
+            LOG.debug("GetTransactionsResponse successfully handled: {}", response.getResults().get(0).getHash());
+            return response.getResults();
+        } catch (InterruptedException | ExecutionException e) {
+            LOG.debug("Exception waiting for sidecar responses: {}", e.getMessage());
+            return Collections.emptyList();
         }
     }
 }

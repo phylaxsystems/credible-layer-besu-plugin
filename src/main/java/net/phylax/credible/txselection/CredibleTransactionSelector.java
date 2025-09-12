@@ -17,32 +17,27 @@ import net.phylax.credible.transport.jsonrpc.JsonRpcTransport;
 import net.phylax.credible.*;
 import net.phylax.credible.types.TransactionConverter;
 import net.phylax.credible.types.SidecarApiModels.*;
+import net.phylax.credible.strategy.ISidecarStrategy;
 
 public class CredibleTransactionSelector implements PluginTransactionSelector {
   private static final Logger LOG = LoggerFactory.getLogger(CredibleTransactionSelector.class);
 
   public static class Config {
-    private final int processingTimeout;
-    private JsonRpcTransport sidecarClient;
+    private ISidecarStrategy strategy;
 
-    public Config(JsonRpcTransport sidecarClient, int processingTimeout) {
-      this.processingTimeout = processingTimeout;
-      this.sidecarClient = sidecarClient;
+    public Config(ISidecarStrategy strategy) {
+      this.strategy = strategy;
     }
 
-    public int getProcessingTimeout() {
-      return processingTimeout;
-    }
-
-    public JsonRpcTransport getSidecarClient() {
-      return sidecarClient;
+    public ISidecarStrategy getStrategy() {
+      return strategy;
     }
   }
 
   private final Config config;
   
   // Store pending getTransactions futures by transaction hash
-  private final Map<String, CompletableFuture<GetTransactionsResponse>> pendingTxRequests = 
+  private final Map<String, List<CompletableFuture<GetTransactionsResponse>>> pendingTxRequests = 
         new ConcurrentHashMap<>();
 
   public CredibleTransactionSelector(final Config config) {
@@ -52,7 +47,7 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
   @Override
   public TransactionSelectionResult evaluateTransactionPreProcessing(
       final TransactionEvaluationContext txContext) {
-
+    long startTime = System.currentTimeMillis();
     var tx = txContext.getPendingTransaction().getTransaction();
     String txHash = tx.getHash().toHexString();
 
@@ -63,39 +58,19 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
         // Create request with proper models
         SendTransactionsRequest sendRequest = new SendTransactionsRequest();
         sendRequest.setTransactions(List.of(new TransactionWithHash(txEnv, txHash)));
-        
-        // 1. Send transaction synchronously via sendTransactions
-        SendTransactionsResponse sendResponse = config.sidecarClient.call(
-          CredibleLayerMethods.SEND_TRANSACTIONS, 
-          sendRequest, 
-          SendTransactionsResponse.class
-        );
 
-        // Check if transaction was queued successfully
-        if (!"accepted".equals(sendResponse.getStatus())) {
-            LOG.warn("Transaction {} failed to queue for processing", txHash);
-            return TransactionSelectionResult.SELECTED;
-        }
-
-        // 2. Get transaction status asynchronously via getTransactions
-        List<String> params = Arrays.asList(txHash);
-
-        CompletableFuture<GetTransactionsResponse> future = config.sidecarClient.callAsync(
-          CredibleLayerMethods.GET_TRANSACTIONS,
-          params,
-          GetTransactionsResponse.class
-        );
+        var futures = config.strategy.dispatchTransactions(sendRequest);
         
         // Store future for postprocessing
-        pendingTxRequests.put(txHash, future);
+        pendingTxRequests.put(txHash, futures);
         
         LOG.debug("Started async transaction processing for {}", txHash);
-    } catch (JsonRpcTransport.JsonRpcException e) {
-        LOG.warn("JsonRpcException for {}: {}: {}", txHash, e.getMessage(), e.getError());
     } catch (Exception e) {
         LOG.error("Error in transaction preprocessing for {}: {}", txHash, e.getMessage());
     }
     
+    long latency = System.currentTimeMillis() - startTime;
+    LOG.debug("evaluateTransactionPreProcessingMetrics {}ms", latency);
     return TransactionSelectionResult.SELECTED;
   }
 
@@ -103,48 +78,38 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
   public TransactionSelectionResult evaluateTransactionPostProcessing(
       final TransactionEvaluationContext txContext,
       final TransactionProcessingResult transactionProcessingResult) {
-      var tx = txContext.getPendingTransaction().getTransaction();
-      String txHash = tx.getHash().toHexString();
-      CompletableFuture<GetTransactionsResponse> future = pendingTxRequests.remove(txHash);
-      
-      if (future == null) {
-          LOG.warn("No pending request found for transaction {}, allowing", txHash);
-          return TransactionSelectionResult.SELECTED;
-      }
-      
-      try {
-          LOG.debug("Awaiting result for {}", txHash);
-          
-          // Wait for long-polling response
-          GetTransactionsResponse response = future.get(config.processingTimeout, TimeUnit.MILLISECONDS);
-          
-          // Process the response to determine if transaction is valid
-          if (response.getResults() == null || response.getResults().isEmpty()) {
-              LOG.warn("No results for transaction {} but allowing", txHash);
-              return TransactionSelectionResult.SELECTED;
-          }
-          
-          // Find the result for our specific transaction hash
-          for (TransactionResult txResult : response.getResults()) {
-              if (txHash.equals(txResult.getHash())) {
-                  String status = txResult.getStatus();
-                  
-                  if (TransactionStatus.ASSERTION_FAILED.equals(status) || 
-                      TransactionStatus.FAILED.equals(status)) {
-                      LOG.info("Transaction {} excluded due to status: {}", txHash, status);
-                      // TODO: maybe return a more appropriate status
-                      return TransactionSelectionResult.invalid("TX rejected by sidecar");
-                  } else {
-                      LOG.debug("Transaction {} included with status: {}", txHash, status);
-                      return TransactionSelectionResult.SELECTED;
-                  }
-              }
-          }
-          
-          LOG.warn("Transaction {} not found in results, but allowing", txHash);
-          return TransactionSelectionResult.SELECTED;
-    } catch (TimeoutException e) {
-        LOG.warn("Fetching result from sidecar timed out {}", txHash);
+    long startTime = System.currentTimeMillis();
+
+    var tx = txContext.getPendingTransaction().getTransaction();
+    String txHash = tx.getHash().toHexString();
+    List<CompletableFuture<GetTransactionsResponse>> futures = pendingTxRequests.remove(txHash);
+    
+    if (futures == null || futures.isEmpty()) {
+        LOG.warn("No pending request found for transaction {}, allowing", txHash);
+        return TransactionSelectionResult.SELECTED;
+    }
+    
+    try {
+        LOG.debug("Awaiting result for {}", txHash);
+        
+        List<TransactionResult> results = config.strategy.handleTransportResponses(futures);
+        for (TransactionResult txResult : results) {
+            if (txHash.equals(txResult.getHash())) {
+                String status = txResult.getStatus();
+                
+                if (TransactionStatus.ASSERTION_FAILED.equals(status) || 
+                    TransactionStatus.FAILED.equals(status)) {
+                    LOG.info("Transaction {} excluded due to status: {}", txHash, status);
+                    // TODO: maybe return a more appropriate status
+                    return TransactionSelectionResult.invalid("TX rejected by sidecar");
+                } else {
+                    LOG.debug("Transaction {} included with status: {}", txHash, status);
+                    long latency = System.currentTimeMillis() - startTime;
+                    LOG.debug("evaluateTransactionPostProcessingMetrics {}ms", latency);
+                    return TransactionSelectionResult.SELECTED;
+                }
+            }
+        }
         return TransactionSelectionResult.SELECTED;
     } catch (Exception e) {
         LOG.error("Error in transaction postprocessing for {}: {}", txHash, e.getMessage());

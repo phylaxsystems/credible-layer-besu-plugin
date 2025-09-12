@@ -183,9 +183,9 @@ public class JsonRpcTransport implements ISidecarTransport {
     private static OkHttpClient createDefaultHttpClient() {
         return new OkHttpClient.Builder()
                 .connectionPool(new ConnectionPool(100, 2, TimeUnit.MINUTES))
-                .connectTimeout(30, TimeUnit.SECONDS)
-                .readTimeout(30, TimeUnit.SECONDS)
-                .writeTimeout(30, TimeUnit.SECONDS)
+                .connectTimeout(5, TimeUnit.SECONDS)
+                .readTimeout(5, TimeUnit.SECONDS)
+                .writeTimeout(5, TimeUnit.SECONDS)
                 .retryOnConnectionFailure(true)
                 .followRedirects(false)
                 .followSslRedirects(false)
@@ -303,23 +303,23 @@ public class JsonRpcTransport implements ISidecarTransport {
     }
     
     // Asynchronous call
-    public <T> CompletableFuture<T> callAsync(String method, Object params, TypeReference<T> resultType) throws TransportException {
+    public <T> CompletableFuture<T> callAsync(String method, Object params, TypeReference<T> resultType){
         return CompletableFuture.supplyAsync(() -> {
             try {
                 return call(method, params, resultType);
             } catch (JsonRpcException e) {
-                throw new CompletionException(new TransportException(e));
+                throw new CompletionException(e);
             }
         });
     }
     
     // Asynchronous call with Class result type
-    public <T> CompletableFuture<T> callAsync(String method, Object params, Class<T> resultClass) throws TransportException {
+    public <T> CompletableFuture<T> callAsync(String method, Object params, Class<T> resultClass) {
         return CompletableFuture.supplyAsync(() -> {
             try {
                 return call(method, params, resultClass);
             } catch (JsonRpcException e) {
-                throw new CompletionException(new TransportException(e));
+                throw new CompletionException(e);
             }
         });
     }
@@ -399,9 +399,9 @@ public class JsonRpcTransport implements ISidecarTransport {
     // Builder pattern for client configuration
     public static class Builder {
         private String baseUrl;
-        private Duration connectTimeout = Duration.ofSeconds(30);
-        private Duration readTimeout = Duration.ofSeconds(30);
-        private Duration writeTimeout = Duration.ofSeconds(30);
+        private Duration connectTimeout = Duration.ofSeconds(5);
+        private Duration readTimeout = Duration.ofSeconds(5);
+        private Duration writeTimeout = Duration.ofSeconds(5);
         private Authenticator authenticator;
         
         public Builder baseUrl(String baseUrl) {
@@ -453,7 +453,7 @@ public class JsonRpcTransport implements ISidecarTransport {
     }
 
     @Override
-    public CompletableFuture<SendBlockEnvResponse> sendBlockEnv(SendBlockEnvRequest blockEnv) throws TransportException {
+    public CompletableFuture<SendBlockEnvResponse> sendBlockEnv(SendBlockEnvRequest blockEnv) {
         return this.callAsync(
             CredibleLayerMethods.SEND_BLOCK_ENV, 
             blockEnv,
@@ -462,7 +462,7 @@ public class JsonRpcTransport implements ISidecarTransport {
     }
 
     @Override
-    public CompletableFuture<SendTransactionsResponse> sendTransactions(SendTransactionsRequest transactions) throws TransportException {
+    public CompletableFuture<SendTransactionsResponse> sendTransactions(SendTransactionsRequest transactions) {
         return this.callAsync(
           CredibleLayerMethods.SEND_TRANSACTIONS, 
           transactions, 
@@ -471,7 +471,7 @@ public class JsonRpcTransport implements ISidecarTransport {
     }
 
     @Override
-    public CompletableFuture<GetTransactionsResponse> getTransactions(List<String> txHashes) throws TransportException {
+    public CompletableFuture<GetTransactionsResponse> getTransactions(List<String> txHashes) {
         return this.callAsync(
             CredibleLayerMethods.GET_TRANSACTIONS,
             txHashes,
