@@ -404,6 +404,7 @@ public class SidecarApiModels {
         
         @JsonProperty("hash")
         private String hash;
+        
         @JsonCreator
         public TransactionWithHash(@JsonProperty("txEnv") TxEnv txEnv, @JsonProperty("hash") String hash) {
             this.txEnv = txEnv;
