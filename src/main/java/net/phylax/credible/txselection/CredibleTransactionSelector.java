@@ -160,4 +160,43 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
         return TransactionSelectionResult.SELECTED;
     }
   }
+
+  @Override
+  public void onTransactionNotSelected(
+      final TransactionEvaluationContext evaluationContext,
+      final TransactionSelectionResult transactionSelectionResult) {
+
+    var transaction = evaluationContext.getPendingTransaction().getTransaction();
+    String txHash = transaction.getHash().toHexString();
+    String reason = transactionSelectionResult.toString();
+
+    try {
+        LOG.debug("Sending reorg request for transaction {} due to: {}", txHash, reason);
+
+        // Create reorg request with the transaction hash
+        ReorgRequest reorgRequest = new ReorgRequest(txHash);
+
+        // Send blocking reorg request to sidecar to avoid race conditions
+        ReorgResponse response = config.getSidecarClient().call(
+            CredibleLayerMethods.REORG,
+            reorgRequest,
+            ReorgResponse.class
+        );
+
+        // Check if the reorg was successful
+        if (Boolean.TRUE.equals(response.getSuccess())) {
+            LOG.info("Successfully sent reorg request for transaction {}", txHash);
+        } else {
+            LOG.warn("Reorg request for transaction {} returned success=false. Error: {}",
+                    txHash, response.getError());
+        }
+
+    } catch (SidecarClient.JsonRpcException e) {
+        LOG.error("JsonRpcException when sending reorg request for transaction {}: {}: {}",
+                 txHash, e.getMessage(), e.getError());
+    } catch (Exception e) {
+        LOG.error("Failed to send reorg request for transaction {}: {}",
+                 txHash, e.getMessage(), e);
+    }
+  }
 }

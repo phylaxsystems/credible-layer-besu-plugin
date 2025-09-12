@@ -174,6 +174,32 @@ public class SidecarApiModels {
     }
 
     /**
+    * Request model for reorg endpoint
+    */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class ReorgRequest {
+        @JsonProperty("removedTxHash")
+        private String removedTxHash;
+
+        public ReorgRequest() {}
+
+        @JsonCreator
+        public ReorgRequest(@JsonProperty("removedTxHash") String removedTxHash) {
+            this.removedTxHash = removedTxHash;
+        }
+
+        @JsonProperty("removedTxHash")
+        public String getRemovedTxHash() {
+            return removedTxHash;
+        }
+
+        @JsonProperty("removedTxHash")
+        public void setRemovedTxHash(String removedTxHash) {
+            this.removedTxHash = removedTxHash;
+        }
+    }
+
+    /**
      * Request model for sendBlockEnv endpoint
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -351,6 +377,32 @@ public class SidecarApiModels {
         public void setError(String error) { this.error = error; }
     }
 
+    /**
+     * Response model for sendBlockEnv endpoint
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class ReorgResponse {
+        @JsonProperty("success")
+        private Boolean success;
+
+        @JsonProperty("error")
+        private String error;
+
+        public ReorgResponse() {}
+
+        @JsonCreator
+        public ReorgResponse(@JsonProperty("success") Boolean success, @JsonProperty("error") String error) {
+            this.success = success;
+            this.error = error;
+        }
+
+        public Boolean getSuccess() { return success; }
+        public void setSuccess(Boolean success) { this.success = success; }
+
+        public String getError() { return error; }
+        public void setError(String error) { this.error = error; }
+    }
+
     // ==================== NESTED MODELS ====================
 
     /**
@@ -437,7 +489,8 @@ public class SidecarApiModels {
         public static final String SEND_TRANSACTIONS = "sendTransactions";
         public static final String GET_TRANSACTIONS = "getTransactions";
         public static final String SEND_BLOCK_ENV = "sendBlockEnv";
-        
+        public static final String REORG = "reorg";
+
         private CredibleLayerMethods() {} // Utility class
     }
 }
