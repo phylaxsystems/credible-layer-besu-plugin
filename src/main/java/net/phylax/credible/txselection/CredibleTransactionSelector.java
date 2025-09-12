@@ -85,9 +85,6 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
             LOG.warn("Transaction {} failed to queue for processing", txHash);
             return TransactionSelectionResult.SELECTED;
         }
-        
-        // Record that we sent this transaction to the sidecar
-        CredibleLayerPlugin.recordTransactionSent(txHash);
 
         // 2. Get transaction status asynchronously via getTransactions
         List<String> params = Arrays.asList(txHash);
