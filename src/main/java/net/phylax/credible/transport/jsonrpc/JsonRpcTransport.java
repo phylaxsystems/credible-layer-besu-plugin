@@ -478,4 +478,13 @@ public class JsonRpcTransport implements ISidecarTransport {
             GetTransactionsResponse.class
         );
     }
+
+    @Override
+    public CompletableFuture<ReorgResponse> sendReorg(ReorgRequest reorgRequest) {
+        return this.callAsync(
+            CredibleLayerMethods.SEND_REORG,
+            reorgRequest,
+            ReorgResponse.class
+        );
+    }
 }

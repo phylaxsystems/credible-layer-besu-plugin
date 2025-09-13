@@ -12,4 +12,6 @@ public interface ISidecarStrategy {
         SendTransactionsRequest sendTxRequest);
 
     List<TransactionResult> handleTransportResponses(List<CompletableFuture<GetTransactionsResponse>> futures);
+
+    List<ReorgResponse> sendReorgRequest(ReorgRequest reorgRequest);
 }

@@ -188,12 +188,10 @@ public class SidecarApiModels {
             this.removedTxHash = removedTxHash;
         }
 
-        @JsonProperty("removedTxHash")
         public String getRemovedTxHash() {
             return removedTxHash;
         }
 
-        @JsonProperty("removedTxHash")
         public void setRemovedTxHash(String removedTxHash) {
             this.removedTxHash = removedTxHash;
         }
@@ -505,7 +503,7 @@ public class SidecarApiModels {
         public static final String SEND_TRANSACTIONS = "sendTransactions";
         public static final String GET_TRANSACTIONS = "getTransactions";
         public static final String SEND_BLOCK_ENV = "sendBlockEnv";
-        public static final String REORG = "reorg";
+        public static final String SEND_REORG = "reorg";
 
         private CredibleLayerMethods() {} // Utility class
     }

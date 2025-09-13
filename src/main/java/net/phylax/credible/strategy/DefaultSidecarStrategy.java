@@ -99,6 +99,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         activeTransports.parallelStream().forEach(transport -> {
             transport.sendTransactions(sendTxRequest).whenComplete((result, ex) -> {
                 if (ex != null) {
+                    // TODO: what to do with the transport?
                     LOG.debug("SendTransactions error: {} - {}",
                     ex.getMessage(),
                     ex.getCause() != null ? ex.getCause().getMessage() : "");
@@ -130,6 +131,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
             })
             .orTimeout(processingTimeout, TimeUnit.MILLISECONDS)
             .exceptionally(ex -> {
+                // TODO: what to do with the transport?
                 long latency = System.currentTimeMillis() - startTime;
                 LOG.debug("Timeout or error getting transactions: latency {} -{}", 
                     latency, ex.getMessage());
@@ -165,5 +167,23 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
             LOG.debug("Exception waiting for sidecar responses: {}", e.getMessage());
             return Collections.emptyList();
         }
+    }
+
+    @Override
+    public List<ReorgResponse> sendReorgRequest(ReorgRequest reorgRequest) {
+        List<ReorgResponse> successfulResponses = new ArrayList<>();
+    
+        for (ISidecarTransport transport : activeTransports) {
+            try {
+                ReorgResponse response = transport.sendReorg(reorgRequest).join();
+                successfulResponses.add(response);
+            } catch (Exception e) {
+                // TODO: what to do with the transport?
+                LOG.debug("Failed to send reorg request to transport {}: {}", 
+                    transport.toString(), e.getMessage());
+            }
+        }
+        
+        return successfulResponses;
     }
 }

@@ -8,4 +8,5 @@ public interface ISidecarTransport {
     CompletableFuture<SendBlockEnvResponse> sendBlockEnv(SendBlockEnvRequest blockEnv);
     CompletableFuture<SendTransactionsResponse> sendTransactions(SendTransactionsRequest transactions);
     CompletableFuture<GetTransactionsResponse> getTransactions(List<String> txHashes);
+    CompletableFuture<ReorgResponse> sendReorg(ReorgRequest reorgRequest);
 }

@@ -131,28 +131,11 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
 
         // Create reorg request with the transaction hash
         ReorgRequest reorgRequest = new ReorgRequest(txHash);
+        var reorgResponses = config.strategy.sendReorgRequest(reorgRequest);
 
-        // Send blocking reorg request to sidecar to avoid race conditions
-        ReorgResponse response = config.getSidecarClient().call(
-            CredibleLayerMethods.REORG,
-            reorgRequest,
-            ReorgResponse.class
-        );
-
-        // Check if the reorg was successful
-        if (Boolean.TRUE.equals(response.getSuccess())) {
-            LOG.info("Successfully sent reorg request for transaction {}", txHash);
-        } else {
-            LOG.warn("Reorg request for transaction {} returned success=false. Error: {}",
-                    txHash, response.getError());
-        }
-
-    } catch (SidecarClient.JsonRpcException e) {
-        LOG.error("JsonRpcException when sending reorg request for transaction {}: {}: {}",
-                 txHash, e.getMessage(), e.getError());
+        LOG.debug("Reorg request successful for transaction {}, got {} responses", txHash, reorgResponses.size());
     } catch (Exception e) {
-        LOG.error("Failed to send reorg request for transaction {}: {}",
-                 txHash, e.getMessage(), e);
+        LOG.error("Failed to send reorg request for transaction {}: {}", txHash, e.getMessage(), e);
     }
   }
 }
