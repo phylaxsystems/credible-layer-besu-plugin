@@ -2,3 +2,4 @@ build/
 .gradle/
 libs/besu/build/
 libs/besu/.gradle/
+.idea/*

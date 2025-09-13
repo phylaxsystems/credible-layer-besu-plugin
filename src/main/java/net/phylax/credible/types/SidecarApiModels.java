@@ -174,6 +174,32 @@ public class SidecarApiModels {
     }
 
     /**
+    * Request model for reorg endpoint
+    */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class ReorgRequest {
+        @JsonProperty("removedTxHash")
+        private String removedTxHash;
+
+        public ReorgRequest() {}
+
+        @JsonCreator
+        public ReorgRequest(@JsonProperty("removedTxHash") String removedTxHash) {
+            this.removedTxHash = removedTxHash;
+        }
+
+        @JsonProperty("removedTxHash")
+        public String getRemovedTxHash() {
+            return removedTxHash;
+        }
+
+        @JsonProperty("removedTxHash")
+        public void setRemovedTxHash(String removedTxHash) {
+            this.removedTxHash = removedTxHash;
+        }
+    }
+
+    /**
      * Request model for sendBlockEnv endpoint
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -202,12 +228,19 @@ public class SidecarApiModels {
         @JsonProperty("blob_excess_gas_and_price")
         private BlobExcessGasAndPrice blobExcessGasAndPrice;
         
+        @JsonProperty("n_transactions")
+        private Integer nTransactions;
+        
+        @JsonProperty("last_tx_hash")
+        private String lastTxHash;
+        
         public SendBlockEnvRequest() {}
 
         @JsonCreator
         public SendBlockEnvRequest(@JsonProperty("number") Long number, @JsonProperty("beneficiary") String beneficiary, @JsonProperty("timestamp") Long timestamp,
             @JsonProperty("gas_limit")Long gasLimit, @JsonProperty("basefee") Long baseFee, @JsonProperty("difficulty") String difficulty,
-            @JsonProperty("prevrandao") String prevrandao, @JsonProperty("blob_excess_gas_and_price") BlobExcessGasAndPrice blobExcessGasAndPrice) {
+            @JsonProperty("prevrandao") String prevrandao, @JsonProperty("blob_excess_gas_and_price") BlobExcessGasAndPrice blobExcessGasAndPrice,
+            @JsonProperty("n_transactions") Integer nTransactions, @JsonProperty("last_tx_hash") String lastTxHash) {
             this.number = number;
             this.beneficiary = beneficiary;
             this.timestamp = timestamp;
@@ -216,6 +249,8 @@ public class SidecarApiModels {
             this.difficulty = difficulty;
             this.prevrandao = prevrandao;
             this.blobExcessGasAndPrice = blobExcessGasAndPrice;
+            this.nTransactions = nTransactions;
+            this.lastTxHash = lastTxHash;
         }
         
         // Getters and setters
@@ -239,6 +274,12 @@ public class SidecarApiModels {
         
         public String getPrevrandao() { return prevrandao; }
         public void setPrevrandao(String prevrandao) { this.prevrandao = prevrandao; }
+
+        public Integer getNTransactions() { return nTransactions; }
+        public void setNTransactions(Integer nTransactions) { this.nTransactions = nTransactions; }
+        
+        public String getLastTxHash() { return lastTxHash; }
+        public void setLastTxHash(String lastTxHash) { this.lastTxHash = lastTxHash; }
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -351,6 +392,32 @@ public class SidecarApiModels {
         public void setError(String error) { this.error = error; }
     }
 
+    /**
+     * Response model for sendBlockEnv endpoint
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class ReorgResponse {
+        @JsonProperty("success")
+        private Boolean success;
+
+        @JsonProperty("error")
+        private String error;
+
+        public ReorgResponse() {}
+
+        @JsonCreator
+        public ReorgResponse(@JsonProperty("success") Boolean success, @JsonProperty("error") String error) {
+            this.success = success;
+            this.error = error;
+        }
+
+        public Boolean getSuccess() { return success; }
+        public void setSuccess(Boolean success) { this.success = success; }
+
+        public String getError() { return error; }
+        public void setError(String error) { this.error = error; }
+    }
+
     // ==================== NESTED MODELS ====================
 
     /**
@@ -438,7 +505,8 @@ public class SidecarApiModels {
         public static final String SEND_TRANSACTIONS = "sendTransactions";
         public static final String GET_TRANSACTIONS = "getTransactions";
         public static final String SEND_BLOCK_ENV = "sendBlockEnv";
-        
+        public static final String REORG = "reorg";
+
         private CredibleLayerMethods() {} // Utility class
     }
 }
