@@ -71,6 +71,8 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                     .map(TransportResponse::getTransport)
                     .collect(Collectors.toList());
                 
+                // Clear pending requests (since it's the start of the new block)
+                pendingTxRequests.clear();
                 // Update active transports list
                 activeTransports.clear();
                 activeTransports.addAll(successfulTransports);
