@@ -70,22 +70,31 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
         LOG.debug("Awaiting result for {}", txHash);
         
         GetTransactionsResponse txResponse = config.strategy.getTransactionResults(Arrays.asList(txHash));
-        for (TransactionResult txResult : txResponse.getResults()) {
-            if (txHash.equals(txResult.getHash())) {
-                String status = txResult.getStatus();
-                
-                if (TransactionStatus.ASSERTION_FAILED.equals(status) || 
-                    TransactionStatus.FAILED.equals(status)) {
-                    LOG.info("Transaction {} excluded due to status: {}", txHash, status);
-                    // TODO: maybe return a more appropriate status
-                    return TransactionSelectionResult.invalid("TX rejected by sidecar");
-                } else {
-                    LOG.debug("Transaction {} included with status: {}", txHash, status);
-                    return TransactionSelectionResult.SELECTED;
-                }
-            }
+
+        if (txResponse == null ||
+            txResponse.getResults() == null ||
+            txResponse.getResults().isEmpty()
+        ) {
+            LOG.warn("Transaction {} not found in sidecar response", txHash);
+            return TransactionSelectionResult.SELECTED;
         }
-        return TransactionSelectionResult.SELECTED;
+
+        return txResponse.getResults().stream()
+          .filter(txResult -> txResult.getHash().equals(txHash))
+          .findFirst()
+          .map(res -> {
+            var status = res.getStatus();
+            if (TransactionStatus.ASSERTION_FAILED.equals(status) || 
+                  TransactionStatus.FAILED.equals(status)) {
+                  LOG.info("Transaction {} excluded due to status: {}", txHash, status);
+                  // TODO: maybe return a more appropriate status
+                  return TransactionSelectionResult.invalid("TX rejected by sidecar");
+              } else {
+                  LOG.debug("Transaction {} included with status: {}", txHash, status);
+                  return TransactionSelectionResult.SELECTED;
+              }
+          })
+          .orElse(TransactionSelectionResult.SELECTED);
     } catch (Exception e) {
         LOG.error("Error in transaction postprocessing for {}: {}", txHash, e.getMessage());
         return TransactionSelectionResult.SELECTED;

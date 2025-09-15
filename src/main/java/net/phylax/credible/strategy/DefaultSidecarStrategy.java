@@ -202,7 +202,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                 successfulResponses.add(response);
             } catch (Exception e) {
                 // TODO: what to do with the transport?
-                LOG.debug("Failed to send reorg request to transport {}: {}", 
+                LOG.debug("Exception sending reorg request to transport {}: {}", 
                     transport.toString(), e.getMessage());
             }
         }
