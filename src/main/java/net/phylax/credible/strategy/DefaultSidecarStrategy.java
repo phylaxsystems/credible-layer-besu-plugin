@@ -106,7 +106,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
             return Collections.emptyList();
         }
         
-        // Fire and forget sendTransactions to all active transports
+        // Calls sendTransactions on all active transports in parallel and awaits them
         activeTransports.parallelStream().forEach(transport -> {
             transport.sendTransactions(sendTxRequest).whenComplete((result, ex) -> {
                 if (ex != null) {
