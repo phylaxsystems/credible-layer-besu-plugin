@@ -1,11 +1,13 @@
-package net.phylax.credible;
+package net.phylax.credible.types;
 
-import org.hyperledger.besu.datatypes.*;
-import net.phylax.credible.SidecarApiModels.*;
-import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
+
+import org.hyperledger.besu.datatypes.Transaction;
+import org.hyperledger.besu.datatypes.TransactionType;
+
+import net.phylax.credible.types.SidecarApiModels.TxEnv;
 
 public class TransactionConverter {
     /**

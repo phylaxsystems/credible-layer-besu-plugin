@@ -1,14 +1,11 @@
-package net.phylax.credible;
+package net.phylax.credible.types;
 
-import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.databind.cfg.ConstructorDetector;
 
 import java.util.List;
 import java.util.ArrayList;
-import java.math.BigInteger;
 
 public class SidecarApiModels {
     /**
@@ -188,12 +185,10 @@ public class SidecarApiModels {
             this.removedTxHash = removedTxHash;
         }
 
-        @JsonProperty("removedTxHash")
         public String getRemovedTxHash() {
             return removedTxHash;
         }
 
-        @JsonProperty("removedTxHash")
         public void setRemovedTxHash(String removedTxHash) {
             this.removedTxHash = removedTxHash;
         }
@@ -323,21 +318,21 @@ public class SidecarApiModels {
         @JsonProperty("message")
         private String message;
 
-        @JsonProperty("transaction_count")
-        private Long transactionCount;
+        @JsonProperty("request_count")
+        private Long requestCount;
         
         @JsonCreator
         public SendTransactionsResponse(@JsonProperty("status") String status, @JsonProperty("message") String message,
-            @JsonProperty("transaction_count") Long transactionCount) {
+            @JsonProperty("request_count") Long requestCount) {
             this.status = status;
             this.message = message;
-            this.transactionCount = transactionCount;
+            this.requestCount = requestCount;
         }
         
         public String getStatus() { return status; }
         
         public String getMessage() { return message; }
-        public Long getTransactionCount() { return transactionCount; }
+        public Long getRequestCount() { return requestCount; }
     }
 
     /**
@@ -471,6 +466,7 @@ public class SidecarApiModels {
         
         @JsonProperty("hash")
         private String hash;
+        
         @JsonCreator
         public TransactionWithHash(@JsonProperty("txEnv") TxEnv txEnv, @JsonProperty("hash") String hash) {
             this.txEnv = txEnv;
@@ -504,7 +500,7 @@ public class SidecarApiModels {
         public static final String SEND_TRANSACTIONS = "sendTransactions";
         public static final String GET_TRANSACTIONS = "getTransactions";
         public static final String SEND_BLOCK_ENV = "sendBlockEnv";
-        public static final String REORG = "reorg";
+        public static final String SEND_REORG = "reorg";
 
         private CredibleLayerMethods() {} // Utility class
     }

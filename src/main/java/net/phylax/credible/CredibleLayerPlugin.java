@@ -1,34 +1,30 @@
 package net.phylax.credible;
 
-import static java.util.Collections.emptyList;
-
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
-import java.util.Map;
-import com.fasterxml.jackson.databind.MappingIterator;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SequenceWriter;
-import com.fasterxml.jackson.databind.module.SimpleModule;
-import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.google.auto.service.AutoService;
-import org.hyperledger.besu.datatypes.Hash;
-import org.hyperledger.besu.ethereum.core.Transaction;
-import org.hyperledger.besu.plugin.data.AddedBlockContext;
-import org.hyperledger.besu.plugin.services.BesuEvents;
-import org.hyperledger.besu.plugin.services.BesuService;
-import org.hyperledger.besu.plugin.services.BlockchainService;
-import org.hyperledger.besu.plugin.services.TransactionSelectionService;
-import org.hyperledger.besu.plugin.services.TransactionSimulationService;
+import java.util.stream.Collectors;
+
 import org.hyperledger.besu.plugin.BesuPlugin;
 import org.hyperledger.besu.plugin.ServiceManager;
+import org.hyperledger.besu.plugin.data.AddedBlockContext;
+import org.hyperledger.besu.plugin.services.BesuEvents;
 import org.hyperledger.besu.plugin.services.PicoCLIOptions;
+import org.hyperledger.besu.plugin.services.TransactionSelectionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.google.auto.service.AutoService;
+
+import net.phylax.credible.strategy.DefaultSidecarStrategy;
+import net.phylax.credible.strategy.ISidecarStrategy;
+import net.phylax.credible.transport.ISidecarTransport;
+import net.phylax.credible.transport.jsonrpc.JsonRpcTransport;
+import net.phylax.credible.txselection.CredibleTransactionSelector;
+import net.phylax.credible.txselection.CredibleTransactionSelectorFactory;
+import net.phylax.credible.types.SidecarApiModels.BlobExcessGasAndPrice;
+import net.phylax.credible.types.SidecarApiModels.SendBlockEnvRequest;
 import picocli.CommandLine;
-import net.phylax.credible.SidecarClient;
-import net.phylax.credible.SidecarApiModels.*;
-import net.phylax.credible.txselection.*;
 
 /**
  * Plugin for sending BlockEnv to the Credible Layer sidecar
@@ -40,8 +36,8 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
 
     private ServiceManager serviceManager;
     private BesuEvents besuEvents;
-    private SidecarClient sidecarClient;
     private TransactionSelectionService transactionSelectionService;
+    private ISidecarStrategy strategy;
     
     
     @CommandLine.Command(
@@ -51,29 +47,38 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
     )
     public static class CrediblePluginConfiguration {
         @CommandLine.Option(
-            names = {"--plugin-credible-sidecar-enabled"},
-            description = "Enable the plugin (default: ${DEFAULT-VALUE})",
-            defaultValue = "true",
-            arity = "0..1"
+            names = {"--plugin-credible-sidecar-rpc-endpoints"},
+            description = "List of RPC endpoints to connect to the Credible sidecars",
+            paramLabel = "<url>",
+            split = ","
         )
-        private Boolean enabled = true;
-        
+        private List<String> rpcEndpoints;
+
         @CommandLine.Option(
-            names = {"--plugin-credible-sidecar-rpc-endpoint"},
-            description = "RPC endpoint URL for external calls",
-            paramLabel = "<url>"
+            names = {"--plugin-credible-sidecar-read-timeout-ms"},
+            description = "Request timeout in ms for any request to the Sidecar RPC",
+            defaultValue = "800"
         )
-        private String rpcEndpoint;
+        private int readTimeout = 800;
+
+        @CommandLine.Option(
+            names = {"--plugin-credible-sidecar-write-timeout-ms"},
+            description = "Request timeout in ms for any request to the Sidecar RPC",
+            defaultValue = "800"
+        )
+        private int writeTimeout = 800;
 
         @CommandLine.Option(
             names = {"--plugin-credible-sidecar-processing-timeout-ms"},
             description = "Timeout in ms for the Sidecar RPC when waiting for the processing of getTransactions",
-            defaultValue = "50"
+            defaultValue = "300"
         )
-        private int processingTimeout = 50;
+        private int processingTimeout = 300;
 
-        public String getRpcEndpoint() { return rpcEndpoint; }
+        public List<String> getRpcEndpoints() { return rpcEndpoints; }
         public int getProcessingTimeout() { return processingTimeout; }
+        public int getReadTimeout() { return readTimeout; }
+        public int getWriteTimeout() { return writeTimeout; }
     }
 
     private static CrediblePluginConfiguration config = null;
@@ -108,17 +113,28 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         
     @Override
     public void start() {
-        LOG.info("Starting plugin with connection to RPC {}", config.getRpcEndpoint());
+        LOG.info("Starting plugin with connection to RPC {}: readTimeout {}, writeTimeout {}, processingTimeout {}",
+            String.join(", ", config.getRpcEndpoints()),
+            config.getReadTimeout(),
+            config.getWriteTimeout(),
+            config.getProcessingTimeout()
+        );
 
         serviceManager
             .getService(BesuEvents.class)
             .ifPresentOrElse(this::startEvents, () -> LOG.error("BesuEvents service not available"));
 
-        this.sidecarClient = new SidecarClient.Builder()
-            .baseUrl(config.getRpcEndpoint())
-            .build();
+        List<ISidecarTransport> sidecarClients = config.getRpcEndpoints().stream()
+            .map(endpoint -> new JsonRpcTransport.Builder()
+                    .readTimeout(Duration.ofMillis(config.getReadTimeout()))
+                    .writeTimeout(Duration.ofMillis(config.getWriteTimeout()))
+                    .baseUrl(endpoint)
+                    .build())
+            .collect(Collectors.toList());
 
-        var credibleTxConfig = new CredibleTransactionSelector.Config(this.sidecarClient, config.getProcessingTimeout());
+        strategy = new DefaultSidecarStrategy(sidecarClients, config.getProcessingTimeout());
+
+        var credibleTxConfig = new CredibleTransactionSelector.Config(strategy);
         
         transactionSelectionService.registerPluginTransactionSelectorFactory(
             new CredibleTransactionSelectorFactory(credibleTxConfig)
@@ -179,12 +195,10 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         );
 
         try {
-            Map<String, Object> response = this.sidecarClient.call("sendBlockEnv", blockEnv, new TypeReference<Map<String, Object>>() {});
-                LOG.debug("Sidecar response {}", response);
-            } catch (SidecarClient.JsonRpcException e) {
-                LOG.debug("JsonRpcException for {}: {}: {}", blockHash, e.getMessage(), e.getError());
-            } catch (Exception e) {
-                LOG.error("Error handling sendBlockEnv {}", e.getMessage());
-            }
+            this.strategy.sendBlockEnv(blockEnv);
+            LOG.debug("Block Env sent for {}", blockHash);
+        } catch (Exception e) {
+            LOG.error("Error handling sendBlockEnv {}", e.getMessage());
+        }
     }
 }

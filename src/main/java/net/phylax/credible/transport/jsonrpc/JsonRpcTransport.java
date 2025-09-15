@@ -1,33 +1,52 @@
-package net.phylax.credible;
+package net.phylax.credible.transport.jsonrpc;
 
-import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.*;
-import com.fasterxml.jackson.databind.JavaType;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.json.JsonMapper;
-import com.fasterxml.jackson.databind.cfg.ConstructorDetector;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import okhttp3.*;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JavaType;
+import com.fasterxml.jackson.databind.MapperFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.databind.cfg.ConstructorDetector;
+import com.fasterxml.jackson.databind.json.JsonMapper;
+
+import net.phylax.credible.transport.ISidecarTransport;
+import net.phylax.credible.types.SidecarApiModels.CredibleLayerMethods;
+import net.phylax.credible.types.SidecarApiModels.GetTransactionsResponse;
+import net.phylax.credible.types.SidecarApiModels.ReorgRequest;
+import net.phylax.credible.types.SidecarApiModels.ReorgResponse;
+import net.phylax.credible.types.SidecarApiModels.SendBlockEnvRequest;
+import net.phylax.credible.types.SidecarApiModels.SendBlockEnvResponse;
+import net.phylax.credible.types.SidecarApiModels.SendTransactionsRequest;
+import net.phylax.credible.types.SidecarApiModels.SendTransactionsResponse;
+import okhttp3.Authenticator;
+import okhttp3.ConnectionPool;
+import okhttp3.CookieJar;
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
 
 /**
  * Sidecar JSON RPC client
  * Requires dependencies: okhttp3 and jackson-databind
  */
-public class SidecarClient {
-    private static final Logger LOG = LoggerFactory.getLogger(SidecarClient.class);
+public class JsonRpcTransport implements ISidecarTransport {
+    private static final Logger LOG = LoggerFactory.getLogger(JsonRpcTransport.class);
     
     // JSON RPC Request class
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -160,11 +179,11 @@ public class SidecarClient {
     private final ObjectMapper objectMapper;
     private final String baseUrl;
     
-    public SidecarClient(String baseUrl) {
+    public JsonRpcTransport(String baseUrl) {
         this(baseUrl, createDefaultHttpClient());
     }
     
-    public SidecarClient(String baseUrl, OkHttpClient httpClient) {
+    public JsonRpcTransport(String baseUrl, OkHttpClient httpClient) {
         this.baseUrl = baseUrl;
         this.httpClient = httpClient;
         this.objectMapper = JsonMapper.builder()
@@ -179,9 +198,9 @@ public class SidecarClient {
     private static OkHttpClient createDefaultHttpClient() {
         return new OkHttpClient.Builder()
                 .connectionPool(new ConnectionPool(100, 2, TimeUnit.MINUTES))
-                .connectTimeout(30, TimeUnit.SECONDS)
-                .readTimeout(30, TimeUnit.SECONDS)
-                .writeTimeout(30, TimeUnit.SECONDS)
+                .connectTimeout(5, TimeUnit.SECONDS)
+                .readTimeout(5, TimeUnit.SECONDS)
+                .writeTimeout(5, TimeUnit.SECONDS)
                 .retryOnConnectionFailure(true)
                 .followRedirects(false)
                 .followSslRedirects(false)
@@ -299,12 +318,12 @@ public class SidecarClient {
     }
     
     // Asynchronous call
-    public <T> CompletableFuture<T> callAsync(String method, Object params, TypeReference<T> resultType) {
+    public <T> CompletableFuture<T> callAsync(String method, Object params, TypeReference<T> resultType){
         return CompletableFuture.supplyAsync(() -> {
             try {
                 return call(method, params, resultType);
             } catch (JsonRpcException e) {
-                throw new RuntimeException(e);
+                throw new CompletionException(e);
             }
         });
     }
@@ -315,7 +334,7 @@ public class SidecarClient {
             try {
                 return call(method, params, resultClass);
             } catch (JsonRpcException e) {
-                throw new RuntimeException(e);
+                throw new CompletionException(e);
             }
         });
     }
@@ -395,9 +414,9 @@ public class SidecarClient {
     // Builder pattern for client configuration
     public static class Builder {
         private String baseUrl;
-        private Duration connectTimeout = Duration.ofSeconds(30);
-        private Duration readTimeout = Duration.ofSeconds(30);
-        private Duration writeTimeout = Duration.ofSeconds(30);
+        private Duration connectTimeout = Duration.ofSeconds(5);
+        private Duration readTimeout = Duration.ofSeconds(5);
+        private Duration writeTimeout = Duration.ofSeconds(5);
         private Authenticator authenticator;
         
         public Builder baseUrl(String baseUrl) {
@@ -425,7 +444,7 @@ public class SidecarClient {
             return this;
         }
         
-        public SidecarClient build() {
+        public JsonRpcTransport build() {
             if (baseUrl == null) {
                 throw new IllegalArgumentException("baseUrl is required");
             }
@@ -439,12 +458,48 @@ public class SidecarClient {
                 clientBuilder.authenticator(authenticator);
             }
             
-            return new SidecarClient(baseUrl, clientBuilder.build());
+            return new JsonRpcTransport(baseUrl, clientBuilder.build());
         }
     }
     
     public void close() {
         httpClient.dispatcher().executorService().shutdown();
         httpClient.connectionPool().evictAll();
+    }
+
+    @Override
+    public CompletableFuture<SendBlockEnvResponse> sendBlockEnv(SendBlockEnvRequest blockEnv) {
+        return this.callAsync(
+            CredibleLayerMethods.SEND_BLOCK_ENV, 
+            blockEnv,
+            SendBlockEnvResponse.class
+        );
+    }
+
+    @Override
+    public CompletableFuture<SendTransactionsResponse> sendTransactions(SendTransactionsRequest transactions) {
+        return this.callAsync(
+          CredibleLayerMethods.SEND_TRANSACTIONS, 
+          transactions, 
+          SendTransactionsResponse.class
+        );
+    }
+
+    @Override
+    public CompletableFuture<GetTransactionsResponse> getTransactions(List<String> txHashes) {
+        return this.callAsync(
+            CredibleLayerMethods.GET_TRANSACTIONS,
+            txHashes,
+            GetTransactionsResponse.class
+        );
+    }
+
+    @Override
+    public CompletableFuture<ReorgResponse> sendReorg(ReorgRequest reorgRequest) {
+        return this.callAsync(
+            CredibleLayerMethods.SEND_REORG,
+            reorgRequest,
+            ReorgResponse.class
+        );
     }
 }
