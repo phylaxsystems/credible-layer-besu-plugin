@@ -1,14 +1,11 @@
 package net.phylax.credible.types;
 
-import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.databind.cfg.ConstructorDetector;
 
 import java.util.List;
 import java.util.ArrayList;
-import java.math.BigInteger;
 
 public class SidecarApiModels {
     /**

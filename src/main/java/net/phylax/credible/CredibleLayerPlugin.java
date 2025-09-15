@@ -1,40 +1,30 @@
 package net.phylax.credible;
 
-import static java.util.Collections.emptyList;
-
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
-import java.util.Map;
-import java.time.Duration;
-import java.util.Arrays;
-import com.fasterxml.jackson.databind.MappingIterator;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SequenceWriter;
-import com.fasterxml.jackson.databind.module.SimpleModule;
-import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.google.auto.service.AutoService;
-import org.hyperledger.besu.datatypes.Hash;
-import org.hyperledger.besu.ethereum.core.Transaction;
-import org.hyperledger.besu.plugin.data.AddedBlockContext;
-import org.hyperledger.besu.plugin.services.BesuEvents;
-import org.hyperledger.besu.plugin.services.BesuService;
-import org.hyperledger.besu.plugin.services.BlockchainService;
-import org.hyperledger.besu.plugin.services.TransactionSelectionService;
-import org.hyperledger.besu.plugin.services.TransactionSimulationService;
+
 import org.hyperledger.besu.plugin.BesuPlugin;
 import org.hyperledger.besu.plugin.ServiceManager;
+import org.hyperledger.besu.plugin.data.AddedBlockContext;
+import org.hyperledger.besu.plugin.services.BesuEvents;
 import org.hyperledger.besu.plugin.services.PicoCLIOptions;
+import org.hyperledger.besu.plugin.services.TransactionSelectionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import picocli.CommandLine;
-import net.phylax.credible.transport.jsonrpc.JsonRpcTransport;
-import net.phylax.credible.types.SidecarApiModels.*;
-import net.phylax.credible.txselection.*;
-import net.phylax.credible.strategy.ISidecarStrategy;
+
+import com.google.auto.service.AutoService;
+
 import net.phylax.credible.strategy.DefaultSidecarStrategy;
+import net.phylax.credible.strategy.ISidecarStrategy;
 import net.phylax.credible.transport.ISidecarTransport;
+import net.phylax.credible.transport.jsonrpc.JsonRpcTransport;
+import net.phylax.credible.txselection.CredibleTransactionSelector;
+import net.phylax.credible.txselection.CredibleTransactionSelectorFactory;
+import net.phylax.credible.types.SidecarApiModels.BlobExcessGasAndPrice;
+import net.phylax.credible.types.SidecarApiModels.SendBlockEnvRequest;
+import picocli.CommandLine;
 
 /**
  * Plugin for sending BlockEnv to the Credible Layer sidecar

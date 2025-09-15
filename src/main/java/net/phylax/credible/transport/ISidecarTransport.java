@@ -2,6 +2,7 @@ package net.phylax.credible.transport;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+
 import net.phylax.credible.types.SidecarApiModels.*;
 
 public interface ISidecarTransport {

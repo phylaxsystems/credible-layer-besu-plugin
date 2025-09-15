@@ -1,30 +1,45 @@
 package net.phylax.credible.transport.jsonrpc;
 
-import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.*;
-import com.fasterxml.jackson.databind.JavaType;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.json.JsonMapper;
-import com.fasterxml.jackson.databind.cfg.ConstructorDetector;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import okhttp3.*;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.TimeUnit;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JavaType;
+import com.fasterxml.jackson.databind.MapperFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.databind.cfg.ConstructorDetector;
+import com.fasterxml.jackson.databind.json.JsonMapper;
 
 import net.phylax.credible.transport.ISidecarTransport;
-import net.phylax.credible.types.SidecarApiModels.*;
+import net.phylax.credible.types.SidecarApiModels.CredibleLayerMethods;
+import net.phylax.credible.types.SidecarApiModels.GetTransactionsResponse;
+import net.phylax.credible.types.SidecarApiModels.ReorgRequest;
+import net.phylax.credible.types.SidecarApiModels.ReorgResponse;
+import net.phylax.credible.types.SidecarApiModels.SendBlockEnvRequest;
+import net.phylax.credible.types.SidecarApiModels.SendBlockEnvResponse;
+import net.phylax.credible.types.SidecarApiModels.SendTransactionsRequest;
+import net.phylax.credible.types.SidecarApiModels.SendTransactionsResponse;
+import okhttp3.Authenticator;
+import okhttp3.ConnectionPool;
+import okhttp3.CookieJar;
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
 
 /**
  * Sidecar JSON RPC client

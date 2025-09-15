@@ -3,3 +3,5 @@ build/
 libs/besu/build/
 libs/besu/.gradle/
 .idea/*
+bin/
+.vscode/

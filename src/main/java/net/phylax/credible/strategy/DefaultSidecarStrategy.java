@@ -1,25 +1,34 @@
 package net.phylax.credible.strategy;
 
-import java.util.List;
 import java.util.ArrayList;
-import java.util.stream.Collectors;
 import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 import net.phylax.credible.transport.ISidecarTransport;
-import net.phylax.credible.types.SidecarApiModels.*;
+import net.phylax.credible.types.SidecarApiModels.GetTransactionsResponse;
+import net.phylax.credible.types.SidecarApiModels.ReorgRequest;
+import net.phylax.credible.types.SidecarApiModels.ReorgResponse;
+import net.phylax.credible.types.SidecarApiModels.SendBlockEnvRequest;
+import net.phylax.credible.types.SidecarApiModels.SendTransactionsRequest;
+import net.phylax.credible.types.SidecarApiModels.TransactionResult;
 
 public class DefaultSidecarStrategy implements ISidecarStrategy {
     private static final Logger LOG = LoggerFactory.getLogger(DefaultSidecarStrategy.class);
 
     private List<ISidecarTransport> transports = new ArrayList<>();
     private List<ISidecarTransport> activeTransports = new CopyOnWriteArrayList<>();
+    private final Map<String, List<CompletableFuture<GetTransactionsResponse>>> pendingTxRequests = 
+        new ConcurrentHashMap<>();
     private int processingTimeout;
 
     public static class TransportResponse {
@@ -88,7 +97,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
     
     @Override
     public List<CompletableFuture<GetTransactionsResponse>> dispatchTransactions(
-            SendTransactionsRequest sendTxRequest) {
+        SendTransactionsRequest sendTxRequest) {
         
         if (activeTransports.isEmpty()) {
             LOG.warn("Active sidecars empty");
@@ -115,19 +124,46 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
             .map(tx -> tx.getHash())
             .collect(Collectors.toList());
 
+        // Each future in the List holds a response from a single transport
         List<CompletableFuture<GetTransactionsResponse>> futures = activeTransports.stream()
-            .map(transport -> getTransactionsFromTransport(transport, hashes))
+            .map(transport -> transport.getTransactions(hashes))
             .collect(Collectors.toList());
+
+        // NOTE: making the assumption that it's only 1 transaction per request
+        // which is implied with the TransactionSelectionPlugin
+        pendingTxRequests.put(hashes.get(0), futures);
         
         return futures;
     }
     
-    private CompletableFuture<GetTransactionsResponse> getTransactionsFromTransport(ISidecarTransport transport, List<String> txHashes) {
+    @Override
+    public GetTransactionsResponse getTransactionResults(List<String> txHashes) {
+        var results = new ArrayList<TransactionResult>();
+        var response = new GetTransactionsResponse(results, Collections.emptyList());
+        for (String txHash : txHashes) {
+            List<CompletableFuture<GetTransactionsResponse>> futures = pendingTxRequests.remove(txHash);
+            if (futures == null || futures.isEmpty()) {
+                LOG.debug("No pending request found for transaction {}", txHash);
+                continue;
+            }
+            var txResponse = handleTransactionFuture(futures);
+
+            if (txResponse != null) {
+                results.addAll(txResponse.getResults());
+            }
+        }
+        return response;
+    }
+
+    private GetTransactionsResponse handleTransactionFuture(List<CompletableFuture<GetTransactionsResponse>> futures) {
         long startTime = System.currentTimeMillis();
-        return transport.getTransactions(txHashes)
+
+        CompletableFuture<GetTransactionsResponse> anySuccess = CompletableFuture.anyOf(futures.toArray(new CompletableFuture[0]))
             .thenApply(result -> {
-                long latency = System.currentTimeMillis() - startTime;
-                return result;
+                if (result instanceof GetTransactionsResponse) {
+                    return (GetTransactionsResponse) result;
+                }
+                return null;
             })
             .orTimeout(processingTimeout, TimeUnit.MILLISECONDS)
             .exceptionally(ex -> {
@@ -137,35 +173,20 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                     latency, ex.getMessage());
                 return null;
             });
-    }
-    
-    @Override
-    public List<TransactionResult> handleTransportResponses(List<CompletableFuture<GetTransactionsResponse>> futures) {
-        if (futures.isEmpty()) {
-            return Collections.emptyList();
-        }
-        
-        CompletableFuture<GetTransactionsResponse> anySuccess = CompletableFuture.anyOf(futures.toArray(new CompletableFuture[0]))
-            .thenApply(result -> {
-                if (result instanceof GetTransactionsResponse) {
-                    return (GetTransactionsResponse) result;
-                }
-                return null;
-            });
         
         try {
             GetTransactionsResponse response = anySuccess.get();
             
             if (response == null || response.getResults() == null || response.getResults().isEmpty()) {
                 LOG.debug("No valid results from sidecar");
-                return Collections.emptyList();
+                return null;
             }
             
             LOG.debug("GetTransactionsResponse successfully handled: {}", response.getResults().get(0).getHash());
-            return response.getResults();
+            return response;
         } catch (InterruptedException | ExecutionException e) {
             LOG.debug("Exception waiting for sidecar responses: {}", e.getMessage());
-            return Collections.emptyList();
+            return null;
         }
     }
 
