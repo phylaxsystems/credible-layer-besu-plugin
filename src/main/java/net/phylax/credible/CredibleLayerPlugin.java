@@ -9,13 +9,17 @@ import org.hyperledger.besu.plugin.BesuPlugin;
 import org.hyperledger.besu.plugin.ServiceManager;
 import org.hyperledger.besu.plugin.data.AddedBlockContext;
 import org.hyperledger.besu.plugin.services.BesuEvents;
+import org.hyperledger.besu.plugin.services.MetricsSystem;
 import org.hyperledger.besu.plugin.services.PicoCLIOptions;
 import org.hyperledger.besu.plugin.services.TransactionSelectionService;
+import org.hyperledger.besu.plugin.services.metrics.MetricCategoryRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.google.auto.service.AutoService;
 
+import net.phylax.credible.metrics.CredibleMetricCategory;
+import net.phylax.credible.metrics.CredibleMetrics;
 import net.phylax.credible.strategy.DefaultSidecarStrategy;
 import net.phylax.credible.strategy.ISidecarStrategy;
 import net.phylax.credible.transport.ISidecarTransport;
@@ -35,9 +39,9 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
     private static final String PLUGIN_NAME = "credible-sidecar";
 
     private ServiceManager serviceManager;
-    private BesuEvents besuEvents;
     private TransactionSelectionService transactionSelectionService;
     private ISidecarStrategy strategy;
+    private CredibleMetrics metrics;
     
     
     @CommandLine.Command(
@@ -106,6 +110,26 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
                         new RuntimeException(
                             "Failed to obtain TransactionSelectionService from the ServiceManager."));
             
+        metrics =
+            serviceManager
+                .getService(MetricCategoryRegistry.class)
+                .map(
+                    registry -> {
+                        registry.addMetricCategory(CredibleMetricCategory.SIDE_CAR);
+                        MetricsSystem metricsSystem =
+                            serviceManager
+                                .getService(MetricsSystem.class)
+                                .orElseThrow(
+                                    () ->
+                                        new RuntimeException(
+                                            "Failed to obtain MetricsSystem from the ServiceManager."));
+                        return new CredibleMetrics(metricsSystem);
+                    })
+                .orElseThrow(
+                    () ->
+                        new RuntimeException(
+                            "Failed to obtain MetricCategoryRegistry from the ServiceManager."));
+        
         // Register CLI options
         Optional<PicoCLIOptions> cmdlineOptions = serviceManager.getService(PicoCLIOptions.class);
         if (cmdlineOptions.isPresent()) {
@@ -122,8 +146,11 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         
     @Override
     public void start() {
+        var rpcEndpoints = Optional.ofNullable(config.getRpcEndpoints()).orElse(List.of());
+        var fallbackEndpoints = Optional.ofNullable(config.getFallbackEndpoints()).orElse(List.of());
+
         LOG.info("Starting plugin with connection to RPC {}: readTimeout {}, writeTimeout {}, processingTimeout {}",
-            String.join(", ", config.getRpcEndpoints()),
+            String.join(", ", rpcEndpoints),
             config.getReadTimeout(),
             config.getWriteTimeout(),
             config.getProcessingTimeout()
@@ -133,7 +160,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
             .getService(BesuEvents.class)
             .ifPresentOrElse(this::startEvents, () -> LOG.error("BesuEvents service not available"));
 
-        List<ISidecarTransport> primaryTransports = config.getRpcEndpoints().stream()
+        List<ISidecarTransport> primaryTransports = rpcEndpoints.stream()
             .map(endpoint -> new JsonRpcTransport.Builder()
                     .readTimeout(Duration.ofMillis(config.getReadTimeout()))
                     .writeTimeout(Duration.ofMillis(config.getWriteTimeout()))
@@ -141,7 +168,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
                     .build())
             .collect(Collectors.toList());
 
-        List<ISidecarTransport> fallbackTransports = config.getFallbackEndpoints().stream()
+        List<ISidecarTransport> fallbackTransports = fallbackEndpoints.stream()
             .map(endpoint -> new JsonRpcTransport.Builder()
                     .readTimeout(Duration.ofMillis(config.getReadTimeout()))
                     .writeTimeout(Duration.ofMillis(config.getWriteTimeout()))
@@ -149,9 +176,9 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
                     .build())
             .collect(Collectors.toList());
 
-        strategy = new DefaultSidecarStrategy(primaryTransports, fallbackTransports, config.getProcessingTimeout());
+        strategy = new DefaultSidecarStrategy(primaryTransports, fallbackTransports, config.getProcessingTimeout(), metrics);
 
-        var credibleTxConfig = new CredibleTransactionSelector.Config(strategy);
+        var credibleTxConfig = new CredibleTransactionSelector.Config(strategy, metrics);
         
         transactionSelectionService.registerPluginTransactionSelectorFactory(
             new CredibleTransactionSelectorFactory(credibleTxConfig)

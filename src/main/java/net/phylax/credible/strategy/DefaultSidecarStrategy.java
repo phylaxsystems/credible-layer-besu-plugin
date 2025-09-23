@@ -14,6 +14,7 @@ import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import net.phylax.credible.metrics.CredibleMetrics;
 import net.phylax.credible.transport.ISidecarTransport;
 import net.phylax.credible.types.SidecarApiModels.GetTransactionsResponse;
 import net.phylax.credible.types.SidecarApiModels.ReorgRequest;
@@ -31,6 +32,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
 
     private final Map<String, List<CompletableFuture<GetTransactionsResponse>>> pendingTxRequests = 
         new ConcurrentHashMap<>();
+    private final CredibleMetrics metrics;
     private int processingTimeout;
 
     public static class TransportResponse {
@@ -52,11 +54,18 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         public long getLatencyMs() { return latencyMs; }
     }
 
-    public DefaultSidecarStrategy(List<ISidecarTransport> primaryTransports, List<ISidecarTransport> fallbackTransports, int processingTimeout) {
+    public DefaultSidecarStrategy(
+        List<ISidecarTransport> primaryTransports,
+        List<ISidecarTransport> fallbackTransports,
+        int processingTimeout,
+        CredibleMetrics metrics) {
         this.primaryTransports = primaryTransports;
         this.activeTransports = new CopyOnWriteArrayList<>();
         this.fallbackTransports = fallbackTransports;
         this.processingTimeout = processingTimeout;
+        this.metrics = metrics;
+        this.metrics.registerActiveTransportsGauge(() -> activeTransports.size());
+        this.metrics.registerPendingRequestsGauge(() -> pendingTxRequests.size());
     }
     
     @Override
@@ -113,18 +122,22 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
     }
     
     private CompletableFuture<TransportResponse> sendBlockEnvToTransport(SendBlockEnvRequest blockEnv, ISidecarTransport transport) {
-        long startTime = System.currentTimeMillis();
+        long startTime = System.nanoTime();
         
         return transport.sendBlockEnv(blockEnv)
             .thenApply(voidResult -> {
-                long latency = System.currentTimeMillis() - startTime;
+                long latencyNanos = System.nanoTime() - startTime;
+                metrics.recordSidecarRpc("sendBlockEnv", true, latencyNanos);
+                long latency = TimeUnit.NANOSECONDS.toMillis(latencyNanos);
                 return new TransportResponse(transport, true, "Success", latency);
             })
             .exceptionally(ex -> {
                 LOG.debug("SendBlockEnv error: {} - {}",
                     ex.getMessage(),
                     ex.getCause() != null ? ex.getCause().getMessage() : "");
-                long latency = System.currentTimeMillis() - startTime;
+                long latencyNanos = System.nanoTime() - startTime;
+                metrics.recordSidecarRpc("sendBlockEnv", false, latencyNanos);
+                long latency = TimeUnit.NANOSECONDS.toMillis(latencyNanos);
                 return new TransportResponse(transport, false, ex.getMessage(), latency);
             });
     }
@@ -140,12 +153,15 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         
         // Calls sendTransactions on all active transports in parallel and awaits them
         activeTransports.parallelStream().forEach(transport -> {
+            final long startTime = System.nanoTime();
             transport.sendTransactions(sendTxRequest).whenComplete((result, ex) -> {
+                long latencyNanos = System.nanoTime() - startTime;
+                metrics.recordSidecarRpc("sendTransactions", ex == null, latencyNanos);
                 if (ex != null) {
                     // TODO: what to do with the transport?
                     LOG.debug("SendTransactions error: {} - {}",
-                    ex.getMessage(),
-                    ex.getCause() != null ? ex.getCause().getMessage() : "");
+                        ex.getMessage(),
+                        ex.getCause() != null ? ex.getCause().getMessage() : "");
                 } else {
                     LOG.debug("SendTransactions response: count - {}, message - {}", 
                         result.getRequestCount(), 
@@ -160,7 +176,19 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
 
         // Each future in the List holds a response from a single transport
         List<CompletableFuture<GetTransactionsResponse>> futures = activeTransports.stream()
-            .map(transport -> transport.getTransactions(hashes))
+            .map(transport -> {
+                final long startTime = System.nanoTime();
+                return transport.getTransactions(hashes)
+                    .whenComplete((result, ex) -> {
+                        long latencyNanos = System.nanoTime() - startTime;
+                        metrics.recordSidecarRpc("getTransactions", ex == null, latencyNanos);
+                        if (ex != null) {
+                            LOG.debug("getTransactions error: {} - {}",
+                                ex.getMessage(),
+                                ex.getCause() != null ? ex.getCause().getMessage() : "");
+                        }
+                    });
+            })
             .collect(Collectors.toList());
 
         // NOTE: making the assumption that it's only 1 transaction per request
@@ -190,7 +218,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
     }
 
     private GetTransactionsResponse handleTransactionFuture(List<CompletableFuture<GetTransactionsResponse>> futures) {
-        long startTime = System.currentTimeMillis();
+        long startTime = System.nanoTime();
 
         CompletableFuture<GetTransactionsResponse> anySuccess = CompletableFuture.anyOf(futures.toArray(new CompletableFuture[0]))
             .thenApply(result -> {
@@ -201,8 +229,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
             })
             .orTimeout(processingTimeout, TimeUnit.MILLISECONDS)
             .exceptionally(ex -> {
-                // TODO: what to do with the transport?
-                long latency = System.currentTimeMillis() - startTime;
+                long latency = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startTime);
                 LOG.debug("Timeout or error getting transactions: latency {} -{}", 
                     latency, ex.getMessage());
                 return null;
@@ -229,8 +256,22 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         List<ReorgResponse> successfulResponses = new ArrayList<>();
     
         for (ISidecarTransport transport : activeTransports) {
+            final long startTime = System.nanoTime();
             try {
-                ReorgResponse response = transport.sendReorg(reorgRequest).join();
+                ReorgResponse response =
+                    transport
+                        .sendReorg(reorgRequest)
+                        .whenComplete((result, ex) -> {
+                            long latencyNanos = System.nanoTime() - startTime;
+                            metrics.recordSidecarRpc("sendReorg", ex == null, latencyNanos);
+                            if (ex != null) {
+                                LOG.debug(
+                                    "sendReorg error: {} - {}",
+                                    ex.getMessage(),
+                                    ex.getCause() != null ? ex.getCause().getMessage() : "");
+                            }
+                        })
+                        .join();
                 successfulResponses.add(response);
             } catch (Exception e) {
                 // TODO: what to do with the transport?

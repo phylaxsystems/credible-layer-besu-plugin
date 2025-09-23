@@ -10,6 +10,7 @@ import org.hyperledger.besu.plugin.services.txselection.TransactionEvaluationCon
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import net.phylax.credible.metrics.CredibleMetrics;
 import net.phylax.credible.strategy.ISidecarStrategy;
 import net.phylax.credible.types.SidecarApiModels.*;
 import net.phylax.credible.types.TransactionConverter;
@@ -18,26 +19,36 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
   private static final Logger LOG = LoggerFactory.getLogger(CredibleTransactionSelector.class);
 
   public static class Config {
-    private ISidecarStrategy strategy;
+    private final ISidecarStrategy strategy;
+    private final CredibleMetrics metrics;
 
-    public Config(ISidecarStrategy strategy) {
+    public Config(ISidecarStrategy strategy, CredibleMetrics metrics) {
       this.strategy = strategy;
+      this.metrics = metrics;
     }
 
     public ISidecarStrategy getStrategy() {
       return strategy;
     }
+
+    public CredibleMetrics getMetrics() {
+      return metrics;
+    }
   }
 
   private final Config config;
+  private final CredibleMetrics metrics;
 
   public CredibleTransactionSelector(final Config config) {
     this.config = config;
+    this.metrics = config.getMetrics();
   }
 
   @Override
   public TransactionSelectionResult evaluateTransactionPreProcessing(
       final TransactionEvaluationContext txContext) {
+    metrics.recordTxPreProcessing();
+
     var tx = txContext.getPendingTransaction().getTransaction();
     String txHash = tx.getHash().toHexString();
 
@@ -49,7 +60,7 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
         SendTransactionsRequest sendRequest = new SendTransactionsRequest();
         sendRequest.setTransactions(List.of(new TransactionWithHash(txEnv, txHash)));
 
-        config.strategy.dispatchTransactions(sendRequest);
+        config.getStrategy().dispatchTransactions(sendRequest);
         
         LOG.debug("Started async transaction processing for {}", txHash);
     } catch (Exception e) {
@@ -69,7 +80,7 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
     try {
         LOG.debug("Awaiting result for {}", txHash);
         
-        GetTransactionsResponse txResponse = config.strategy.getTransactionResults(Arrays.asList(txHash));
+        GetTransactionsResponse txResponse = config.getStrategy().getTransactionResults(Arrays.asList(txHash));
 
         if (txResponse == null ||
             txResponse.getResults() == null ||
@@ -87,6 +98,7 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
             if (TransactionStatus.ASSERTION_FAILED.equals(status) || 
                   TransactionStatus.FAILED.equals(status)) {
                   LOG.info("Transaction {} excluded due to status: {}", txHash, status);
+                  metrics.recordTxPostExclusion(status);
                   // TODO: maybe return a more appropriate status
                   return TransactionSelectionResult.invalid("TX rejected by sidecar");
               } else {
@@ -106,6 +118,8 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
       final TransactionEvaluationContext evaluationContext,
       final TransactionSelectionResult transactionSelectionResult) {
 
+    metrics.recordReorgRequest();
+
     var transaction = evaluationContext.getPendingTransaction().getTransaction();
     String txHash = transaction.getHash().toHexString();
     String reason = transactionSelectionResult.toString();
@@ -115,7 +129,7 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
 
         // Create reorg request with the transaction hash
         ReorgRequest reorgRequest = new ReorgRequest(txHash);
-        var reorgResponses = config.strategy.sendReorgRequest(reorgRequest);
+        var reorgResponses = config.getStrategy().sendReorgRequest(reorgRequest);
 
         LOG.debug("Reorg request successful for transaction {}, got {} responses", txHash, reorgResponses.size());
     } catch (Exception e) {
