@@ -9,13 +9,17 @@ import org.hyperledger.besu.plugin.BesuPlugin;
 import org.hyperledger.besu.plugin.ServiceManager;
 import org.hyperledger.besu.plugin.data.AddedBlockContext;
 import org.hyperledger.besu.plugin.services.BesuEvents;
+import org.hyperledger.besu.plugin.services.MetricsSystem;
 import org.hyperledger.besu.plugin.services.PicoCLIOptions;
 import org.hyperledger.besu.plugin.services.TransactionSelectionService;
+import org.hyperledger.besu.plugin.services.metrics.MetricCategoryRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.google.auto.service.AutoService;
 
+import net.phylax.credible.metrics.CredibleMetricsCategory;
+import net.phylax.credible.metrics.CredibleMetricsRegistry;
 import net.phylax.credible.strategy.DefaultSidecarStrategy;
 import net.phylax.credible.strategy.ISidecarStrategy;
 import net.phylax.credible.transport.ISidecarTransport;
@@ -36,9 +40,11 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
 
     private ServiceManager serviceManager;
     private BesuEvents besuEvents;
+    private MetricsSystem metricsSystem;
     private TransactionSelectionService transactionSelectionService;
     private ISidecarStrategy strategy;
-    
+
+    private CredibleMetricsRegistry metricsRegistry;
     
     @CommandLine.Command(
         name = PLUGIN_NAME,
@@ -105,6 +111,13 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
                     () ->
                         new RuntimeException(
                             "Failed to obtain TransactionSelectionService from the ServiceManager."));
+
+        // Register metrics category
+        var metricsCategoryRegistry = serviceManager.getService(MetricCategoryRegistry.class)
+                .orElseThrow(
+                    () -> 
+                        new RuntimeException("Failed to obtain MetricCategoryRegistry from the ServiceManager."));
+        metricsCategoryRegistry.addMetricCategory(CredibleMetricsCategory.PLUGIN);
             
         // Register CLI options
         Optional<PicoCLIOptions> cmdlineOptions = serviceManager.getService(PicoCLIOptions.class);
@@ -113,8 +126,9 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
             LOG.info("CLI options are available");
         } else {
             LOG.error("PicoCLI not available");
-        } 
+        }
     }
+
 
     public static Optional<CrediblePluginConfiguration> pluginConfiguration() {
         return config == null ? Optional.empty() : Optional.of(config);
@@ -133,6 +147,14 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
             .getService(BesuEvents.class)
             .ifPresentOrElse(this::startEvents, () -> LOG.error("BesuEvents service not available"));
 
+        // Initialize the metrics system
+        this.metricsSystem = serviceManager.getService(MetricsSystem.class)
+            .orElseThrow(
+                () -> 
+                    new RuntimeException("Failed to obtain MetricsSystem from the ServiceManager."));
+        
+        metricsRegistry = new CredibleMetricsRegistry(metricsSystem);
+
         List<ISidecarTransport> primaryTransports = config.getRpcEndpoints().stream()
             .map(endpoint -> new JsonRpcTransport.Builder()
                     .readTimeout(Duration.ofMillis(config.getReadTimeout()))
@@ -149,12 +171,12 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
                     .build())
             .collect(Collectors.toList());
 
-        strategy = new DefaultSidecarStrategy(primaryTransports, fallbackTransports, config.getProcessingTimeout());
+        strategy = new DefaultSidecarStrategy(primaryTransports, fallbackTransports, config.getProcessingTimeout(), metricsRegistry);
 
         var credibleTxConfig = new CredibleTransactionSelector.Config(strategy);
         
         transactionSelectionService.registerPluginTransactionSelectorFactory(
-            new CredibleTransactionSelectorFactory(credibleTxConfig)
+            new CredibleTransactionSelectorFactory(credibleTxConfig, metricsRegistry)
         );
     }
 

@@ -10,6 +10,7 @@ import org.hyperledger.besu.plugin.services.txselection.TransactionEvaluationCon
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import net.phylax.credible.metrics.CredibleMetricsRegistry;
 import net.phylax.credible.strategy.ISidecarStrategy;
 import net.phylax.credible.types.SidecarApiModels.*;
 import net.phylax.credible.types.TransactionConverter;
@@ -30,14 +31,19 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
   }
 
   private final Config config;
+  private final CredibleMetricsRegistry metricsRegistry;
 
-  public CredibleTransactionSelector(final Config config) {
+  public CredibleTransactionSelector(final Config config, final CredibleMetricsRegistry metricsRegistry) {
     this.config = config;
+    this.metricsRegistry = metricsRegistry;
   }
 
   @Override
   public TransactionSelectionResult evaluateTransactionPreProcessing(
       final TransactionEvaluationContext txContext) {
+    var timing = metricsRegistry.getPreProcessingTimer().labels().startTimer();
+    metricsRegistry.getTransactionCounter().labels().inc();
+
     var tx = txContext.getPendingTransaction().getTransaction();
     String txHash = tx.getHash().toHexString();
 
@@ -54,6 +60,8 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
         LOG.debug("Started async transaction processing for {}", txHash);
     } catch (Exception e) {
         LOG.error("Error in transaction preprocessing for {}: {}", txHash, e.getMessage());
+    } finally {
+        timing.stopTimer();
     }
     
     return TransactionSelectionResult.SELECTED;
@@ -63,6 +71,8 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
   public TransactionSelectionResult evaluateTransactionPostProcessing(
       final TransactionEvaluationContext txContext,
       final TransactionProcessingResult transactionProcessingResult) {
+    var timing = metricsRegistry.getPostProcessingTimer().labels().startTimer();
+
     var tx = txContext.getPendingTransaction().getTransaction();
     String txHash = tx.getHash().toHexString();
     
@@ -87,6 +97,7 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
             if (TransactionStatus.ASSERTION_FAILED.equals(status) || 
                   TransactionStatus.FAILED.equals(status)) {
                   LOG.info("Transaction {} excluded due to status: {}", txHash, status);
+                  metricsRegistry.getInvalidationCounter().labels().inc();
                   // TODO: maybe return a more appropriate status
                   return TransactionSelectionResult.invalid("TX rejected by sidecar");
               } else {
@@ -98,6 +109,8 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
     } catch (Exception e) {
         LOG.error("Error in transaction postprocessing for {}: {}", txHash, e.getMessage());
         return TransactionSelectionResult.SELECTED;
+    } finally {
+        timing.stopTimer();
     }
   }
 

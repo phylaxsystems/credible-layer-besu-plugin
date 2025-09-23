@@ -9,11 +9,13 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import net.phylax.credible.metrics.CredibleMetricsRegistry;
 import net.phylax.credible.transport.ISidecarTransport;
 import net.phylax.credible.types.SidecarApiModels.GetTransactionsResponse;
 import net.phylax.credible.types.SidecarApiModels.ReorgRequest;
@@ -31,7 +33,10 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
 
     private final Map<String, List<CompletableFuture<GetTransactionsResponse>>> pendingTxRequests = 
         new ConcurrentHashMap<>();
+    // private final Map<String, TimingContext> pollingTimings = new HashMap<>();
+
     private int processingTimeout;
+    private final CredibleMetricsRegistry metricsRegistry;
 
     public static class TransportResponse {
         private final ISidecarTransport transport;
@@ -52,11 +57,16 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         public long getLatencyMs() { return latencyMs; }
     }
 
-    public DefaultSidecarStrategy(List<ISidecarTransport> primaryTransports, List<ISidecarTransport> fallbackTransports, int processingTimeout) {
+    public DefaultSidecarStrategy(
+        List<ISidecarTransport> primaryTransports,
+        List<ISidecarTransport> fallbackTransports,
+        int processingTimeout,
+        final CredibleMetricsRegistry metricsRegistry) {
         this.primaryTransports = primaryTransports;
         this.activeTransports = new CopyOnWriteArrayList<>();
         this.fallbackTransports = fallbackTransports;
         this.processingTimeout = processingTimeout;
+        this.metricsRegistry = metricsRegistry;
     }
     
     @Override
@@ -109,12 +119,14 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         pendingTxRequests.clear();
         activeTransports.clear();
         activeTransports.addAll(successfulTransports);
+        metricsRegistry.registerActiveTransportsGauge(successfulTransports::size);
         LOG.debug("Updated active sidecars - count {}", successfulTransports.size());
     }
     
     private CompletableFuture<TransportResponse> sendBlockEnvToTransport(SendBlockEnvRequest blockEnv, ISidecarTransport transport) {
         long startTime = System.currentTimeMillis();
         
+        metricsRegistry.getSidecarRpcCounter().labels("sendBlockEnv").inc();
         return transport.sendBlockEnv(blockEnv)
             .thenApply(voidResult -> {
                 long latency = System.currentTimeMillis() - startTime;
@@ -124,6 +136,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                 LOG.debug("SendBlockEnv error: {} - {}",
                     ex.getMessage(),
                     ex.getCause() != null ? ex.getCause().getMessage() : "");
+                metricsRegistry.getErrorCounter().labels().inc();
                 long latency = System.currentTimeMillis() - startTime;
                 return new TransportResponse(transport, false, ex.getMessage(), latency);
             });
@@ -140,12 +153,14 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         
         // Calls sendTransactions on all active transports in parallel and awaits them
         activeTransports.parallelStream().forEach(transport -> {
+            metricsRegistry.getSidecarRpcCounter().labels("sendTransactions").inc();
             transport.sendTransactions(sendTxRequest).whenComplete((result, ex) -> {
                 if (ex != null) {
                     // TODO: what to do with the transport?
                     LOG.debug("SendTransactions error: {} - {}",
                     ex.getMessage(),
                     ex.getCause() != null ? ex.getCause().getMessage() : "");
+                    metricsRegistry.getErrorCounter().labels().inc();
                 } else {
                     LOG.debug("SendTransactions response: count - {}, message - {}", 
                         result.getRequestCount(), 
@@ -160,7 +175,14 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
 
         // Each future in the List holds a response from a single transport
         List<CompletableFuture<GetTransactionsResponse>> futures = activeTransports.stream()
-            .map(transport -> transport.getTransactions(hashes))
+            .map(transport -> {
+                var timing = metricsRegistry.getPollingTimer().labels().startTimer();
+                metricsRegistry.getSidecarRpcCounter().labels("getTransactions").inc();
+                return transport.getTransactions(hashes)
+                    .whenComplete((response, throwable) -> {
+                        timing.stopTimer();
+                    });
+            })
             .collect(Collectors.toList());
 
         // NOTE: making the assumption that it's only 1 transaction per request
@@ -205,6 +227,9 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                 long latency = System.currentTimeMillis() - startTime;
                 LOG.debug("Timeout or error getting transactions: latency {} -{}", 
                     latency, ex.getMessage());
+                if (ex instanceof TimeoutException) {
+                    metricsRegistry.getTimeoutCounter().labels().inc();
+                }
                 return null;
             });
         
@@ -220,6 +245,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
             return response;
         } catch (InterruptedException | ExecutionException e) {
             LOG.debug("Exception waiting for sidecar responses: {}", e.getMessage());
+            metricsRegistry.getErrorCounter().labels().inc();
             return null;
         }
     }
@@ -232,10 +258,12 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
             try {
                 ReorgResponse response = transport.sendReorg(reorgRequest).join();
                 successfulResponses.add(response);
+                metricsRegistry.getReorgRequestCounter().labels().inc();
             } catch (Exception e) {
                 // TODO: what to do with the transport?
                 LOG.debug("Exception sending reorg request to transport {}: {}", 
                     transport.toString(), e.getMessage());
+                metricsRegistry.getErrorCounter().labels().inc();
             }
         }
         
