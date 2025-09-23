@@ -281,7 +281,7 @@ public class JsonRpcTransport implements ISidecarTransport {
             JsonRpcRequest request = new JsonRpcRequest(method, params, requestId);
             
             String requestJson = objectMapper.writeValueAsString(request);
-            LOG.trace("Request ID: {}, body: {}", requestId, requestJson);
+            LOG.trace("Request ID: {}, body: {}, url: {}", requestId, requestJson, baseUrl);
 
             RequestBody body = RequestBody.create(requestJson, JSON);
             
@@ -301,7 +301,7 @@ public class JsonRpcTransport implements ISidecarTransport {
                 }
                 
                 String responseBody = response.body().string();
-                LOG.trace("Response ID: {}, body: {}", requestId, responseBody);
+                LOG.trace("Response ID: {}, body: {}, url: {}", requestId, responseBody, baseUrl);
                 
                 // Create JavaType for Class-based result type
                 JavaType responseType = objectMapper.getTypeFactory()
