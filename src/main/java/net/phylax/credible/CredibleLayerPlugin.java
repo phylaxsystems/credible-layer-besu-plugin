@@ -55,6 +55,14 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         private List<String> rpcEndpoints;
 
         @CommandLine.Option(
+            names = {"--plugin-credible-sidecar-rpc-fallback-endpoints"},
+            description = "List of fallback RPC endpoints",
+            paramLabel = "<url>",
+            split = ","
+        )
+        private List<String> fallbackEndpoints;
+
+        @CommandLine.Option(
             names = {"--plugin-credible-sidecar-read-timeout-ms"},
             description = "Request timeout in ms for any request to the Sidecar RPC",
             defaultValue = "800"
@@ -76,6 +84,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         private int processingTimeout = 300;
 
         public List<String> getRpcEndpoints() { return rpcEndpoints; }
+        public List<String> getFallbackEndpoints() { return fallbackEndpoints; }
         public int getProcessingTimeout() { return processingTimeout; }
         public int getReadTimeout() { return readTimeout; }
         public int getWriteTimeout() { return writeTimeout; }
@@ -124,7 +133,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
             .getService(BesuEvents.class)
             .ifPresentOrElse(this::startEvents, () -> LOG.error("BesuEvents service not available"));
 
-        List<ISidecarTransport> sidecarClients = config.getRpcEndpoints().stream()
+        List<ISidecarTransport> primaryTransports = config.getRpcEndpoints().stream()
             .map(endpoint -> new JsonRpcTransport.Builder()
                     .readTimeout(Duration.ofMillis(config.getReadTimeout()))
                     .writeTimeout(Duration.ofMillis(config.getWriteTimeout()))
@@ -132,7 +141,15 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
                     .build())
             .collect(Collectors.toList());
 
-        strategy = new DefaultSidecarStrategy(sidecarClients, config.getProcessingTimeout());
+        List<ISidecarTransport> fallbackTransports = config.getFallbackEndpoints().stream()
+            .map(endpoint -> new JsonRpcTransport.Builder()
+                    .readTimeout(Duration.ofMillis(config.getReadTimeout()))
+                    .writeTimeout(Duration.ofMillis(config.getWriteTimeout()))
+                    .baseUrl(endpoint)
+                    .build())
+            .collect(Collectors.toList());
+
+        strategy = new DefaultSidecarStrategy(primaryTransports, fallbackTransports, config.getProcessingTimeout());
 
         var credibleTxConfig = new CredibleTransactionSelector.Config(strategy);
         

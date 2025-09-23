@@ -25,8 +25,10 @@ import net.phylax.credible.types.SidecarApiModels.TransactionResult;
 public class DefaultSidecarStrategy implements ISidecarStrategy {
     private static final Logger LOG = LoggerFactory.getLogger(DefaultSidecarStrategy.class);
 
-    private List<ISidecarTransport> transports = new ArrayList<>();
+    private List<ISidecarTransport> primaryTransports = new ArrayList<>();
     private List<ISidecarTransport> activeTransports = new CopyOnWriteArrayList<>();
+    private List<ISidecarTransport> fallbackTransports = new CopyOnWriteArrayList<>();
+
     private final Map<String, List<CompletableFuture<GetTransactionsResponse>>> pendingTxRequests = 
         new ConcurrentHashMap<>();
     private int processingTimeout;
@@ -50,34 +52,64 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         public long getLatencyMs() { return latencyMs; }
     }
 
-    public DefaultSidecarStrategy(List<ISidecarTransport> transports, int processingTimeout) {
-        this.transports = transports;
+    public DefaultSidecarStrategy(List<ISidecarTransport> primaryTransports, List<ISidecarTransport> fallbackTransports, int processingTimeout) {
+        this.primaryTransports = primaryTransports;
         this.activeTransports = new CopyOnWriteArrayList<>();
+        this.fallbackTransports = fallbackTransports;
         this.processingTimeout = processingTimeout;
     }
     
     @Override
     public CompletableFuture<Void> sendBlockEnv(SendBlockEnvRequest blockEnv) {
-        List<CompletableFuture<TransportResponse>> futures = transports.stream()
+        // Send to all primary transports
+        List<CompletableFuture<TransportResponse>> futures = primaryTransports.stream()
             .map(transport -> sendBlockEnvToTransport(blockEnv, transport))
             .collect(Collectors.toList());
         
         return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
-            .thenAccept(voidResult -> {
-                // Filter successful transports
-                List<ISidecarTransport> successfulTransports = futures.stream()
+            .whenComplete((voidResult, exception) -> {
+                long failedCount = futures.stream()
+                    .filter(f -> !f.isCompletedExceptionally())
                     .map(CompletableFuture::join)
-                    .filter(TransportResponse::isSuccess)
-                    .map(TransportResponse::getTransport)
-                    .collect(Collectors.toList());
+                    .filter(res -> !res.isSuccess())
+                    .count();
+
+                LOG.debug("Checking failedCount: {} {}", failedCount, futures.size());
                 
-                // Clear pending requests (since it's the start of the new block)
-                pendingTxRequests.clear();
-                // Update active transports list
-                activeTransports.clear();
-                activeTransports.addAll(successfulTransports);
-                LOG.debug("Updated active sidecars - count {}", successfulTransports.size());
+                // Check if all active transports failed
+                if (failedCount == futures.size() && !futures.isEmpty()) {
+                    LOG.warn("SendBlockEnv to active sidecars failed, trying fallbacks");
+
+                    // Send to fallback transports
+                    List<CompletableFuture<TransportResponse>> fallbackFutures = fallbackTransports.stream()
+                        .map(transport -> sendBlockEnvToTransport(blockEnv, transport))
+                        .collect(Collectors.toList());
+                        
+                    CompletableFuture.allOf(fallbackFutures.toArray(new CompletableFuture[0]))
+                        .thenAccept(ignored -> {
+                            updateActiveTransports(extractSuccessfulTransports(fallbackFutures));
+                        });
+                } else {
+                    // Clear pending requests (since it's the start of the new block)
+                    updateActiveTransports(extractSuccessfulTransports(futures));
+                }
             });
+    }
+
+    private List<ISidecarTransport> extractSuccessfulTransports(List<CompletableFuture<TransportResponse>> futures) {
+        return futures.stream()
+            .filter(f -> !f.isCompletedExceptionally())
+            .map(CompletableFuture::join)
+            .filter(TransportResponse::isSuccess)
+            .map(TransportResponse::getTransport)
+            .collect(Collectors.toList());
+    }
+
+    private void updateActiveTransports(List<ISidecarTransport> successfulTransports) {
+        pendingTxRequests.clear();
+        activeTransports.clear();
+        activeTransports.addAll(successfulTransports);
+        LOG.debug("Updated active sidecars - count {}", successfulTransports.size());
     }
     
     private CompletableFuture<TransportResponse> sendBlockEnvToTransport(SendBlockEnvRequest blockEnv, ISidecarTransport transport) {
