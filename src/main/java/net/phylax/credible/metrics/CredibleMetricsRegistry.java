@@ -5,6 +5,10 @@ import org.hyperledger.besu.plugin.services.metrics.Counter;
 import org.hyperledger.besu.plugin.services.metrics.LabelledMetric;
 import org.hyperledger.besu.plugin.services.metrics.OperationTimer;
 
+/**
+ * Registry for Credible Metrics. Creates and registers all metrics
+ * regarding the credible layer processing.
+ */
 public class CredibleMetricsRegistry {
     private final LabelledMetric<OperationTimer> preProcessingTimer;
     private final LabelledMetric<OperationTimer> postProcessingTimer;
@@ -19,13 +23,13 @@ public class CredibleMetricsRegistry {
         preProcessingTimer = metricsSystem.createLabelledTimer(
             CredibleMetricsCategory.PLUGIN,
             "preprocessing_time",
-            "Time taken to evaluate transaction pre-processing in seconds"
+            "Time taken to evaluate transaction pre-processing phase in seconds"
         );
         
         postProcessingTimer = metricsSystem.createLabelledTimer(
             CredibleMetricsCategory.PLUGIN,
             "postprocessing_time",
-            "Time taken to evaluate transaction post-processing in seconds"
+            "Time taken to evaluate transaction post-processingphase in seconds"
         );
 
         pollingTimer = metricsSystem.createLabelledTimer(
@@ -37,25 +41,25 @@ public class CredibleMetricsRegistry {
         timeoutCounter = metricsSystem.createLabelledCounter(
             CredibleMetricsCategory.PLUGIN,
             "timeout_counter",
-            "Number of timeouts"
+            "Number of timeout exceptions"
         );
         
         errorCounter = metricsSystem.createLabelledCounter(
             CredibleMetricsCategory.PLUGIN,
             "error_counter",
-            "Number of errors"
+            "Number of general errors and exceptions caught by the plugin"
         );
 
         transactionCounter = metricsSystem.createLabelledCounter(
             CredibleMetricsCategory.PLUGIN,
             "transaction_counter",
-            "Number of transactions"
+            "Number of transactions that are passed to the plugin"
         );
 
         invalidationCounter = metricsSystem.createLabelledCounter(
             CredibleMetricsCategory.PLUGIN,
             "invalidation_counter",
-            "Number of invalidations"
+            "Number of successful assertion invalidations"
         );
     }
     
