@@ -223,6 +223,8 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
             })
             .orTimeout(processingTimeout, TimeUnit.MILLISECONDS)
             .exceptionally(ex -> {
+                // NOTE: In case no transport finishes on time, remove all of them for the current block
+                activeTransports.clear();
                 long latency = System.currentTimeMillis() - startTime;
                 LOG.debug("Timeout or error getting transactions: latency {} -{}", 
                     latency, ex.getMessage());
