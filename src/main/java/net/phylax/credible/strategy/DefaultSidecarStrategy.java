@@ -119,12 +119,14 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         pendingTxRequests.clear();
         activeTransports.clear();
         activeTransports.addAll(successfulTransports);
+        metricsRegistry.registerActiveTransportsGauge(successfulTransports::size);
         LOG.debug("Updated active sidecars - count {}", successfulTransports.size());
     }
     
     private CompletableFuture<TransportResponse> sendBlockEnvToTransport(SendBlockEnvRequest blockEnv, ISidecarTransport transport) {
         long startTime = System.currentTimeMillis();
         
+        metricsRegistry.getSidecarRpcCounter().labels("sendBlockEnv").inc();
         return transport.sendBlockEnv(blockEnv)
             .thenApply(voidResult -> {
                 long latency = System.currentTimeMillis() - startTime;
@@ -151,6 +153,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         
         // Calls sendTransactions on all active transports in parallel and awaits them
         activeTransports.parallelStream().forEach(transport -> {
+            metricsRegistry.getSidecarRpcCounter().labels("sendTransactions").inc();
             transport.sendTransactions(sendTxRequest).whenComplete((result, ex) -> {
                 if (ex != null) {
                     // TODO: what to do with the transport?
@@ -174,6 +177,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         List<CompletableFuture<GetTransactionsResponse>> futures = activeTransports.stream()
             .map(transport -> {
                 var timing = metricsRegistry.getPollingTimer().labels().startTimer();
+                metricsRegistry.getSidecarRpcCounter().labels("getTransactions").inc();
                 return transport.getTransactions(hashes)
                     .whenComplete((response, throwable) -> {
                         timing.stopTimer();
@@ -254,6 +258,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
             try {
                 ReorgResponse response = transport.sendReorg(reorgRequest).join();
                 successfulResponses.add(response);
+                metricsRegistry.getReorgRequestCounter().labels().inc();
             } catch (Exception e) {
                 // TODO: what to do with the transport?
                 LOG.debug("Exception sending reorg request to transport {}: {}", 

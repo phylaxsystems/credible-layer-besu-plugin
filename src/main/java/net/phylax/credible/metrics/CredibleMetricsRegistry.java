@@ -1,5 +1,8 @@
 package net.phylax.credible.metrics;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.IntSupplier;
+
 import org.hyperledger.besu.plugin.services.MetricsSystem;
 import org.hyperledger.besu.plugin.services.metrics.Counter;
 import org.hyperledger.besu.plugin.services.metrics.LabelledMetric;
@@ -17,8 +20,16 @@ public class CredibleMetricsRegistry {
     private final LabelledMetric<Counter> errorCounter;
     private final LabelledMetric<Counter> transactionCounter;
     private final LabelledMetric<Counter> invalidationCounter;
+    private final LabelledMetric<Counter> reorgRequestCounter;
+    private final LabelledMetric<Counter> sidecarRpcCounter;
     
+    private final AtomicBoolean activeTransportsGaugeRegistered = new AtomicBoolean(false);
+
+    private final MetricsSystem metricsSystem;
+
     public CredibleMetricsRegistry(final MetricsSystem metricsSystem) {
+        this.metricsSystem = metricsSystem;
+
         // Initialize all metrics
         preProcessingTimer = metricsSystem.createLabelledTimer(
             CredibleMetricsCategory.PLUGIN,
@@ -61,6 +72,18 @@ public class CredibleMetricsRegistry {
             "invalidation_counter",
             "Number of successful assertion invalidations"
         );
+
+        reorgRequestCounter = metricsSystem.createLabelledCounter(
+            CredibleMetricsCategory.PLUGIN,
+            "reorg_request_counter",
+            "Number of reorg requests"
+        );
+
+        sidecarRpcCounter = metricsSystem.createLabelledCounter(
+            CredibleMetricsCategory.PLUGIN,
+            "sidecar_rpc_total",
+            "Total RPC calls made to the Credible sidecar",
+            "method");
     }
     
     // Getters
@@ -91,4 +114,22 @@ public class CredibleMetricsRegistry {
     public LabelledMetric<Counter> getInvalidationCounter() {
         return invalidationCounter;
     }
+
+    public LabelledMetric<Counter> getReorgRequestCounter() {
+        return reorgRequestCounter;
+    }
+
+    public LabelledMetric<Counter> getSidecarRpcCounter() {
+        return sidecarRpcCounter;
+    }
+
+    public void registerActiveTransportsGauge(final IntSupplier supplier) {
+        if (activeTransportsGaugeRegistered.compareAndSet(false, true)) {
+          metricsSystem.createIntegerGauge(
+            CredibleMetricsCategory.PLUGIN,
+              "active_sidecar_transports",
+              "Number of sidecar transports currently marked as active",
+              supplier);
+        }
+      }
 }
