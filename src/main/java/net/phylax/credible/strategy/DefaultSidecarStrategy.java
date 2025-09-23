@@ -33,7 +33,6 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
 
     private final Map<String, List<CompletableFuture<GetTransactionsResponse>>> pendingTxRequests = 
         new ConcurrentHashMap<>();
-    // private final Map<String, TimingContext> pollingTimings = new HashMap<>();
 
     private int processingTimeout;
     private final CredibleMetricsRegistry metricsRegistry;
@@ -137,6 +136,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                     ex.getMessage(),
                     ex.getCause() != null ? ex.getCause().getMessage() : "");
                 metricsRegistry.getErrorCounter().labels().inc();
+                activeTransports.remove(transport);
                 long latency = System.currentTimeMillis() - startTime;
                 return new TransportResponse(transport, false, ex.getMessage(), latency);
             });
@@ -156,11 +156,11 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
             metricsRegistry.getSidecarRpcCounter().labels("sendTransactions").inc();
             transport.sendTransactions(sendTxRequest).whenComplete((result, ex) -> {
                 if (ex != null) {
-                    // TODO: what to do with the transport?
                     LOG.debug("SendTransactions error: {} - {}",
-                    ex.getMessage(),
-                    ex.getCause() != null ? ex.getCause().getMessage() : "");
+                        ex.getMessage(),
+                        ex.getCause() != null ? ex.getCause().getMessage() : "");
                     metricsRegistry.getErrorCounter().labels().inc();
+                    activeTransports.remove(transport);
                 } else {
                     LOG.debug("SendTransactions response: count - {}, message - {}", 
                         result.getRequestCount(), 
@@ -223,7 +223,6 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
             })
             .orTimeout(processingTimeout, TimeUnit.MILLISECONDS)
             .exceptionally(ex -> {
-                // TODO: what to do with the transport?
                 long latency = System.currentTimeMillis() - startTime;
                 LOG.debug("Timeout or error getting transactions: latency {} -{}", 
                     latency, ex.getMessage());
@@ -260,7 +259,8 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                 successfulResponses.add(response);
                 metricsRegistry.getReorgRequestCounter().labels().inc();
             } catch (Exception e) {
-                // TODO: what to do with the transport?
+                // Safe to remove with CopyOnWriteArrayList
+                 activeTransports.remove(transport);
                 LOG.debug("Exception sending reorg request to transport {}: {}", 
                     transport.toString(), e.getMessage());
                 metricsRegistry.getErrorCounter().labels().inc();
