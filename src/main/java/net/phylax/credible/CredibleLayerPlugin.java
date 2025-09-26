@@ -1,7 +1,11 @@
 package net.phylax.credible;
 
 import java.time.Duration;
+import java.util.AbstractMap;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -46,6 +50,9 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
 
     private CredibleMetricsRegistry metricsRegistry;
     
+    // Keeps track of the last (block_hash, block_number) sent
+    private String lastBlockSent = "";
+
     @CommandLine.Command(
         name = PLUGIN_NAME,
         description = "Configuration options for CredibleBlockPlugin",
@@ -205,6 +212,12 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
 
         String blockHash = blockHeader.getBlockHash().toHexString();
         long blockNumber = blockHeader.getNumber();
+
+        // Check if we sent the block already
+        if (blockHash.equals(lastBlockSent)) {
+            LOG.debug("Block already sent - Hash: {}, Number: {}", blockHash, blockNumber);
+            return;
+        }
         
         LOG.debug("Processing new block - Hash: {}, Number: {}", blockHash, blockNumber);
         
@@ -217,7 +230,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         }
         
         LOG.debug("Sending block env with {} transactions, last tx hash: {}", 
-                  transactionCount, lastTxHash);
+            transactionCount, lastTxHash);
         
         // NOTE: maybe move to some converter
         SendBlockEnvRequest blockEnv = new SendBlockEnvRequest(
@@ -238,6 +251,8 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
             LOG.debug("Block Env sent for {}", blockHash);
         } catch (Exception e) {
             LOG.error("Error handling sendBlockEnv {}", e.getMessage());
+        } finally {
+            lastBlockSent = blockHash;
         }
     }
 }
