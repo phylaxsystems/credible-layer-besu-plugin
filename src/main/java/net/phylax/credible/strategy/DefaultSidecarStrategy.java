@@ -286,7 +286,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                 if (ex == null) {
                     result.complete(value);
                 } else {
-                    LOG.debug("Transport failed: {}", ex.getMessage());
+                    LOG.debug("Transport getTransactions failed: {}", ex.getMessage());
                     exceptions.get().add(ex);
                     
                     // If all futures have failed, complete exceptionally
