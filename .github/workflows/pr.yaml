@@ -51,3 +51,13 @@ jobs:
 
       - name: Build plugin
         run: ./gradlew build
+
+      - name: Run tests
+        run: ./gradlew cleanTest test -i
+
+      - name: Publish Test Results
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        if: always()
+        with:
+          files: 'build/test-results/test/TEST-*.xml'
+          check_name: 'JUnit Test Results'
