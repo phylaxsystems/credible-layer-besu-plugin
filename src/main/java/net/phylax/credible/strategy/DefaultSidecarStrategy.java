@@ -5,11 +5,14 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
@@ -60,7 +63,8 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         List<ISidecarTransport> primaryTransports,
         List<ISidecarTransport> fallbackTransports,
         int processingTimeout,
-        final CredibleMetricsRegistry metricsRegistry) {
+        final CredibleMetricsRegistry metricsRegistry
+    ) {
         this.primaryTransports = primaryTransports;
         this.activeTransports = new CopyOnWriteArrayList<>();
         this.fallbackTransports = fallbackTransports;
@@ -127,9 +131,9 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         
         metricsRegistry.getSidecarRpcCounter().labels("sendBlockEnv").inc();
         return transport.sendBlockEnv(blockEnv)
-            .thenApply(voidResult -> {
+            .thenApply(blockResult -> {
                 long latency = System.currentTimeMillis() - startTime;
-                return new TransportResponse(transport, true, "Success", latency);
+                return new TransportResponse(transport, blockResult.getSuccess(), "Success", latency);
             })
             .exceptionally(ex -> {
                 LOG.debug("SendBlockEnv error: {} - {}",
@@ -154,17 +158,20 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         // Calls sendTransactions on all active transports in parallel and awaits them
         activeTransports.parallelStream().forEach(transport -> {
             metricsRegistry.getSidecarRpcCounter().labels("sendTransactions").inc();
-            transport.sendTransactions(sendTxRequest).whenComplete((result, ex) -> {
+            transport.sendTransactions(sendTxRequest).handle((result, ex) -> {
                 if (ex != null) {
                     LOG.debug("SendTransactions error: {} - {}",
                         ex.getMessage(),
                         ex.getCause() != null ? ex.getCause().getMessage() : "");
                     metricsRegistry.getErrorCounter().labels().inc();
                     activeTransports.remove(transport);
+                    // NOTE: we don't make use of the response here, so safe to return anything
+                    return null;
                 } else {
                     LOG.debug("SendTransactions response: count - {}, message - {}", 
                         result.getRequestCount(), 
                         result.getMessage());
+                    return result;
                 }
             }).join();
         });
@@ -180,6 +187,11 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                 metricsRegistry.getSidecarRpcCounter().labels("getTransactions").inc();
                 return transport.getTransactions(hashes)
                     .whenComplete((response, throwable) -> {
+                        if (throwable != null) {
+                            LOG.debug("GetTransactions error: {} - {}",
+                                throwable.getMessage(),
+                                throwable.getCause() != null ? throwable.getCause().getMessage() : "");
+                        }
                         timing.stopTimer();
                     });
             })
@@ -214,7 +226,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
     private GetTransactionsResponse handleTransactionFuture(List<CompletableFuture<GetTransactionsResponse>> futures) {
         long startTime = System.currentTimeMillis();
 
-        CompletableFuture<GetTransactionsResponse> anySuccess = CompletableFuture.anyOf(futures.toArray(new CompletableFuture[0]))
+        CompletableFuture<GetTransactionsResponse> anySuccess = anySuccessOf(futures)
             .thenApply(result -> {
                 if (result instanceof GetTransactionsResponse) {
                     return (GetTransactionsResponse) result;
@@ -226,8 +238,8 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                 // NOTE: In case no transport finishes on time, remove all of them for the current block
                 activeTransports.clear();
                 long latency = System.currentTimeMillis() - startTime;
-                LOG.debug("Timeout or error getting transactions: latency {} -{}", 
-                    latency, ex.getMessage());
+                LOG.debug("Timeout or error getting transactions: exception {}, latency {}", 
+                    ex.getMessage(), latency);
                 if (ex instanceof TimeoutException) {
                     metricsRegistry.getTimeoutCounter().labels().inc();
                 }
@@ -249,6 +261,49 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
             metricsRegistry.getErrorCounter().labels().inc();
             return null;
         }
+    }
+
+    /**
+     * Returns the first successful response from all transport getTransactions futures
+     * @param futures Futures from the getTransactions transport calls
+     * @return
+     */
+    private CompletableFuture<GetTransactionsResponse> anySuccessOf(List<CompletableFuture<GetTransactionsResponse>> futures) {
+        if (futures.isEmpty()) {
+            return CompletableFuture.failedFuture(
+                new IllegalArgumentException("No futures provided")
+            );
+        }
+
+        CompletableFuture<GetTransactionsResponse> result = new CompletableFuture<GetTransactionsResponse>();
+        AtomicInteger failureCount = new AtomicInteger(0);
+        AtomicReference<List<Throwable>> exceptions = new AtomicReference<>(
+            new CopyOnWriteArrayList<>()
+        );
+
+        for (CompletableFuture<GetTransactionsResponse> future : futures) {
+            future.whenComplete((value, ex) -> {
+                if (ex == null) {
+                    result.complete(value);
+                } else {
+                    LOG.debug("Transport getTransactions failed: {}", ex.getMessage());
+                    exceptions.get().add(ex);
+                    
+                    // If all futures have failed, complete exceptionally
+                    if (failureCount.incrementAndGet() == futures.size()) {
+                        LOG.debug("All transports completed exceptionally: {}", exceptions.get());
+                        CompletionException allFailed = new CompletionException(
+                            "All transports failed",
+                            // TODO: aggregate exceptions
+                            exceptions.get().get(0)
+                        );
+                        result.completeExceptionally(allFailed);
+                    }
+                }
+            });
+        }
+        
+        return result;
     }
 
     @Override
