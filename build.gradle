@@ -97,7 +97,9 @@ dependencies {
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.8.2'
     testImplementation 'org.mockito:mockito-core:5.+'
     testImplementation fileTree(dir: 'libs/besu/plugin-api/build/libs', include: 'besu-plugin-api-*.jar')
-
+    testImplementation fileTree(dir: 'libs/besu/evm/build/libs', include: 'besu-evm-*.jar')
+    testImplementation fileTree(dir: 'libs/besu/datatypes/build/libs', include: 'besu-datatypes-*.jar')
+    testImplementation fileTree(dir: 'libs/besu/ethereum/core/build/libs', include: 'besu-ethereum-core-*.jar')
     testImplementation 'org.apache.logging.log4j:log4j-slf4j-impl:2.20.0'
 }
 
@@ -168,7 +170,11 @@ publishing {
 
 task buildBesuSubmodule(type: Exec) {
     workingDir 'libs/besu'
-    commandLine './gradlew', 'plugin-api:assemble', 'datatypes:assemble', 'ethereum:core:assemble', 'evm:assemble'
+    commandLine './gradlew',
+        'plugin-api:assemble',
+        'datatypes:assemble',
+        'ethereum:core:assemble',
+        'evm:assemble'
     
     // Only run if the submodule exists
     onlyIf { file('libs/besu').exists() }
