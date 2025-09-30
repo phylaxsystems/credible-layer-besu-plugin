@@ -25,7 +25,7 @@ public class SidecarApiModels {
         private Long gasLimit; // u64 -> Long
         
         @JsonProperty("gas_price")
-        private String gasPrice; // Hex string (e.g., "0x5f5e100")
+        private Long gasPrice; // u64 -> Long
         
         @JsonProperty("kind")
         private String kind; // Address as hex string (null for contract creation)
@@ -63,7 +63,7 @@ public class SidecarApiModels {
         }
         
         @JsonCreator
-        public TxEnv(@JsonProperty("caller") String caller, @JsonProperty("gas_limit") Long gasLimit, @JsonProperty("gas_price") String gasPrice,
+        public TxEnv(@JsonProperty("caller") String caller, @JsonProperty("gas_limit") Long gasLimit, @JsonProperty("gas_price") Long gasPrice,
             @JsonProperty("transact_to") String kind, @JsonProperty("value") String value, @JsonProperty("data") String data,
             @JsonProperty("nonce") Long nonce, @JsonProperty("chain_id") Long chainId, @JsonProperty("access_list") List<AccessListEntry> accessList,
             @JsonProperty("tx_type") byte txType, @JsonProperty("max_fee_per_blob_gas") Long maxFeePerBlobGas,
@@ -92,8 +92,8 @@ public class SidecarApiModels {
         public Long getGasLimit() { return gasLimit; }
         public void setGasLimit(Long gasLimit) { this.gasLimit = gasLimit; }
         
-        public String getGasPrice() { return gasPrice; }
-        public void setGasPrice(String gasPrice) { this.gasPrice = gasPrice; }
+        public Long getGasPrice() { return gasPrice; }
+        public void setGasPrice(Long gasPrice) { this.gasPrice = gasPrice; }
         
         public String getKind() { return kind; }
         public void setKind(String kind) { this.kind = kind; }
@@ -463,25 +463,35 @@ public class SidecarApiModels {
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class SendBlockEnvResponse {
-        @JsonProperty("success")
-        private Boolean success;
+        @JsonProperty("status")
+        private String status;
         
-        @JsonProperty("error")
-        private String error;
+        @JsonProperty("request_count")
+        private Long requestCount;
+
+        @JsonProperty("message")
+        private String message;
         
         public SendBlockEnvResponse() {}
 
         @JsonCreator
-        public SendBlockEnvResponse(@JsonProperty("success") Boolean success, @JsonProperty("error") String error) {
-            this.success = success;
-            this.error = error;
+        public SendBlockEnvResponse(@JsonProperty("status") String status,
+            @JsonProperty("request_count") Long requestCount,
+            @JsonProperty("message") String message
+        ) {
+            this.status = status;
+            this.message = message;
+            this.requestCount = requestCount;
         }
         
-        public Boolean getSuccess() { return success; }
-        public void setSuccess(Boolean success) { this.success = success; }
+        public String getStatus() { return status; }
+        public void setStatus(String status) { this.status = status; }
+
+        public String getMessage() { return message; }
+        public void setMessage(String message) { this.message = message; }
         
-        public String getError() { return error; }
-        public void setError(String error) { this.error = error; }
+        public Long getRequestCount() { return requestCount; }
+        public void setRequestCount(Long requestCount) { this.requestCount = requestCount; }
     }
 
     /**

@@ -30,13 +30,13 @@ public class TransactionConverter {
         if (supportsEip1559(transaction.getType())) {
             // EIP-1559: Use maxFeePerGas as gasPrice
             transaction.getMaxFeePerGas().ifPresent(maxFee -> 
-                txEnv.setGasPrice(maxFee.getAsBigInteger().toString()));
+                txEnv.setGasPrice(maxFee.getAsBigInteger().longValue()));
             transaction.getMaxPriorityFeePerGas().ifPresent(maxPriorityFee -> 
                 txEnv.setGasPriorityFee(maxPriorityFee.getAsBigInteger().longValue()));
         } else {
             // Legacy: Use gasPrice
             transaction.getGasPrice().ifPresent(gasPrice ->
-                txEnv.setGasPrice(gasPrice.getAsBigInteger().toString()));
+                txEnv.setGasPrice(gasPrice.getAsBigInteger().longValue()));
         }
 
         transaction.getMaxFeePerBlobGas().ifPresent(maxFeePerBlobGas ->
@@ -191,9 +191,9 @@ public class TransactionConverter {
             
             // Handle gas price safely
             if (transaction.getGasPrice().isPresent()) {
-                fallbackTxEnv.setGasPrice("0x" + transaction.getGasPrice().get().getAsBigInteger().toString(16));
+                fallbackTxEnv.setGasPrice(transaction.getGasPrice().get().getAsBigInteger().longValue());
             } else {
-                fallbackTxEnv.setGasPrice("0x0");
+                fallbackTxEnv.setGasPrice(0L);
             }
             
             // Handle destination and data safely
