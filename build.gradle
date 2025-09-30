@@ -1,6 +1,7 @@
 plugins {
     id 'java-library'
     id 'maven-publish'
+    id 'com.google.protobuf' version '0.9.4'
 }
 
 // Configure Java compilation
@@ -128,11 +129,18 @@ dependencies {
     
     // HTTP Client
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
-    
+
     // JSON Processing (including JDK8 support)
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.15.2'
     implementation 'com.fasterxml.jackson.core:jackson-annotations:2.15.2'
     implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jdk8:2.15.2'
+
+    // gRPC and Protobuf
+    implementation 'io.grpc:grpc-netty-shaded:1.62.2'
+    implementation 'io.grpc:grpc-protobuf:1.62.2'
+    implementation 'io.grpc:grpc-stub:1.62.2'
+    implementation 'com.google.protobuf:protobuf-java:3.25.3'
+    compileOnly 'javax.annotation:javax.annotation-api:1.3.2'
     
     // Caching (Caffeine)
     implementation 'com.github.ben-manes.caffeine:caffeine:3.1.8'
@@ -251,3 +259,30 @@ task installPlugin(type: Copy, dependsOn: jar) {
 
 compileJava.dependsOn buildBesuSubmodule
 build.finalizedBy copyPlugin
+
+// Protobuf configuration
+protobuf {
+    protoc {
+        artifact = 'com.google.protobuf:protoc:3.25.3'
+    }
+    plugins {
+        grpc {
+            artifact = 'io.grpc:protoc-gen-grpc-java:1.62.2'
+        }
+    }
+    generateProtoTasks {
+        all()*.plugins {
+            grpc {}
+        }
+    }
+}
+
+// Add generated sources to source sets
+sourceSets {
+    main {
+        java {
+            srcDirs 'build/generated/source/proto/main/grpc'
+            srcDirs 'build/generated/source/proto/main/java'
+        }
+    }
+}

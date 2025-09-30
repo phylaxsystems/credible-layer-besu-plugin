@@ -23,6 +23,7 @@ import net.phylax.credible.metrics.CredibleMetricsRegistry;
 import net.phylax.credible.strategy.DefaultSidecarStrategy;
 import net.phylax.credible.strategy.ISidecarStrategy;
 import net.phylax.credible.transport.ISidecarTransport;
+import net.phylax.credible.transport.grpc.GrpcTransport;
 import net.phylax.credible.transport.jsonrpc.JsonRpcTransport;
 import net.phylax.credible.txselection.CredibleTransactionSelector;
 import net.phylax.credible.txselection.CredibleTransactionSelectorFactory;
@@ -92,8 +93,26 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         )
         private int processingTimeout = 300;
 
+        @CommandLine.Option(
+            names = {"--plugin-credible-sidecar-grpc-endpoints"},
+            description = "List of gRPC endpoints (format: host:port) - mutually exclusive with rpc-endpoints",
+            paramLabel = "<host:port>",
+            split = ","
+        )
+        private List<String> grpcEndpoints;
+
+        @CommandLine.Option(
+            names = {"--plugin-credible-sidecar-grpc-fallback-endpoints"},
+            description = "List of fallback gRPC endpoints (format: host:port)",
+            paramLabel = "<host:port>",
+            split = ","
+        )
+        private List<String> grpcFallbackEndpoints;
+
         public List<String> getRpcEndpoints() { return rpcEndpoints; }
         public List<String> getFallbackEndpoints() { return fallbackEndpoints; }
+        public List<String> getGrpcEndpoints() { return grpcEndpoints; }
+        public List<String> getGrpcFallbackEndpoints() { return grpcFallbackEndpoints; }
         public int getProcessingTimeout() { return processingTimeout; }
         public int getReadTimeout() { return readTimeout; }
         public int getWriteTimeout() { return writeTimeout; }
@@ -139,12 +158,27 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         
     @Override
     public void start() {
-        LOG.info("Starting plugin with connection to RPC {}: readTimeout {}, writeTimeout {}, processingTimeout {}",
-            String.join(", ", config.getRpcEndpoints()),
-            config.getReadTimeout(),
-            config.getWriteTimeout(),
-            config.getProcessingTimeout()
-        );
+        // Validate configuration: exactly one transport type must be configured
+        validateTransportConfiguration();
+
+        // Determine which transport type is configured
+        boolean isJsonRpc = isNotEmpty(config.getRpcEndpoints());
+        boolean isGrpc = isNotEmpty(config.getGrpcEndpoints());
+
+        if (isJsonRpc) {
+            LOG.info("Starting plugin with JSON-RPC transport to {}: readTimeout {}, writeTimeout {}, processingTimeout {}",
+                String.join(", ", config.getRpcEndpoints()),
+                config.getReadTimeout(),
+                config.getWriteTimeout(),
+                config.getProcessingTimeout()
+            );
+        } else {
+            LOG.info("Starting plugin with gRPC transport to {}: deadlineTimeout {}, processingTimeout {}",
+                String.join(", ", config.getGrpcEndpoints()),
+                config.getReadTimeout(),
+                config.getProcessingTimeout()
+            );
+        }
 
         serviceManager
             .getService(BesuEvents.class)
@@ -153,34 +187,112 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         // Initialize the metrics system
         this.metricsSystem = serviceManager.getService(MetricsSystem.class)
             .orElseThrow(
-                () -> 
+                () ->
                     new RuntimeException("Failed to obtain MetricsSystem from the ServiceManager."));
-        
+
         metricsRegistry = new CredibleMetricsRegistry(metricsSystem);
 
-        List<ISidecarTransport> primaryTransports = config.getRpcEndpoints().stream()
-            .map(endpoint -> new JsonRpcTransport.Builder()
-                    .readTimeout(Duration.ofMillis(config.getReadTimeout()))
-                    .writeTimeout(Duration.ofMillis(config.getWriteTimeout()))
-                    .baseUrl(endpoint)
-                    .build())
-            .collect(Collectors.toList());
+        // Create transports based on configuration
+        List<ISidecarTransport> primaryTransports;
+        List<ISidecarTransport> fallbackTransports;
 
-        List<ISidecarTransport> fallbackTransports = config.getFallbackEndpoints().stream()
-            .map(endpoint -> new JsonRpcTransport.Builder()
-                    .readTimeout(Duration.ofMillis(config.getReadTimeout()))
-                    .writeTimeout(Duration.ofMillis(config.getWriteTimeout()))
-                    .baseUrl(endpoint)
-                    .build())
-            .collect(Collectors.toList());
+        if (isJsonRpc) {
+            primaryTransports = createJsonRpcTransports(config.getRpcEndpoints());
+            fallbackTransports = createJsonRpcTransports(config.getFallbackEndpoints());
+        } else {
+            primaryTransports = createGrpcTransports(config.getGrpcEndpoints());
+            fallbackTransports = createGrpcTransports(config.getGrpcFallbackEndpoints());
+        }
 
         strategy = new DefaultSidecarStrategy(primaryTransports, fallbackTransports, config.getProcessingTimeout(), metricsRegistry);
 
         var credibleTxConfig = new CredibleTransactionSelector.Config(strategy);
-        
+
         transactionSelectionService.registerPluginTransactionSelectorFactory(
             new CredibleTransactionSelectorFactory(credibleTxConfig, metricsRegistry)
         );
+    }
+
+    /**
+     * Validate that exactly one transport type is configured (JSON-RPC or gRPC, not both)
+     */
+    private void validateTransportConfiguration() {
+        boolean hasJsonRpc = isNotEmpty(config.getRpcEndpoints());
+        boolean hasGrpc = isNotEmpty(config.getGrpcEndpoints());
+
+        if (!hasJsonRpc && !hasGrpc) {
+            throw new IllegalStateException(
+                "No transport configured. Please specify either:\n" +
+                "  --plugin-credible-sidecar-rpc-endpoints for JSON-RPC, OR\n" +
+                "  --plugin-credible-sidecar-grpc-endpoints for gRPC"
+            );
+        }
+
+        if (hasJsonRpc && hasGrpc) {
+            throw new IllegalStateException(
+                "Cannot use both JSON-RPC and gRPC transports simultaneously. Please specify only one:\n" +
+                "  --plugin-credible-sidecar-rpc-endpoints for JSON-RPC, OR\n" +
+                "  --plugin-credible-sidecar-grpc-endpoints for gRPC"
+            );
+        }
+    }
+
+    /**
+     * Create JSON-RPC transports from endpoint URLs
+     */
+    private List<ISidecarTransport> createJsonRpcTransports(List<String> endpoints) {
+        if (endpoints == null || endpoints.isEmpty()) {
+            return List.of();
+        }
+        return endpoints.stream()
+            .map(endpoint -> new JsonRpcTransport.Builder()
+                    .readTimeout(Duration.ofMillis(config.getReadTimeout()))
+                    .writeTimeout(Duration.ofMillis(config.getWriteTimeout()))
+                    .baseUrl(endpoint)
+                    .build())
+            .collect(Collectors.toList());
+    }
+
+    /**
+     * Create gRPC transports from host:port endpoints
+     */
+    private List<ISidecarTransport> createGrpcTransports(List<String> endpoints) {
+        if (endpoints == null || endpoints.isEmpty()) {
+            return List.of();
+        }
+        return endpoints.stream()
+            .map(endpoint -> {
+                String[] parts = endpoint.split(":");
+                if (parts.length != 2) {
+                    throw new IllegalArgumentException(
+                        "Invalid gRPC endpoint format: " + endpoint +
+                        ". Expected format: host:port (e.g., localhost:50051)"
+                    );
+                }
+                String host = parts[0];
+                int port;
+                try {
+                    port = Integer.parseInt(parts[1]);
+                } catch (NumberFormatException e) {
+                    throw new IllegalArgumentException(
+                        "Invalid port number in gRPC endpoint: " + endpoint +
+                        ". Port must be a number."
+                    );
+                }
+                return new GrpcTransport.Builder()
+                    .host(host)
+                    .port(port)
+                    .deadlineMillis(config.getReadTimeout())
+                    .build();
+            })
+            .collect(Collectors.toList());
+    }
+
+    /**
+     * Helper to check if a list is not null and not empty
+     */
+    private boolean isNotEmpty(List<String> list) {
+        return list != null && !list.isEmpty();
     }
 
     private long listenerIdentifier;
