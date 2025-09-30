@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.hyperledger.besu.datatypes.CodeDelegation;
 import org.hyperledger.besu.datatypes.Transaction;
 import org.hyperledger.besu.datatypes.TransactionType;
 import org.hyperledger.besu.datatypes.VersionedHash;
@@ -47,19 +48,18 @@ public class TransactionConverter {
                 .collect(Collectors.toList()))
             );
 
-        // TODO: figure out the correct JSON
-        // transaction.getCodeDelegationList().ifPresent(codeDelegationList -> {
-        //     // txEnv.setAuthorizationList(codeDelegationList.stream()
-        //     //     .map(VersionedHash::toString)
-        //     //     .collect(Collectors.toList()));
-        // });
+        transaction.getCodeDelegationList().ifPresent(codeDelegationList -> {
+            txEnv.setAuthorizationList(codeDelegationList.stream()
+                .map(TransactionConverter::convertAuthorizationListEntry)
+                .collect(Collectors.toList()));
+        });
         
         // Transaction destination
         if (transaction.getTo().isPresent()) {
             // Contract call
             txEnv.setKind(transaction.getTo().get().toHexString());
         } else {
-            // Contract creation - transactTo should be null
+            // Contract creation - kind should be null
             txEnv.setKind(null);
         }
         
@@ -111,6 +111,17 @@ public class TransactionConverter {
             // TODO: default behavior expected
             default: return -1;
         }
+    }
+
+    private static SidecarApiModels.AuthorizationListEntry convertAuthorizationListEntry(
+            CodeDelegation codeDelegation) {
+        return new SidecarApiModels.AuthorizationListEntry(
+            codeDelegation.address().toHexString(),
+            codeDelegation.v(),
+            "0x" + codeDelegation.r().toString(16),
+            "0x" +codeDelegation.s().toString(16),
+            codeDelegation.chainId().longValue(),
+            codeDelegation.nonce());
     }
     
     /**

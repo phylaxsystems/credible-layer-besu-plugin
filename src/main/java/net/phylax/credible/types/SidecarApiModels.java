@@ -55,7 +55,7 @@ public class SidecarApiModels {
         private List<String> blobHashes = new ArrayList<>();
 
         @JsonProperty("authorization_list")
-        private List<Object> authorizationList = new ArrayList<>();
+        private List<AuthorizationListEntry> authorizationList = new ArrayList<>();
         
         // Constructors
         public TxEnv() {
@@ -68,7 +68,7 @@ public class SidecarApiModels {
             @JsonProperty("nonce") Long nonce, @JsonProperty("chain_id") Long chainId, @JsonProperty("access_list") List<AccessListEntry> accessList,
             @JsonProperty("tx_type") byte txType, @JsonProperty("max_fee_per_blob_gas") Long maxFeePerBlobGas,
             @JsonProperty("gas_priority_fee") Long gasPriorityFee, @JsonProperty("blob_hashes") List<String> blobHashes,
-            @JsonProperty("authorization_list") List<Object> authorizationList) {
+            @JsonProperty("authorization_list") List<AuthorizationListEntry> authorizationList) {
             this.caller = caller;
             this.gasLimit = gasLimit;
             this.gasPrice = gasPrice;
@@ -127,8 +127,8 @@ public class SidecarApiModels {
         public Long getMaxFeePerBlobGas() { return maxFeePerBlobGas; }
         public void setMaxFeePerBlobGas(Long maxFeePerBlobGas) { this.maxFeePerBlobGas = maxFeePerBlobGas; }
 
-        public List<Object> getAuthorizationList() { return authorizationList; }
-        public void setAuthorizationList(List<Object> authorizationList) { this.authorizationList = authorizationList; }
+        public List<AuthorizationListEntry> getAuthorizationList() { return authorizationList; }
+        public void setAuthorizationList(List<AuthorizationListEntry> authorizationList) { this.authorizationList = authorizationList; }
 
         @Override
         public String toString() {
@@ -136,7 +136,66 @@ public class SidecarApiModels {
                     caller, gasLimit, gasPrice, kind, value, data, nonce, chainId);
         }
     }
+    
+    // AuthorizationList Entry
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class AuthorizationListEntry {
+        @JsonProperty("chain_id")
+        private Long chainId;
+
+        @JsonProperty("nonce")
+        private Long nonce;
+
+        @JsonProperty("address")
+        private String address;
         
+        @JsonProperty("v")
+        private byte v;
+
+        @JsonProperty("r")
+        private String r;
+
+        @JsonProperty("s")
+        private String s;
+        
+        public AuthorizationListEntry() {}
+        
+        @JsonCreator
+        public AuthorizationListEntry(@JsonProperty("address") String address, @JsonProperty("v") byte v, @JsonProperty("r") String r,
+            @JsonProperty("s") String s, @JsonProperty("chain_id") Long chainId, @JsonProperty("nonce") Long nonce) {
+            this.chainId = chainId;
+            this.nonce = nonce;
+            this.address = address;
+            this.v = v;
+            this.r = r;
+            this.s = s;
+        }
+        
+        public String getAddress() { return address; }
+        public void setAddress(String address) { this.address = address; }
+        
+        public byte getV() { return v; }
+        public void setV(byte v) { this.v = v; }
+        
+        public String getR() { return r; }
+        public void setR(String r) { this.r = r; }
+        
+        public String getS() { return s; }
+        public void setS(String s) { this.s = s; }
+        
+        public Long getChainId() { return chainId; }
+        public void setChainId(Long chainId) { this.chainId = chainId; }
+        
+        public Long getNonce() { return nonce; }
+        public void setNonce(Long nonce) { this.nonce = nonce; }
+        
+        @Override
+        public String toString() {
+            return String.format("AuthorizationListEntry{address='%s', v=%d, r='%s', s='%s', chainId=%d, nonce=%d}",
+                    address, v, r, s, chainId, nonce);
+        }
+    }
+
     // AccessList Entry
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class AccessListEntry {
