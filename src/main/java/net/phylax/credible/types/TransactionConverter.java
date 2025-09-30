@@ -26,8 +26,7 @@ public class TransactionConverter {
         txEnv.setGasLimit(transaction.getGasLimit());
         
         // Gas price handling based on transaction type
-        if (transaction.getType() == TransactionType.EIP1559 || 
-            transaction.getType() == TransactionType.BLOB) {
+        if (supportsEip1559(transaction.getType())) {
             // EIP-1559: Use maxFeePerGas as gasPrice
             transaction.getMaxFeePerGas().ifPresent(maxFee -> 
                 txEnv.setGasPrice(maxFee.getAsBigInteger().toString()));
@@ -92,15 +91,25 @@ public class TransactionConverter {
         return txEnv;
     }
 
-    private static Long convertType(TransactionType type) {
+    private static boolean supportsEip1559(TransactionType type) {
+        switch(type){
+            case ACCESS_LIST:
+            case FRONTIER:
+                return false;
+            default:
+                return true;
+        }
+    }
+
+    private static byte convertType(TransactionType type) {
         switch(type) {
-            case FRONTIER: return 0L;
-            case ACCESS_LIST: return 1L;
-            case EIP1559: return 2L;
-            case BLOB: return 3L;
-            case DELEGATE_CODE: return 4L;
+            case FRONTIER: return 0;
+            case ACCESS_LIST: return 1;
+            case EIP1559: return 2;
+            case BLOB: return 3;
+            case DELEGATE_CODE: return 4;
             // TODO: default behavior expected
-            default: return null;
+            default: return -1;
         }
     }
     

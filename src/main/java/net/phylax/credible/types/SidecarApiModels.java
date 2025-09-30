@@ -16,7 +16,7 @@ public class SidecarApiModels {
     public static class TxEnv {
         
         @JsonProperty("tx_type")
-        private Long txType; // u64 -> Long
+        private byte txType; // u8 -> byte
 
         @JsonProperty("caller")
         private String caller; // Address as hex string
@@ -66,7 +66,7 @@ public class SidecarApiModels {
         public TxEnv(@JsonProperty("caller") String caller, @JsonProperty("gas_limit") Long gasLimit, @JsonProperty("gas_price") String gasPrice,
             @JsonProperty("transact_to") String kind, @JsonProperty("value") String value, @JsonProperty("data") String data,
             @JsonProperty("nonce") Long nonce, @JsonProperty("chain_id") Long chainId, @JsonProperty("access_list") List<AccessListEntry> accessList,
-            @JsonProperty("tx_type") Long txType, @JsonProperty("max_fee_per_blob_gas") Long maxFeePerBlobGas,
+            @JsonProperty("tx_type") byte txType, @JsonProperty("max_fee_per_blob_gas") Long maxFeePerBlobGas,
             @JsonProperty("gas_priority_fee") Long gasPriorityFee, @JsonProperty("blob_hashes") List<String> blobHashes,
             @JsonProperty("authorization_list") List<Object> authorizationList) {
             this.caller = caller;
@@ -121,8 +121,8 @@ public class SidecarApiModels {
         public List<String> getBlobHashes() { return blobHashes; }
         public void setBlobHashes(List<String> blobHashes) { this.blobHashes = blobHashes; }
         
-        public Long getTxType() { return txType; }
-        public void setTxType(Long txType) { this.txType = txType; }
+        public byte getTxType() { return txType; }
+        public void setTxType(byte txType) { this.txType = txType; }
 
         public Long getMaxFeePerBlobGas() { return maxFeePerBlobGas; }
         public void setMaxFeePerBlobGas(Long maxFeePerBlobGas) { this.maxFeePerBlobGas = maxFeePerBlobGas; }
