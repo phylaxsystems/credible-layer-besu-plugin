@@ -161,6 +161,8 @@ dependencies {
     testImplementation fileTree(dir: 'libs/besu/datatypes/build/libs', include: 'besu-datatypes-*.jar')
     testImplementation fileTree(dir: 'libs/besu/ethereum/core/build/libs', include: 'besu-ethereum-core-*.jar')
     testImplementation 'org.apache.logging.log4j:log4j-slf4j-impl:2.20.0'
+    testImplementation 'io.grpc:grpc-testing:1.62.2'
+    testImplementation 'io.grpc:grpc-inprocess:1.62.2'
 }
 
 test {
