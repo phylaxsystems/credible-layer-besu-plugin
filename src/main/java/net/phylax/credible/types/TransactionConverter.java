@@ -6,6 +6,7 @@ import java.util.stream.Collectors;
 
 import org.hyperledger.besu.datatypes.Transaction;
 import org.hyperledger.besu.datatypes.TransactionType;
+import org.hyperledger.besu.datatypes.VersionedHash;
 
 import net.phylax.credible.types.SidecarApiModels.TxEnv;
 
@@ -16,6 +17,8 @@ public class TransactionConverter {
     public static TxEnv convertToTxEnv(Transaction transaction) {
         SidecarApiModels.TxEnv txEnv = new SidecarApiModels.TxEnv();
         
+        txEnv.setTxType(convertType(transaction.getType()));
+
         // Caller (sender address)
         txEnv.setCaller(transaction.getSender().toHexString());
         
@@ -28,19 +31,37 @@ public class TransactionConverter {
             // EIP-1559: Use maxFeePerGas as gasPrice
             transaction.getMaxFeePerGas().ifPresent(maxFee -> 
                 txEnv.setGasPrice(maxFee.getAsBigInteger().toString()));
+            transaction.getMaxPriorityFeePerGas().ifPresent(maxPriorityFee -> 
+                txEnv.setGasPriorityFee(maxPriorityFee.getAsBigInteger().longValue()));
         } else {
             // Legacy: Use gasPrice
             transaction.getGasPrice().ifPresent(gasPrice ->
                 txEnv.setGasPrice(gasPrice.getAsBigInteger().toString()));
         }
+
+        transaction.getMaxFeePerBlobGas().ifPresent(maxFeePerBlobGas ->
+            txEnv.setMaxFeePerBlobGas(maxFeePerBlobGas.getAsBigInteger().longValue()));
+
+        transaction.getVersionedHashes().ifPresent(versionedHashes ->
+            txEnv.setBlobHashes(versionedHashes.stream()
+                .map(VersionedHash::toString)
+                .collect(Collectors.toList()))
+            );
+
+        // TODO: figure out the correct JSON
+        // transaction.getCodeDelegationList().ifPresent(codeDelegationList -> {
+        //     // txEnv.setAuthorizationList(codeDelegationList.stream()
+        //     //     .map(VersionedHash::toString)
+        //     //     .collect(Collectors.toList()));
+        // });
         
         // Transaction destination
         if (transaction.getTo().isPresent()) {
             // Contract call
-            txEnv.setTransactTo(transaction.getTo().get().toHexString());
+            txEnv.setKind(transaction.getTo().get().toHexString());
         } else {
             // Contract creation - transactTo should be null
-            txEnv.setTransactTo(null);
+            txEnv.setKind(null);
         }
         
         // Data/payload - use getData() if available, otherwise getPayload()
@@ -69,6 +90,18 @@ public class TransactionConverter {
         }
         
         return txEnv;
+    }
+
+    private static Long convertType(TransactionType type) {
+        switch(type) {
+            case FRONTIER: return 0L;
+            case ACCESS_LIST: return 1L;
+            case EIP1559: return 2L;
+            case BLOB: return 3L;
+            case DELEGATE_CODE: return 4L;
+            // TODO: default behavior expected
+            default: return null;
+        }
     }
     
     /**
@@ -145,9 +178,9 @@ public class TransactionConverter {
             
             // Handle destination and data safely
             if (transaction.getTo().isPresent()) {
-                fallbackTxEnv.setTransactTo(transaction.getTo().get().toHexString());
+                fallbackTxEnv.setKind(transaction.getTo().get().toHexString());
             } else {
-                fallbackTxEnv.setTransactTo(null);
+                fallbackTxEnv.setKind(null);
             }
             
             // Handle data safely
