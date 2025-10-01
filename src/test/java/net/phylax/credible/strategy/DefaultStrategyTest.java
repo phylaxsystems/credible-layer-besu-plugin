@@ -190,5 +190,72 @@ public class DefaultStrategyTest {
         assertEquals(response.getResults().size(), 1);
     }
 
+    @Test
+    void shouldCheckIfActiveAfterAllTransportsTimeout() {
+        // Primary sidecars throw on sendBlockEnv
+        var mockTransport = new MockTransport(100);
+        var mockTransport2 = new MockTransport(100);
+        var mockTransport3 = new MockTransport(100);
+
+        // Working fallback
+        var mockTransportFallback = new MockTransport(100);
+        var strategy = initStrategy(
+            Arrays.asList(mockTransport, mockTransport2, mockTransport3),
+            Arrays.asList(mockTransportFallback),
+            300,
+            false
+        );
+
+        strategy.sendBlockEnv(generateBlockEnv()).join();
+
+        var response = sendTransaction(strategy);
+        assertEquals(response.getResults().size(), 1);
+        assertEquals(strategy.isActive(), true);
+
+        // First two sidecars times out
+        mockTransport.setProcessingLatency(500);
+        mockTransport2.setProcessingLatency(500);
+
+        response = sendTransaction(strategy);
+        assertEquals(response.getResults().size(), 1);
+        assertEquals(strategy.isActive(), true);
+
+        // Last sidecar times out
+        mockTransport3.setProcessingLatency(500);
+
+        response = sendTransaction(strategy);
+        assertEquals(response.getResults().size(), 0);
+        assertEquals(strategy.isActive(), false);
+
+        // Should still be inactive
+        response = sendTransaction(strategy);
+        assertEquals(response.getResults().size(), 0);
+        assertEquals(strategy.isActive(), false);
+
+        // One sidecar gets up again
+        mockTransport3.setProcessingLatency(100);
+
+        // Still inactive until next block
+        response = sendTransaction(strategy);
+        assertEquals(response.getResults().size(), 0);
+        assertEquals(strategy.isActive(), false);
+
+        // All transport get back up
+        mockTransport.setProcessingLatency(100);
+        mockTransport2.setProcessingLatency(100);
+
+        // Still inactive until next block
+        response = sendTransaction(strategy);
+        assertEquals(response.getResults().size(), 0);
+        assertEquals(strategy.isActive(), false);
+
+        // New block, activate again
+        strategy.sendBlockEnv(generateBlockEnv()).join();
+
+        response = sendTransaction(strategy);
+        assertEquals(response.getResults().size(), 1);
+        assertEquals(strategy.isActive(), true);
+    }
+
     
 }

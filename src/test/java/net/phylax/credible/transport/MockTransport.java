@@ -107,4 +107,8 @@ public class MockTransport implements ISidecarTransport {
     public void setThrowOnGetTx(boolean throwOnGetTx) {
         this.throwOnGetTx = throwOnGetTx;
     }
+
+    public void setProcessingLatency(int processingLatency) {
+        this.processingLatency = processingLatency;
+    }
 }

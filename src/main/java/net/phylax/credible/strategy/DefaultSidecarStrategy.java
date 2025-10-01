@@ -11,6 +11,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
@@ -33,6 +34,8 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
     private List<ISidecarTransport> primaryTransports = new ArrayList<>();
     private List<ISidecarTransport> activeTransports = new CopyOnWriteArrayList<>();
     private List<ISidecarTransport> fallbackTransports = new CopyOnWriteArrayList<>();
+
+    private AtomicBoolean isActive = new AtomicBoolean(false);
 
     private final Map<String, List<CompletableFuture<GetTransactionsResponse>>> pendingTxRequests = 
         new ConcurrentHashMap<>();
@@ -119,6 +122,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
     }
 
     private void updateActiveTransports(List<ISidecarTransport> successfulTransports) {
+        isActive.set(true);
         pendingTxRequests.clear();
         activeTransports.clear();
         activeTransports.addAll(successfulTransports);
@@ -158,7 +162,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         // Calls sendTransactions on all active transports in parallel and awaits them
         activeTransports.parallelStream().forEach(transport -> {
             metricsRegistry.getSidecarRpcCounter().labels("sendTransactions").inc();
-            transport.sendTransactions(sendTxRequest).handle((result, ex) -> {
+            var tranpsportFuture = transport.sendTransactions(sendTxRequest).handle((result, ex) -> {
                 if (ex != null) {
                     LOG.debug("SendTransactions error: {} - {}",
                         ex.getMessage(),
@@ -173,8 +177,18 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                         result.getMessage());
                     return result;
                 }
-            }).join();
+            });
+
+            if (isActive.get()) {
+                tranpsportFuture.join();
+            }
         });
+
+        // Return if the strategy isn't active
+        if (!isActive.get()) {
+            LOG.debug("Transports aren't active!");
+            return Collections.emptyList();
+        }
         
         List<String> hashes = sendTxRequest.getTransactions().stream()
             .map(tx -> tx.getHash())
@@ -208,6 +222,12 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
     public GetTransactionsResponse getTransactionResults(List<String> txHashes) {
         var results = new ArrayList<TransactionResult>();
         var response = new GetTransactionsResponse(results, Collections.emptyList());
+
+        // Short circuit if the strategy isn't active
+        if (!isActive.get()) {
+            return response;
+        }
+
         for (String txHash : txHashes) {
             List<CompletableFuture<GetTransactionsResponse>> futures = pendingTxRequests.remove(txHash);
             if (futures == null || futures.isEmpty()) {
@@ -235,13 +255,12 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
             })
             .orTimeout(processingTimeout, TimeUnit.MILLISECONDS)
             .exceptionally(ex -> {
-                // NOTE: In case no transport finishes on time, remove all of them for the current block
-                activeTransports.clear();
                 long latency = System.currentTimeMillis() - startTime;
                 LOG.debug("Timeout or error getting transactions: exception {}, latency {}", 
                     ex.getMessage(), latency);
                 if (ex instanceof TimeoutException) {
                     metricsRegistry.getTimeoutCounter().labels().inc();
+                    isActive.set(false);
                 }
                 return null;
             });
@@ -325,5 +344,10 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         }
         
         return successfulResponses;
+    }
+
+    @Override
+    public boolean isActive() {
+        return isActive.get();
     }
 }

@@ -75,10 +75,15 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
 
     var tx = txContext.getPendingTransaction().getTransaction();
     String txHash = tx.getHash().toHexString();
-    
+
+    if (!config.strategy.isActive()) {
+      LOG.warn("No active tranpsport available!");
+      return TransactionSelectionResult.SELECTED;
+    }
+
     try {
         LOG.debug("Awaiting result for {}", txHash);
-        
+
         GetTransactionsResponse txResponse = config.strategy.getTransactionResults(Arrays.asList(txHash));
 
         if (txResponse == null ||
