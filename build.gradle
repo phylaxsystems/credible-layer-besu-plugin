@@ -40,8 +40,60 @@ def getGitCommitHash() {
     }
 }
 
+def getGitTag() {
+    try {
+        // Check if we're in a git repository first
+        def stdout = new ByteArrayOutputStream()
+        def execResult = exec {
+            commandLine 'git', 'rev-parse', '--is-inside-work-tree'
+            standardOutput = stdout
+            ignoreExitValue = true
+        }
+        
+        if (execResult.exitValue != 0) {
+            return null
+        }
+        
+        // Check if current commit has a tag
+        stdout = new ByteArrayOutputStream()
+        exec {
+            commandLine 'git', 'describe', '--exact-match', '--tags', 'HEAD'
+            standardOutput = stdout
+            ignoreExitValue = true
+        }
+        
+        def tag = stdout.toString().trim()
+        if (tag && !tag.isEmpty()) {
+            println "Found git tag: ${tag}"
+            return tag
+        }
+        return null
+    } catch (Exception e) {
+        return null
+    }
+}
+
+def determineVersion() {
+    // First check for CI/CD environment variables for tags
+    def tag = System.getenv('CI_COMMIT_TAG') ?: 
+              System.getenv('GITHUB_REF_NAME') ?: 
+              System.getenv('GIT_TAG') ?:
+              getGitTag()
+    
+    if (tag) {
+        // If we have a tag, use it directly
+        println "Using git tag as version: ${tag}"
+        return tag
+    } else {
+        // Otherwise use the original versioning scheme
+        def version = "${getPluginVersion()}-${getPluginRevision()}"
+        println "Using standard version: ${version}"
+        return version
+    }
+}
+
 group = 'net.phylax.credible'
-version = "${getPluginVersion()}-${getPluginRevision()}"
+version = determineVersion()
 
 repositories {
     mavenCentral()
