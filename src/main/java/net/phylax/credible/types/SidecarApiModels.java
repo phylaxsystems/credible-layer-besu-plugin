@@ -15,6 +15,9 @@ public class SidecarApiModels {
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class TxEnv {
         
+        @JsonProperty("tx_type")
+        private byte txType; // u8 -> byte
+
         @JsonProperty("caller")
         private String caller; // Address as hex string
         
@@ -22,10 +25,10 @@ public class SidecarApiModels {
         private Long gasLimit; // u64 -> Long
         
         @JsonProperty("gas_price")
-        private String gasPrice; // Hex string (e.g., "0x5f5e100")
+        private Long gasPrice; // u64 -> Long
         
-        @JsonProperty("transact_to")
-        private String transactTo; // Address as hex string (null for contract creation)
+        @JsonProperty("kind")
+        private String kind; // Address as hex string (null for contract creation)
         
         @JsonProperty("value")
         private String value; // Hex string (e.g., "0x0", "0x1bc16d674ec80000")
@@ -41,6 +44,18 @@ public class SidecarApiModels {
         
         @JsonProperty("access_list")
         private List<AccessListEntry> accessList; // AccessList
+
+        @JsonProperty("max_fee_per_blob_gas")
+        private Long maxFeePerBlobGas = 0L;
+
+        @JsonProperty("gas_priority_fee")
+        private Long gasPriorityFee = null;
+
+        @JsonProperty("blob_hashes")
+        private List<String> blobHashes = new ArrayList<>();
+
+        @JsonProperty("authorization_list")
+        private List<AuthorizationListEntry> authorizationList = new ArrayList<>();
         
         // Constructors
         public TxEnv() {
@@ -48,18 +63,26 @@ public class SidecarApiModels {
         }
         
         @JsonCreator
-        public TxEnv(@JsonProperty("caller") String caller, @JsonProperty("gas_limit") Long gasLimit, @JsonProperty("gas_price") String gasPrice,
-            @JsonProperty("transact_to") String transactTo, @JsonProperty("value") String value, @JsonProperty("data") String data,
-            @JsonProperty("nonce") Long nonce, @JsonProperty("chain_id") Long chainId, @JsonProperty("access_list") List<AccessListEntry> accessList) {
+        public TxEnv(@JsonProperty("caller") String caller, @JsonProperty("gas_limit") Long gasLimit, @JsonProperty("gas_price") Long gasPrice,
+            @JsonProperty("transact_to") String kind, @JsonProperty("value") String value, @JsonProperty("data") String data,
+            @JsonProperty("nonce") Long nonce, @JsonProperty("chain_id") Long chainId, @JsonProperty("access_list") List<AccessListEntry> accessList,
+            @JsonProperty("tx_type") byte txType, @JsonProperty("max_fee_per_blob_gas") Long maxFeePerBlobGas,
+            @JsonProperty("gas_priority_fee") Long gasPriorityFee, @JsonProperty("blob_hashes") List<String> blobHashes,
+            @JsonProperty("authorization_list") List<AuthorizationListEntry> authorizationList) {
             this.caller = caller;
             this.gasLimit = gasLimit;
             this.gasPrice = gasPrice;
-            this.transactTo = transactTo;
+            this.kind = kind;
             this.value = value;
             this.data = data;
             this.nonce = nonce;
             this.chainId = chainId;
             this.accessList = accessList != null ? accessList : new ArrayList<>();
+            this.txType = txType;
+            this.maxFeePerBlobGas = maxFeePerBlobGas;
+            this.gasPriorityFee = gasPriorityFee;
+            this.blobHashes = blobHashes != null ? blobHashes : new ArrayList<>();
+            this.authorizationList = authorizationList != null ? authorizationList : new ArrayList<>();
         }
         
         // Getters and Setters
@@ -69,11 +92,11 @@ public class SidecarApiModels {
         public Long getGasLimit() { return gasLimit; }
         public void setGasLimit(Long gasLimit) { this.gasLimit = gasLimit; }
         
-        public String getGasPrice() { return gasPrice; }
-        public void setGasPrice(String gasPrice) { this.gasPrice = gasPrice; }
+        public Long getGasPrice() { return gasPrice; }
+        public void setGasPrice(Long gasPrice) { this.gasPrice = gasPrice; }
         
-        public String getTransactTo() { return transactTo; }
-        public void setTransactTo(String transactTo) { this.transactTo = transactTo; }
+        public String getKind() { return kind; }
+        public void setKind(String kind) { this.kind = kind; }
         
         public String getValue() { return value; }
         public void setValue(String value) { this.value = value; }
@@ -91,14 +114,88 @@ public class SidecarApiModels {
         public void setAccessList(List<AccessListEntry> accessList) { 
             this.accessList = accessList != null ? accessList : new ArrayList<>(); 
         }
+
+        public Long getGasPriorityFee() { return gasPriorityFee; }
+        public void setGasPriorityFee(Long gasPriorityFee) { this.gasPriorityFee = gasPriorityFee; }
+
+        public List<String> getBlobHashes() { return blobHashes; }
+        public void setBlobHashes(List<String> blobHashes) { this.blobHashes = blobHashes; }
+        
+        public byte getTxType() { return txType; }
+        public void setTxType(byte txType) { this.txType = txType; }
+
+        public Long getMaxFeePerBlobGas() { return maxFeePerBlobGas; }
+        public void setMaxFeePerBlobGas(Long maxFeePerBlobGas) { this.maxFeePerBlobGas = maxFeePerBlobGas; }
+
+        public List<AuthorizationListEntry> getAuthorizationList() { return authorizationList; }
+        public void setAuthorizationList(List<AuthorizationListEntry> authorizationList) { this.authorizationList = authorizationList; }
+
+        @Override
+        public String toString() {
+            return String.format("TxEnv{caller='%s', gasLimit=%d, gasPrice='%s', kind='%s', value='%s', data='%s', nonce=%d, chainId=%d}",
+                    caller, gasLimit, gasPrice, kind, value, data, nonce, chainId);
+        }
+    }
+    
+    // AuthorizationList Entry
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class AuthorizationListEntry {
+        @JsonProperty("chain_id")
+        private Long chainId;
+
+        @JsonProperty("nonce")
+        private Long nonce;
+
+        @JsonProperty("address")
+        private String address;
+        
+        @JsonProperty("v")
+        private byte v;
+
+        @JsonProperty("r")
+        private String r;
+
+        @JsonProperty("s")
+        private String s;
+        
+        public AuthorizationListEntry() {}
+        
+        @JsonCreator
+        public AuthorizationListEntry(@JsonProperty("address") String address, @JsonProperty("v") byte v, @JsonProperty("r") String r,
+            @JsonProperty("s") String s, @JsonProperty("chain_id") Long chainId, @JsonProperty("nonce") Long nonce) {
+            this.chainId = chainId;
+            this.nonce = nonce;
+            this.address = address;
+            this.v = v;
+            this.r = r;
+            this.s = s;
+        }
+        
+        public String getAddress() { return address; }
+        public void setAddress(String address) { this.address = address; }
+        
+        public byte getV() { return v; }
+        public void setV(byte v) { this.v = v; }
+        
+        public String getR() { return r; }
+        public void setR(String r) { this.r = r; }
+        
+        public String getS() { return s; }
+        public void setS(String s) { this.s = s; }
+        
+        public Long getChainId() { return chainId; }
+        public void setChainId(Long chainId) { this.chainId = chainId; }
+        
+        public Long getNonce() { return nonce; }
+        public void setNonce(Long nonce) { this.nonce = nonce; }
         
         @Override
         public String toString() {
-            return String.format("TxEnv{caller='%s', gasLimit=%d, gasPrice='%s', transactTo='%s', value='%s', data='%s', nonce=%d, chainId=%d}",
-                    caller, gasLimit, gasPrice, transactTo, value, data, nonce, chainId);
+            return String.format("AuthorizationListEntry{address='%s', v=%d, r='%s', s='%s', chainId=%d, nonce=%d}",
+                    address, v, r, s, chainId, nonce);
         }
     }
-        
+
     // AccessList Entry
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class AccessListEntry {
@@ -366,25 +463,35 @@ public class SidecarApiModels {
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class SendBlockEnvResponse {
-        @JsonProperty("success")
-        private Boolean success;
+        @JsonProperty("status")
+        private String status;
         
-        @JsonProperty("error")
-        private String error;
+        @JsonProperty("request_count")
+        private Long requestCount;
+
+        @JsonProperty("message")
+        private String message;
         
         public SendBlockEnvResponse() {}
 
         @JsonCreator
-        public SendBlockEnvResponse(@JsonProperty("success") Boolean success, @JsonProperty("error") String error) {
-            this.success = success;
-            this.error = error;
+        public SendBlockEnvResponse(@JsonProperty("status") String status,
+            @JsonProperty("request_count") Long requestCount,
+            @JsonProperty("message") String message
+        ) {
+            this.status = status;
+            this.message = message;
+            this.requestCount = requestCount;
         }
         
-        public Boolean getSuccess() { return success; }
-        public void setSuccess(Boolean success) { this.success = success; }
+        public String getStatus() { return status; }
+        public void setStatus(String status) { this.status = status; }
+
+        public String getMessage() { return message; }
+        public void setMessage(String message) { this.message = message; }
         
-        public String getError() { return error; }
-        public void setError(String error) { this.error = error; }
+        public Long getRequestCount() { return requestCount; }
+        public void setRequestCount(Long requestCount) { this.requestCount = requestCount; }
     }
 
     /**

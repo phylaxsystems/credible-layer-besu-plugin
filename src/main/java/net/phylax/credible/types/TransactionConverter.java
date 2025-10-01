@@ -4,8 +4,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.hyperledger.besu.datatypes.CodeDelegation;
 import org.hyperledger.besu.datatypes.Transaction;
 import org.hyperledger.besu.datatypes.TransactionType;
+import org.hyperledger.besu.datatypes.VersionedHash;
 
 import net.phylax.credible.types.SidecarApiModels.TxEnv;
 
@@ -16,6 +18,8 @@ public class TransactionConverter {
     public static TxEnv convertToTxEnv(Transaction transaction) {
         SidecarApiModels.TxEnv txEnv = new SidecarApiModels.TxEnv();
         
+        txEnv.setTxType(convertType(transaction.getType()));
+
         // Caller (sender address)
         txEnv.setCaller(transaction.getSender().toHexString());
         
@@ -23,24 +27,40 @@ public class TransactionConverter {
         txEnv.setGasLimit(transaction.getGasLimit());
         
         // Gas price handling based on transaction type
-        if (transaction.getType() == TransactionType.EIP1559 || 
-            transaction.getType() == TransactionType.BLOB) {
+        if (supportsEip1559(transaction.getType())) {
             // EIP-1559: Use maxFeePerGas as gasPrice
             transaction.getMaxFeePerGas().ifPresent(maxFee -> 
-                txEnv.setGasPrice(maxFee.getAsBigInteger().toString()));
+                txEnv.setGasPrice(maxFee.getAsBigInteger().longValue()));
+            transaction.getMaxPriorityFeePerGas().ifPresent(maxPriorityFee -> 
+                txEnv.setGasPriorityFee(maxPriorityFee.getAsBigInteger().longValue()));
         } else {
             // Legacy: Use gasPrice
             transaction.getGasPrice().ifPresent(gasPrice ->
-                txEnv.setGasPrice(gasPrice.getAsBigInteger().toString()));
+                txEnv.setGasPrice(gasPrice.getAsBigInteger().longValue()));
         }
+
+        transaction.getMaxFeePerBlobGas().ifPresent(maxFeePerBlobGas ->
+            txEnv.setMaxFeePerBlobGas(maxFeePerBlobGas.getAsBigInteger().longValue()));
+
+        transaction.getVersionedHashes().ifPresent(versionedHashes ->
+            txEnv.setBlobHashes(versionedHashes.stream()
+                .map(VersionedHash::toString)
+                .collect(Collectors.toList()))
+            );
+
+        transaction.getCodeDelegationList().ifPresent(codeDelegationList -> {
+            txEnv.setAuthorizationList(codeDelegationList.stream()
+                .map(TransactionConverter::convertAuthorizationListEntry)
+                .collect(Collectors.toList()));
+        });
         
         // Transaction destination
         if (transaction.getTo().isPresent()) {
             // Contract call
-            txEnv.setTransactTo(transaction.getTo().get().toHexString());
+            txEnv.setKind(transaction.getTo().get().toHexString());
         } else {
-            // Contract creation - transactTo should be null
-            txEnv.setTransactTo(null);
+            // Contract creation - kind should be null
+            txEnv.setKind(null);
         }
         
         // Data/payload - use getData() if available, otherwise getPayload()
@@ -69,6 +89,39 @@ public class TransactionConverter {
         }
         
         return txEnv;
+    }
+
+    private static boolean supportsEip1559(TransactionType type) {
+        switch(type){
+            case ACCESS_LIST:
+            case FRONTIER:
+                return false;
+            default:
+                return true;
+        }
+    }
+
+    private static byte convertType(TransactionType type) {
+        switch(type) {
+            case FRONTIER: return 0;
+            case ACCESS_LIST: return 1;
+            case EIP1559: return 2;
+            case BLOB: return 3;
+            case DELEGATE_CODE: return 4;
+            // TODO: default behavior expected
+            default: return -1;
+        }
+    }
+
+    private static SidecarApiModels.AuthorizationListEntry convertAuthorizationListEntry(
+            CodeDelegation codeDelegation) {
+        return new SidecarApiModels.AuthorizationListEntry(
+            codeDelegation.address().toHexString(),
+            codeDelegation.v(),
+            "0x" + codeDelegation.r().toString(16),
+            "0x" +codeDelegation.s().toString(16),
+            codeDelegation.chainId().longValue(),
+            codeDelegation.nonce());
     }
     
     /**
@@ -138,16 +191,16 @@ public class TransactionConverter {
             
             // Handle gas price safely
             if (transaction.getGasPrice().isPresent()) {
-                fallbackTxEnv.setGasPrice("0x" + transaction.getGasPrice().get().getAsBigInteger().toString(16));
+                fallbackTxEnv.setGasPrice(transaction.getGasPrice().get().getAsBigInteger().longValue());
             } else {
-                fallbackTxEnv.setGasPrice("0x0");
+                fallbackTxEnv.setGasPrice(0L);
             }
             
             // Handle destination and data safely
             if (transaction.getTo().isPresent()) {
-                fallbackTxEnv.setTransactTo(transaction.getTo().get().toHexString());
+                fallbackTxEnv.setKind(transaction.getTo().get().toHexString());
             } else {
-                fallbackTxEnv.setTransactTo(null);
+                fallbackTxEnv.setKind(null);
             }
             
             // Handle data safely

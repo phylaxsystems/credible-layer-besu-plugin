@@ -87,7 +87,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                     .filter(res -> !res.isSuccess())
                     .count();
 
-                LOG.debug("Checking failedCount: {} {}", failedCount, futures.size());
+                LOG.debug("Checking sidecars: failed: {}, total: {}", failedCount, futures.size());
                 
                 // Check if all active transports failed
                 if (failedCount == futures.size() && !futures.isEmpty()) {
@@ -133,7 +133,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         return transport.sendBlockEnv(blockEnv)
             .thenApply(blockResult -> {
                 long latency = System.currentTimeMillis() - startTime;
-                return new TransportResponse(transport, blockResult.getSuccess(), "Success", latency);
+                return new TransportResponse(transport, "accepted".equals(blockResult.getStatus()), "Success", latency);
             })
             .exceptionally(ex -> {
                 LOG.debug("SendBlockEnv error: {} - {}",

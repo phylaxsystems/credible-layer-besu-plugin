@@ -32,7 +32,7 @@ public class MockTransport implements ISidecarTransport {
             if (throwOnSendBlockEnv) {
                 throw new RuntimeException("SendBlockEnv failed");
             }
-            return new SendBlockEnvResponse(blockEnvSuccess, null);
+            return new SendBlockEnvResponse("accepted", 1L, "BlockEnv successfully accepted");
         });
     }
 
