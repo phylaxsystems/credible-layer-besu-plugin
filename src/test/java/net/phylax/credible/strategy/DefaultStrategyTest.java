@@ -240,6 +240,15 @@ public class DefaultStrategyTest {
         assertEquals(response.getResults().size(), 0);
         assertEquals(strategy.isActive(), false);
 
+        // All transport get back up
+        mockTransport.setProcessingLatency(100);
+        mockTransport2.setProcessingLatency(100);
+
+        // Still inactive until next block
+        response = sendTransaction(strategy);
+        assertEquals(response.getResults().size(), 0);
+        assertEquals(strategy.isActive(), false);
+
         // New block, activate again
         strategy.sendBlockEnv(generateBlockEnv()).join();
 

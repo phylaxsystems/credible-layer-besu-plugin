@@ -248,7 +248,6 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
 
         CompletableFuture<GetTransactionsResponse> anySuccess = anySuccessOf(futures)
             .thenApply(result -> {
-                isActive.set(true);
                 if (result instanceof GetTransactionsResponse) {
                     return (GetTransactionsResponse) result;
                 }
