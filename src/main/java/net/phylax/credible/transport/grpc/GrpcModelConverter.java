@@ -45,8 +45,10 @@ public class GrpcModelConverter {
             builder.setPrevrandao(request.getPrevrandao());
         }
 
-        // Note: BlobExcessGasAndPrice not available in SendBlockEnvRequest currently
-        // Will need to be added if required
+        if (request.getBlobExcessGasAndPrice() != null) {
+            builder.setBlobExcessGasAndPrice(
+                toProtoBlobExcessGasAndPrice(request.getBlobExcessGasAndPrice()));
+        }
 
         return builder.build();
     }
@@ -90,19 +92,31 @@ public class GrpcModelConverter {
      * Convert TxEnv POJO to TransactionEnv protobuf
      */
     private static Sidecar.TransactionEnv toProtoTransactionEnv(SidecarApiModels.TxEnv pojo) {
+        if (pojo == null) {
+            return Sidecar.TransactionEnv.getDefaultInstance();
+        }
+
         Sidecar.TransactionEnv.Builder builder = Sidecar.TransactionEnv.newBuilder()
-            .setTxType(0) // Default to legacy, would need to be set if available in POJO
+            .setTxType(Byte.toUnsignedInt(pojo.getTxType()))
             .setCaller(pojo.getCaller() != null ? pojo.getCaller() : "")
             .setGasLimit(pojo.getGasLimit() != null ? pojo.getGasLimit() : 0L)
-            .setGasPrice(pojo.getGasPrice() != null ? pojo.getGasPrice() : "0")
-            .setKind(pojo.getTransactTo() != null ? pojo.getTransactTo() : "")
+            .setGasPrice(pojo.getGasPrice() != null ? String.valueOf(pojo.getGasPrice()) : "0")
+            .setKind(pojo.getKind() != null ? pojo.getKind() : "")
             .setValue(pojo.getValue() != null ? pojo.getValue() : "0")
             .setData(pojo.getData() != null ? pojo.getData() : "")
             .setNonce(pojo.getNonce() != null ? pojo.getNonce() : 0L)
-            .setMaxFeePerBlobGas("0");
+            .setMaxFeePerBlobGas(pojo.getMaxFeePerBlobGas() != null ? String.valueOf(pojo.getMaxFeePerBlobGas()) : "0");
 
         if (pojo.getChainId() != null) {
             builder.setChainId(pojo.getChainId());
+        }
+
+        if (pojo.getGasPriorityFee() != null) {
+            builder.setGasPriorityFee(String.valueOf(pojo.getGasPriorityFee()));
+        }
+
+        if (pojo.getBlobHashes() != null && !pojo.getBlobHashes().isEmpty()) {
+            builder.addAllBlobHashes(pojo.getBlobHashes());
         }
 
         if (pojo.getAccessList() != null && !pojo.getAccessList().isEmpty()) {
@@ -110,6 +124,13 @@ public class GrpcModelConverter {
                 .map(GrpcModelConverter::toProtoAccessListItem)
                 .collect(Collectors.toList());
             builder.addAllAccessList(accessList);
+        }
+
+        if (pojo.getAuthorizationList() != null && !pojo.getAuthorizationList().isEmpty()) {
+            List<Sidecar.Authorization> authorizationList = pojo.getAuthorizationList().stream()
+                .map(GrpcModelConverter::toProtoAuthorization)
+                .collect(Collectors.toList());
+            builder.addAllAuthorizationList(authorizationList);
         }
 
         return builder.build();
@@ -123,6 +144,24 @@ public class GrpcModelConverter {
             .setAddress(pojo.getAddress() != null ? pojo.getAddress() : "")
             .addAllStorageKeys(pojo.getStorageKeys() != null ? pojo.getStorageKeys() : new ArrayList<>())
             .build();
+    }
+
+    private static Sidecar.Authorization toProtoAuthorization(SidecarApiModels.AuthorizationListEntry pojo) {
+        Sidecar.Authorization.Builder builder = Sidecar.Authorization.newBuilder()
+            .setAddress(pojo.getAddress() != null ? pojo.getAddress() : "")
+            .setYParity(String.valueOf(Byte.toUnsignedInt(pojo.getV())))
+            .setR(pojo.getR() != null ? pojo.getR() : "")
+            .setS(pojo.getS() != null ? pojo.getS() : "");
+
+        if (pojo.getChainId() != null) {
+            builder.setChainId(String.valueOf(pojo.getChainId()));
+        }
+
+        if (pojo.getNonce() != null) {
+            builder.setNonce(pojo.getNonce());
+        }
+
+        return builder.build();
     }
 
     /**
@@ -151,8 +190,9 @@ public class GrpcModelConverter {
      */
     public static SidecarApiModels.SendBlockEnvResponse fromProtoBasicAckToBlockEnvResponse(Sidecar.BasicAck proto) {
         return new SidecarApiModels.SendBlockEnvResponse(
-            proto.getAccepted(),
-            proto.getAccepted() ? null : proto.getMessage()
+            proto.getAccepted() ? "success" : "failed",
+            proto.getAccepted() ? 1L : 0L,
+            proto.getMessage().isEmpty() ? null : proto.getMessage()
         );
     }
 

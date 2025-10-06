@@ -2,6 +2,7 @@ package net.phylax.credible;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -57,18 +58,33 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
     )
     public static class CrediblePluginConfiguration {
         public enum TransportType {
-            AUTO,
             HTTP,
             GRPC
         }
 
         @CommandLine.Option(
             names = {"--plugin-credible-sidecar-transport-type"},
-            description = "Transport type for the Credible sidecar (auto, http, grpc)",
-            defaultValue = "auto",
-            caseInsensitiveEnumValuesAllowed = true
+            description = "Transport type for the Credible sidecar (http, grpc)",
+            defaultValue = "http",
+            converter = TransportTypeConverter.class
         )
-        private TransportType transportType = TransportType.AUTO;
+        private TransportType transportType = TransportType.HTTP;
+
+        static class TransportTypeConverter implements CommandLine.ITypeConverter<TransportType> {
+            @Override
+            public TransportType convert(String value) {
+                if (value == null) {
+                    throw new CommandLine.TypeConversionException("Transport type cannot be null");
+                }
+
+                try {
+                    return TransportType.valueOf(value.trim().toUpperCase(Locale.ROOT));
+                } catch (IllegalArgumentException ex) {
+                    throw new CommandLine.TypeConversionException(
+                        "Invalid transport type '" + value + "'. Expected one of: http, grpc.");
+                }
+            }
+        }
 
         @CommandLine.Option(
             names = {"--plugin-credible-sidecar-rpc-endpoints"},
@@ -173,11 +189,11 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         
     @Override
     public void start() {
-        // Validate configuration: exactly one transport type must be configured
+        // Validate configuration: the selected transport must be configured
         validateTransportConfiguration();
 
-        // Determine which transport type should be used (explicit or auto-detected)
-        var transportType = resolveConfiguredTransportType();
+        // Determine which transport type should be used
+        var transportType = config.getTransportType();
         boolean isJsonRpc = transportType == CrediblePluginConfiguration.TransportType.HTTP;
 
         if (isJsonRpc) {
@@ -229,7 +245,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
     }
 
     /**
-     * Validate that exactly one transport type is configured (JSON-RPC or gRPC, not both)
+     * Validate that the selected transport type has the required endpoints configured.
      */
     private void validateTransportConfiguration() {
         boolean hasJsonRpc = isNotEmpty(config.getRpcEndpoints());
@@ -237,23 +253,6 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         var transportType = config.getTransportType();
 
         switch (transportType) {
-            case AUTO:
-                if (!hasJsonRpc && !hasGrpc) {
-                    throw new IllegalStateException(
-                        "No transport configured. Please specify either:\n" +
-                        "  --plugin-credible-sidecar-rpc-endpoints for JSON-RPC, OR\n" +
-                        "  --plugin-credible-sidecar-grpc-endpoints for gRPC"
-                    );
-                }
-
-                if (hasJsonRpc && hasGrpc) {
-                    throw new IllegalStateException(
-                        "Cannot use both JSON-RPC and gRPC transports simultaneously. Please specify only one:\n" +
-                        "  --plugin-credible-sidecar-rpc-endpoints for JSON-RPC, OR\n" +
-                        "  --plugin-credible-sidecar-grpc-endpoints for gRPC"
-                    );
-                }
-                break;
             case HTTP:
                 if (!hasJsonRpc) {
                     throw new IllegalStateException(
@@ -280,17 +279,14 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
                 throw new IllegalStateException(
                     "Unsupported transport type configured: " + transportType);
         }
-    }
 
-    private CrediblePluginConfiguration.TransportType resolveConfiguredTransportType() {
-        var transportType = config.getTransportType();
-        if (transportType != CrediblePluginConfiguration.TransportType.AUTO) {
-            return transportType;
+        if (!hasJsonRpc && !hasGrpc) {
+            throw new IllegalStateException(
+                "No transport endpoints configured. Please specify:\n" +
+                "  --plugin-credible-sidecar-rpc-endpoints for HTTP transport, OR\n" +
+                "  --plugin-credible-sidecar-grpc-endpoints for gRPC transport"
+            );
         }
-
-        return isNotEmpty(config.getGrpcEndpoints())
-            ? CrediblePluginConfiguration.TransportType.GRPC
-            : CrediblePluginConfiguration.TransportType.HTTP;
     }
 
     /**

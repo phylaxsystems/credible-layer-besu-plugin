@@ -145,7 +145,8 @@ public class GrpcTransportTest {
 
         // Verify the response
         assertTrue(response.getSuccess());
-        assertNull(response.getError());
+        assertEquals("success", response.getStatus());
+        assertEquals("Block accepted", response.getMessage());
 
         // Verify the request was received correctly
         assertNotNull(testService.lastBlockEnvRequest);
@@ -154,6 +155,9 @@ public class GrpcTransportTest {
                     testService.lastBlockEnvRequest.getBlockEnv().getBeneficiary());
         assertEquals(10, testService.lastBlockEnvRequest.getNTransactions());
         assertEquals("0xabcdef1234567890", testService.lastBlockEnvRequest.getLastTxHash());
+        assertTrue(testService.lastBlockEnvRequest.getBlockEnv().hasBlobExcessGasAndPrice());
+        assertEquals(0L, testService.lastBlockEnvRequest.getBlockEnv().getBlobExcessGasAndPrice().getExcessBlobGas());
+        assertEquals("1", testService.lastBlockEnvRequest.getBlockEnv().getBlobExcessGasAndPrice().getBlobGasprice());
     }
 
     @Test
@@ -173,7 +177,8 @@ public class GrpcTransportTest {
         SidecarApiModels.SendBlockEnvResponse response = future.get();
 
         assertFalse(response.getSuccess());
-        assertEquals("Block rejected due to invalid data", response.getError());
+        assertEquals("failed", response.getStatus());
+        assertEquals("Block rejected due to invalid data", response.getMessage());
     }
 
     @Test
@@ -181,17 +186,32 @@ public class GrpcTransportTest {
         // Create test transactions
         List<SidecarApiModels.TransactionWithHash> transactions = new ArrayList<>();
 
-        SidecarApiModels.TxEnv txEnv = new SidecarApiModels.TxEnv(
-            "0xsender123",           // caller
-            21000L,                  // gasLimit
-            "1000000000",            // gasPrice
-            "0xrecipient456",        // transactTo
-            "1000000000000000000",   // value (1 ETH)
-            "0x",                    // data
-            0L,                      // nonce
-            1L,                      // chainId
-            new ArrayList<>()        // accessList
-        );
+        SidecarApiModels.TxEnv txEnv = new SidecarApiModels.TxEnv();
+        txEnv.setCaller("0xsender123");
+        txEnv.setGasLimit(21000L);
+        txEnv.setGasPrice(1_000_000_000L);
+        txEnv.setKind("0xrecipient456");
+        txEnv.setValue("1000000000000000000");
+        txEnv.setData("0x");
+        txEnv.setNonce(0L);
+        txEnv.setChainId(1L);
+        txEnv.setTxType((byte) 2);
+        txEnv.setMaxFeePerBlobGas(25L);
+        txEnv.setGasPriorityFee(2L);
+        txEnv.setBlobHashes(List.of("0xblobhash"));
+
+        SidecarApiModels.AccessListEntry accessListEntry = new SidecarApiModels.AccessListEntry(
+            "0xaccess", List.of("0xkey1", "0xkey2"));
+        txEnv.setAccessList(List.of(accessListEntry));
+
+        SidecarApiModels.AuthorizationListEntry authorizationListEntry = new SidecarApiModels.AuthorizationListEntry();
+        authorizationListEntry.setAddress("0xauth");
+        authorizationListEntry.setV((byte) 1);
+        authorizationListEntry.setR("0xr");
+        authorizationListEntry.setS("0xs");
+        authorizationListEntry.setChainId(1L);
+        authorizationListEntry.setNonce(5L);
+        txEnv.setAuthorizationList(List.of(authorizationListEntry));
 
         transactions.add(new SidecarApiModels.TransactionWithHash(
             txEnv, "0xtxhash1"
@@ -217,6 +237,26 @@ public class GrpcTransportTest {
         assertEquals(1, testService.lastSendTransactionsRequest.getTransactionsCount());
         assertEquals("0xtxhash1",
                     testService.lastSendTransactionsRequest.getTransactions(0).getHash());
+
+        Sidecar.TransactionEnv protoEnv =
+            testService.lastSendTransactionsRequest.getTransactions(0).getTxEnv();
+        assertEquals(2, protoEnv.getTxType());
+        assertEquals("0xrecipient456", protoEnv.getKind());
+        assertEquals("1000000000000000000", protoEnv.getValue());
+        assertEquals("1000000000", protoEnv.getGasPrice());
+        assertEquals("25", protoEnv.getMaxFeePerBlobGas());
+        assertEquals("2", protoEnv.getGasPriorityFee());
+        assertEquals(1, protoEnv.getBlobHashesCount());
+        assertEquals("0xblobhash", protoEnv.getBlobHashes(0));
+        assertEquals(1, protoEnv.getAccessListCount());
+        assertEquals("0xaccess", protoEnv.getAccessList(0).getAddress());
+        assertEquals(2, protoEnv.getAccessList(0).getStorageKeysCount());
+        assertEquals(1, protoEnv.getAuthorizationListCount());
+        assertEquals("0xauth", protoEnv.getAuthorizationList(0).getAddress());
+        assertEquals("1", protoEnv.getAuthorizationList(0).getYParity());
+        assertEquals("0xr", protoEnv.getAuthorizationList(0).getR());
+        assertEquals("1", protoEnv.getAuthorizationList(0).getChainId());
+        assertEquals(5L, protoEnv.getAuthorizationList(0).getNonce());
     }
 
     @Test
