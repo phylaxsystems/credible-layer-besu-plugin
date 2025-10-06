@@ -1,0 +1,111 @@
+syntax = "proto3";
+
+package sidecar.transport.v1;
+
+// Envelope for sending block environment to the sidecar.
+// The block environment is transmitted using native protobuf typing to
+// avoid JSON-in-protobuf payloads.
+message BlockEnvEnvelope {
+  BlockEnv block_env = 1;
+  // Optional last tx hash and transaction count to mirror HTTP schema.
+  // When n_transactions > 0, last_tx_hash must be provided and non-empty.
+  string last_tx_hash = 2; // empty string means absent
+  uint64 n_transactions = 3;
+}
+
+message BlockEnv {
+  uint64 number = 1;                     // block number
+  string beneficiary = 2;                // 20-byte address as hex string
+  uint64 timestamp = 3;                  // seconds since UNIX epoch
+  uint64 gas_limit = 4;                  // block gas limit
+  uint64 basefee = 5;                    // base fee per gas (u64)
+  string difficulty = 6;                 // difficulty as hex or decimal string (U256)
+  optional string prevrandao = 7;        // 32-byte prevrandao as hex string
+  optional BlobExcessGasAndPrice blob_excess_gas_and_price = 8;
+}
+
+message BlobExcessGasAndPrice {
+  uint64 excess_blob_gas = 1;            // blob excess gas
+  string blob_gasprice = 2;              // blob gas price as decimal string (u128)
+}
+
+message BasicAck {
+  bool accepted = 1;
+  string message = 2;
+}
+
+// Access list item for EIP-2930
+message AccessListItem {
+  string address = 1;      // 20-byte address as hex string
+  repeated string storage_keys = 2; // 32-byte storage keys as hex strings
+}
+
+// Authorization for EIP-7702 (account abstraction)
+message Authorization {
+  string chain_id = 1;
+  string address = 2;      // 20-byte address as hex string
+  uint64 nonce = 3;
+  string y_parity = 4;     // hex string for y_parity
+  string r = 5;           // hex string for signature r
+  string s = 6;           // hex string for signature s
+}
+
+// Transaction environment equivalent to revm's TxEnv
+message TransactionEnv {
+  uint32 tx_type = 1;                             // transaction type (0=legacy, 1=eip2930, 2=eip1559, etc.)
+  string caller = 2;                              // 20-byte sender address as hex string
+  uint64 gas_limit = 3;                           // gas limit
+  string gas_price = 4;                           // gas price as decimal string (u128)
+  string kind = 5;                                // target address (empty/0x for create)
+  string value = 6;                               // transaction value as decimal string (U256)
+  string data = 7;                                // transaction data as hex string
+  uint64 nonce = 8;                               // transaction nonce
+  optional uint64 chain_id = 9;                   // chain ID (optional)
+  repeated AccessListItem access_list = 10;       // EIP-2930 access list
+  optional string gas_priority_fee = 11;          // priority fee as decimal string (u128, optional)
+  repeated string blob_hashes = 12;               // EIP-4844 blob versioned hashes as hex strings
+  string max_fee_per_blob_gas = 13;               // max fee per blob gas as decimal string (u128)
+  repeated Authorization authorization_list = 14; // EIP-7702 authorization list
+}
+
+message Transaction {
+  string hash = 1;           // 0x-prefixed hash string
+  TransactionEnv tx_env = 2; // transaction env
+}
+
+message SendTransactionsRequest {
+  repeated Transaction transactions = 1;
+}
+
+message SendTransactionsResponse {
+  uint64 accepted_count = 1; // number of accepted transactions
+  uint64 request_count = 2;  // total transactions received
+  string message = 3;        // info message
+}
+
+message ReorgRequest {
+  string removed_tx_hash = 1; // 0x-prefixed hash string
+}
+
+message GetTransactionsRequest {
+  repeated string tx_hashes = 1; // 0x-prefixed hash strings
+}
+
+message TransactionResult {
+  string hash = 1;
+  string status = 2;    // success | reverted | halted | assertion_failed | failed
+  uint64 gas_used = 3;  // 0 when unknown
+  string error = 4;     // empty when none
+}
+
+message GetTransactionsResponse {
+  repeated TransactionResult results = 1;
+  repeated string not_found = 2;
+}
+
+service SidecarTransport {
+  rpc SendBlockEnv(BlockEnvEnvelope) returns (BasicAck);
+  rpc SendTransactions(SendTransactionsRequest) returns (SendTransactionsResponse);
+  rpc Reorg(ReorgRequest) returns (BasicAck);
+  rpc GetTransactions(GetTransactionsRequest) returns (GetTransactionsResponse);
+}

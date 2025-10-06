@@ -1,8 +1,9 @@
 package net.phylax.credible.types;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.annotation.JsonCreator;
 
 import java.util.List;
 import java.util.ArrayList;
@@ -367,6 +368,11 @@ public class SidecarApiModels {
         public String getPrevrandao() { return prevrandao; }
         public void setPrevrandao(String prevrandao) { this.prevrandao = prevrandao; }
 
+        public BlobExcessGasAndPrice getBlobExcessGasAndPrice() { return blobExcessGasAndPrice; }
+        public void setBlobExcessGasAndPrice(BlobExcessGasAndPrice blobExcessGasAndPrice) {
+            this.blobExcessGasAndPrice = blobExcessGasAndPrice;
+        }
+
         public Integer getNTransactions() { return nTransactions; }
         public void setNTransactions(Integer nTransactions) { this.nTransactions = nTransactions; }
         
@@ -492,6 +498,11 @@ public class SidecarApiModels {
         
         public Long getRequestCount() { return requestCount; }
         public void setRequestCount(Long requestCount) { this.requestCount = requestCount; }
+
+        @JsonIgnore
+        public boolean getSuccess() {
+            return "success".equalsIgnoreCase(status);
+        }
     }
 
     /**
