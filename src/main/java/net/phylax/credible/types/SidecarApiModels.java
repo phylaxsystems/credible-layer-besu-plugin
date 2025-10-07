@@ -501,7 +501,7 @@ public class SidecarApiModels {
 
         @JsonIgnore
         public boolean getSuccess() {
-            return "success".equalsIgnoreCase(status);
+            return "accepted".equalsIgnoreCase(status);
         }
     }
 

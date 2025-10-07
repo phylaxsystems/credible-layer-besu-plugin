@@ -145,7 +145,7 @@ public class GrpcTransportTest {
 
         // Verify the response
         assertTrue(response.getSuccess());
-        assertEquals("success", response.getStatus());
+        assertEquals("accepted", response.getStatus());
         assertEquals("Block accepted", response.getMessage());
 
         // Verify the request was received correctly

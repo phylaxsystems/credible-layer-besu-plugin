@@ -190,7 +190,7 @@ public class GrpcModelConverter {
      */
     public static SidecarApiModels.SendBlockEnvResponse fromProtoBasicAckToBlockEnvResponse(Sidecar.BasicAck proto) {
         return new SidecarApiModels.SendBlockEnvResponse(
-            proto.getAccepted() ? "success" : "failed",
+            proto.getAccepted() ? "accepted" : "failed",
             proto.getAccepted() ? 1L : 0L,
             proto.getMessage().isEmpty() ? null : proto.getMessage()
         );
