@@ -77,7 +77,6 @@ def getGitTag() {
 def determineVersion() {
     // First check for CI/CD environment variables for tags
     def tag = System.getenv('CI_COMMIT_TAG') ?: 
-              System.getenv('GITHUB_REF_NAME') ?: 
               System.getenv('GIT_TAG') ?:
               getGitTag()
     
