@@ -1,5 +1,6 @@
 package net.phylax.credible.strategy;
 
+import static org.junit.Assert.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -9,6 +10,8 @@ import java.util.List;
 import java.util.Random;
 
 import org.junit.jupiter.api.Test;
+
+import com.google.common.base.Stopwatch;
 
 import net.phylax.credible.metrics.CredibleMetricsRegistry;
 import net.phylax.credible.transport.MockTransport;
@@ -127,7 +130,7 @@ public class DefaultStrategyTest {
     }
 
     @Test
-    void shouldProcessFromFasterSidecar() {
+    void shouldProcessFromSidecarThatDoesntTimeout() {
         var mockTransport = new MockTransport(800);
         var mockTransport2 = new MockTransport(200);
         var strategy = initStrategy(Arrays.asList(mockTransport, mockTransport2), null, 500, true);
@@ -188,6 +191,54 @@ public class DefaultStrategyTest {
         response = sendTransaction(strategy);
         
         assertEquals(response.getResults().size(), 1);
+    }
+
+    @Test
+    void shouldProcessFromFasterSidecar() {
+        int longProcessingTime = 1000;
+        int fastProcessingTime = 400;
+        int processingTimeout = 3000;
+        
+        var mockTransport = new MockTransport(longProcessingTime);
+        var mockTransport2 = new MockTransport(fastProcessingTime);
+
+        // Working fallback
+        var mockTransportFallback = new MockTransport(longProcessingTime);
+        var strategy = initStrategy(
+            Arrays.asList(mockTransport, mockTransport2),
+            Arrays.asList(mockTransportFallback),
+            processingTimeout,
+            false
+        );
+
+        strategy.sendBlockEnv(generateBlockEnv()).join();
+
+        Stopwatch stopwatch = Stopwatch.createStarted();
+        var response = sendTransaction(strategy);
+        stopwatch.stop();
+        assertEquals(response.getResults().size(), 1);
+
+        // The time elapsed shouldn't be much more than the fastest one
+        long elapsed = stopwatch.elapsed().toMillis();
+        assertTrue(elapsed < longProcessingTime);
+        assertTrue(elapsed >= fastProcessingTime);
+
+        // Set the processing latency on the first also to be faster
+        mockTransport.setProcessingLatency(fastProcessingTime - 100);
+        // Set a timeout on the sendTransactions for the first one
+        mockTransport.setSendTransactionsLatency(fastProcessingTime + 100);
+
+        strategy.sendBlockEnv(generateBlockEnv()).join();
+
+        stopwatch = Stopwatch.createStarted();
+        response = sendTransaction(strategy);
+        stopwatch.stop();
+        assertEquals(response.getResults().size(), 1);
+
+        // Even though the first sidecar is faster in processing, the result of the second one
+        // will be used because the first one is slower on sendTransactions
+        elapsed = stopwatch.elapsed().toMillis();
+        assertTrue(elapsed >= fastProcessingTime);
     }
 
     @Test

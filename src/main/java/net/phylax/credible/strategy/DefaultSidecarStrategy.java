@@ -158,59 +158,54 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
             LOG.warn("Active sidecars empty");
             return Collections.emptyList();
         }
-        
-        // Calls sendTransactions on all active transports in parallel and awaits them
-        activeTransports.parallelStream().forEach(transport -> {
-            metricsRegistry.getSidecarRpcCounter().labels("sendTransactions").inc();
-            var tranpsportFuture = transport.sendTransactions(sendTxRequest).handle((result, ex) -> {
-                if (ex != null) {
-                    LOG.debug("SendTransactions error: {} - {}",
-                        ex.getMessage(),
-                        ex.getCause() != null ? ex.getCause().getMessage() : "");
-                    metricsRegistry.getErrorCounter().labels().inc();
-                    activeTransports.remove(transport);
-                    // NOTE: we don't make use of the response here, so safe to return anything
-                    return null;
-                } else {
-                    LOG.debug("SendTransactions response: count - {}, message - {}", 
-                        result.getRequestCount(), 
-                        result.getMessage());
-                    return result;
-                }
-            });
 
-            if (isActive.get()) {
-                tranpsportFuture.join();
-            }
-        });
-
-        // Return if the strategy isn't active
-        if (!isActive.get()) {
-            LOG.debug("Transports aren't active!");
-            return Collections.emptyList();
-        }
-        
         List<String> hashes = sendTxRequest.getTransactions().stream()
             .map(tx -> tx.getHash())
             .collect(Collectors.toList());
 
-        // Each future in the List holds a response from a single transport
+        // Calls sendTransactions and chain getTransactions per sidecar
+        // In this way we track the send->get request chain per transport without blocking
         List<CompletableFuture<GetTransactionsResponse>> futures = activeTransports.stream()
-            .map(transport -> {
-                var timing = metricsRegistry.getPollingTimer().labels().startTimer();
-                metricsRegistry.getSidecarRpcCounter().labels("getTransactions").inc();
-                return transport.getTransactions(hashes)
-                    .whenComplete((response, throwable) -> {
-                        if (throwable != null) {
-                            LOG.debug("GetTransactions error: {} - {}",
-                                throwable.getMessage(),
-                                throwable.getCause() != null ? throwable.getCause().getMessage() : "");
-                        }
-                        timing.stopTimer();
-                    });
-            })
-            .collect(Collectors.toList());
+        .map(transport -> {
+            metricsRegistry.getSidecarRpcCounter().labels("sendTransactions").inc();
+            
+            return transport.sendTransactions(sendTxRequest)
+                .whenComplete((result, ex) -> {
+                    if (ex != null) {
+                        LOG.debug("SendTransactions error: {} - {}",
+                            ex.getMessage(),
+                            ex.getCause() != null ? ex.getCause().getMessage() : "");
+                        metricsRegistry.getErrorCounter().labels().inc();
+                        activeTransports.remove(transport);
+                    } else {
+                        LOG.debug("SendTransactions response: count - {}, message - {}", 
+                            result.getRequestCount(), 
+                            result.getMessage());
+                    }
+                })
+                .thenCompose(sendResult -> {
+                    if (!isActive.get()) {
+                        LOG.debug("Transports aren't active!");
+                        return CompletableFuture.completedFuture(null);
+                    }
 
+                    var timing = metricsRegistry.getPollingTimer().labels().startTimer();
+                    metricsRegistry.getSidecarRpcCounter().labels("getTransactions").inc();
+                    
+                    return transport.getTransactions(hashes)
+                        .whenComplete((response, throwable) -> {
+                            if (throwable != null) {
+                                LOG.debug("GetTransactions error: {} - {}",
+                                    throwable.getMessage(),
+                                    throwable.getCause() != null ? throwable.getCause().getMessage() : "");
+                                activeTransports.remove(transport);
+                            }
+                            timing.stopTimer();
+                        });
+                });
+        })
+        .collect(Collectors.toList());
+        
         // NOTE: making the assumption that it's only 1 transaction per request
         // which is implied with the TransactionSelectionPlugin
         pendingTxRequests.put(hashes.get(0), futures);
@@ -247,12 +242,6 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         long startTime = System.currentTimeMillis();
 
         CompletableFuture<GetTransactionsResponse> anySuccess = anySuccessOf(futures)
-            .thenApply(result -> {
-                if (result instanceof GetTransactionsResponse) {
-                    return (GetTransactionsResponse) result;
-                }
-                return null;
-            })
             .orTimeout(processingTimeout, TimeUnit.MILLISECONDS)
             .exceptionally(ex -> {
                 long latency = System.currentTimeMillis() - startTime;

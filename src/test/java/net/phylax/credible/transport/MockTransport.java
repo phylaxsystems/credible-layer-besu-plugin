@@ -14,6 +14,7 @@ public class MockTransport implements ISidecarTransport {
     private String sendTxStatus = "accepted";
     private String getTxStatus = TransactionStatus.SUCCESS;
     private boolean reorgSuccess = true;
+    private int sendTransactionsLatency = 0;
 
     // Whether to return empty results on getTransactions
     private boolean emptyResults = false;
@@ -38,6 +39,9 @@ public class MockTransport implements ISidecarTransport {
 
     @Override
     public CompletableFuture<SendTransactionsResponse> sendTransactions(SendTransactionsRequest transactions) {
+        Executor delayedExecutor = CompletableFuture.delayedExecutor(
+            sendTransactionsLatency, TimeUnit.MILLISECONDS);
+            
         return CompletableFuture.supplyAsync(() -> {
             if (throwOnSendTx) {
                 throw new RuntimeException("SendTransactions failed");
@@ -46,8 +50,8 @@ public class MockTransport implements ISidecarTransport {
                 sendTxStatus,
                 "Successfuly accepted",
                 (long) transactions.getTransactions().size());
-        });
-        
+        }, delayedExecutor);
+
     }
 
     @Override
@@ -110,5 +114,9 @@ public class MockTransport implements ISidecarTransport {
 
     public void setProcessingLatency(int processingLatency) {
         this.processingLatency = processingLatency;
+    }
+
+    public void setSendTransactionsLatency(int sendTransactionsLatency) {
+        this.sendTransactionsLatency = sendTransactionsLatency;
     }
 }
