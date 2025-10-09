@@ -159,11 +159,6 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
             return Collections.emptyList();
         }
 
-        if (!isActive.get()) {
-            LOG.debug("Transports aren't active!");
-            return Collections.emptyList();
-        }
-
         List<String> hashes = sendTxRequest.getTransactions().stream()
             .map(tx -> tx.getHash())
             .collect(Collectors.toList());
@@ -189,6 +184,11 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                     }
                 })
                 .thenCompose(sendResult -> {
+                    if (!isActive.get()) {
+                        LOG.debug("Transports aren't active!");
+                        return CompletableFuture.completedFuture(null);
+                    }
+
                     var timing = metricsRegistry.getPollingTimer().labels().startTimer();
                     metricsRegistry.getSidecarRpcCounter().labels("getTransactions").inc();
                     
