@@ -105,21 +105,9 @@ repositories {
 
 dependencies {
     // Besu Plugin API and core dependencies
-    // NOTE: not published so we use the local paths
-    // compileOnly 'org.hyperledger.besu:plugin-api:25.6.0'
-    // compileOnly 'org.hyperledger.besu:evm:25.6.0'
-    // compileOnly 'org.hyperledger.besu:besu-datatypes:25.6.0'
-
-    // Local
-    // compileOnly files('libs/besu/plugin-api/build/libs/besu-plugin-api-25.9-develop-3f53857.jar')
-    // compileOnly files('libs/besu/evm/build/libs/besu-evm-25.9-develop-3f53857.jar')
-    // compileOnly files('libs/besu/datatypes/build/libs/besu-datatypes-25.9-develop-3f53857.jar')
-    // compileOnly files('libs/besu/ethereum/core/build/libs/besu-ethereum-core-25.9-develop-3f53857.jar')
-
-    compileOnly fileTree(dir: 'libs/besu/plugin-api/build/libs', include: 'besu-plugin-api-*.jar')
-    compileOnly fileTree(dir: 'libs/besu/evm/build/libs', include: 'besu-evm-*.jar')
-    compileOnly fileTree(dir: 'libs/besu/datatypes/build/libs', include: 'besu-datatypes-*.jar')
-    compileOnly fileTree(dir: 'libs/besu/ethereum/core/build/libs', include: 'besu-ethereum-core-*.jar')
+    compileOnly 'org.hyperledger.besu:besu-plugin-api:25.9.0'
+    compileOnly 'org.hyperledger.besu:besu-evm:25.9.0'
+    compileOnly 'org.hyperledger.besu:besu-datatypes:25.9.0'
 
     implementation 'io.consensys.tuweni:tuweni-units:2.7.1'
     
@@ -143,6 +131,18 @@ dependencies {
     
     // Caching (Caffeine)
     implementation 'com.github.ben-manes.caffeine:caffeine:3.1.8'
+
+    // OpenTelemetry SDK
+    implementation 'io.opentelemetry:opentelemetry-sdk:1.32.0'
+    
+    // OTLP Exporter
+    implementation 'io.opentelemetry:opentelemetry-exporter-otlp:1.32.0'
+    
+    // Semantic Conventions
+    implementation 'io.opentelemetry.semconv:opentelemetry-semconv:1.32.0'
+    
+    // OkHttp Instrumentation
+    implementation 'io.opentelemetry.instrumentation:opentelemetry-okhttp-3.0:2.20.0-alpha'
     
     // Logging (including Lombok support)
     implementation 'org.slf4j:slf4j-api:1.7.36'
@@ -155,10 +155,9 @@ dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.9.2'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.8.2'
     testImplementation 'org.mockito:mockito-core:5.+'
-    testImplementation fileTree(dir: 'libs/besu/plugin-api/build/libs', include: 'besu-plugin-api-*.jar')
-    testImplementation fileTree(dir: 'libs/besu/evm/build/libs', include: 'besu-evm-*.jar')
-    testImplementation fileTree(dir: 'libs/besu/datatypes/build/libs', include: 'besu-datatypes-*.jar')
-    testImplementation fileTree(dir: 'libs/besu/ethereum/core/build/libs', include: 'besu-ethereum-core-*.jar')
+    testImplementation 'org.hyperledger.besu:besu-plugin-api:25.9.0'
+    testImplementation 'org.hyperledger.besu:besu-evm:25.9.0'
+    testImplementation 'org.hyperledger.besu:besu-datatypes:25.9.0'
     testImplementation 'org.apache.logging.log4j:log4j-slf4j-impl:2.20.0'
     testImplementation 'io.grpc:grpc-testing:1.75.0'
     testImplementation 'io.grpc:grpc-inprocess:1.75.0'
@@ -229,17 +228,6 @@ publishing {
     }
 }
 
-task buildBesuSubmodule(type: Exec) {
-    workingDir 'libs/besu'
-    commandLine './gradlew',
-        'plugin-api:assemble',
-        'datatypes:assemble',
-        'ethereum:core:assemble',
-        'evm:assemble'
-    
-    // Only run if the submodule exists
-    onlyIf { file('libs/besu').exists() }
-}
 
 // Custom tasks
 task copyPlugin(type: Copy) {
@@ -258,7 +246,6 @@ task installPlugin(type: Copy, dependsOn: jar) {
     }
 }
 
-compileJava.dependsOn buildBesuSubmodule
 build.finalizedBy copyPlugin
 
 // Protobuf configuration
