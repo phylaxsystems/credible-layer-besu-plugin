@@ -21,6 +21,7 @@ import org.slf4j.LoggerFactory;
 import net.phylax.credible.metrics.CredibleMetricsRegistry;
 import net.phylax.credible.transport.ISidecarTransport;
 import net.phylax.credible.types.CredibleRejectionReason;
+import net.phylax.credible.types.SidecarApiModels.CredibleLayerMethods;
 import net.phylax.credible.types.SidecarApiModels.GetTransactionsResponse;
 import net.phylax.credible.types.SidecarApiModels.ReorgRequest;
 import net.phylax.credible.types.SidecarApiModels.ReorgResponse;
@@ -134,7 +135,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
     private CompletableFuture<TransportResponse> sendBlockEnvToTransport(SendBlockEnvRequest blockEnv, ISidecarTransport transport) {
         long startTime = System.currentTimeMillis();
         
-        metricsRegistry.getSidecarRpcCounter().labels("sendBlockEnv").inc();
+        metricsRegistry.getSidecarRpcCounter().labels(CredibleLayerMethods.SEND_BLOCK_ENV).inc();
         return transport.sendBlockEnv(blockEnv)
             .thenApply(blockResult -> {
                 long latency = System.currentTimeMillis() - startTime;
@@ -168,7 +169,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         // In this way we track the send->get request chain per transport without blocking
         List<CompletableFuture<GetTransactionsResponse>> futures = activeTransports.stream()
         .map(transport -> {
-            metricsRegistry.getSidecarRpcCounter().labels("sendTransactions").inc();
+            metricsRegistry.getSidecarRpcCounter().labels(CredibleLayerMethods.SEND_TRANSACTIONS).inc();
             
             return transport.sendTransactions(sendTxRequest)
                 .whenComplete((result, ex) -> {
@@ -191,7 +192,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                     }
 
                     var timing = metricsRegistry.getPollingTimer().labels().startTimer();
-                    metricsRegistry.getSidecarRpcCounter().labels("getTransactions").inc();
+                    metricsRegistry.getSidecarRpcCounter().labels(CredibleLayerMethods.GET_TRANSACTIONS).inc();
                     
                     return transport.getTransactions(hashes)
                         .whenComplete((response, throwable) -> {
