@@ -270,7 +270,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
     }
     
     @Override
-    public GetTransactionsResponse getTransactionResults(List<String> txHashes) {
+    public Result<GetTransactionsResponse, CredibleRejectionReason> getTransactionResults(List<String> txHashes) {
         var span = tracer.spanBuilder(CredibleLayerMethods.GET_TRANSACTIONS).startSpan();
         span.setAttribute("active", isActive.get());
         try(Scope scope = span.makeCurrent()) {
@@ -279,7 +279,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
     
             // Short circuit if the strategy isn't active
             if (!isActive.get()) {
-                return response;
+                return Result.failure(CredibleRejectionReason.NO_ACTIVE_TRANSPORT);
             }
     
             for (String txHash : txHashes) {
@@ -290,19 +290,30 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                     continue;
                 }
                 var txResponseResult = handleTransactionFuture(futures);
-    
-                if (txResponseResult.isSuccess()) {
-                    results.addAll(txResponseResult.getSuccess().getResults());
-                    span.setAttribute("result_count", txResponseResult.getSuccess().getResults().size());
+
+                if (!txResponseResult.isSuccess()) {
+                    LOG.debug("GetTransactionsResponse failed: {}", txResponseResult.getFailure());
                     continue;
                 }
+
+                var txResults = txResponseResult.getSuccess().getResults();
+
+                if (txResults.size() == 0) {
+                    return Result.failure(CredibleRejectionReason.NO_RESULT);
+                }
+                
+                results.addAll(txResults);
+
+                LOG.debug("GetTransactionsResponse successfully handled: {}", txResults.get(0).getHash());
+                span.setAttribute("result_count", txResults.size());
+                span.setAttribute("tx_hash", txResults.get(0).getHash());
             }
-            return response;
+            return Result.success(response);
         } finally {
             span.end();
         }
     }
-    
+
     private Result<GetTransactionsResponse, CredibleRejectionReason> handleTransactionFuture(List<CompletableFuture<GetTransactionsResponse>> futures) {
         long startTime = System.currentTimeMillis();
         var span = tracer.spanBuilder("handleTransactionFuture").startSpan();
@@ -318,26 +329,14 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                 isActive.set(false);
                 return Result.failure(CredibleRejectionReason.TIMEOUT);
             });
-        
+
         try {
-            Result<GetTransactionsResponse, CredibleRejectionReason> response = anySuccess.get();
-
-            if (!response.isSuccess()) {
-                return response;
-            }
-
-            if (response.isSuccess() && response.getSuccess().getResults().isEmpty()) {
-                return Result.failure(CredibleRejectionReason.NO_RESULT);
-            }
-            
-            LOG.debug("GetTransactionsResponse successfully handled: {}", response.getSuccess().getResults().get(0).getHash());
-            span.setAttribute("tx_hash", response.getSuccess().getResults().get(0).getHash());
-            return response;
+            return anySuccess.get();
         } catch (InterruptedException | ExecutionException e) {
             LOG.debug("Exception waiting for sidecar responses: {}", e.getMessage());
             metricsRegistry.getErrorCounter().labels().inc();
             span.setAttribute("failed", true);
-            return null;
+            return Result.failure(CredibleRejectionReason.ERROR);
         } finally {
             span.end();
         }
