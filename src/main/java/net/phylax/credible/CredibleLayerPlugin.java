@@ -378,7 +378,10 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
             LOG.debug("Block already sent - Hash: {}, Number: {}", blockHash, blockNumber);
             return;
         }
-        
+
+        // Validates if the block is valid for sending it to the Credible Layer
+        validateBlock(block);
+                
         LOG.debug("Processing new block - Hash: {}, Number: {}", blockHash, blockNumber);
         
         // Get transaction information from the actual block
@@ -398,7 +401,8 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
             blockHeader.getCoinbase().toHexString(),
             blockHeader.getTimestamp(),
             blockHeader.getGasLimit(),
-            blockHeader.getBaseFee().map(quantity -> quantity.getAsBigInteger().longValue()).orElse(1L), // 1 Gwei
+            // Safe to do as we validated the base fee to be present
+            blockHeader.getBaseFee().get().getAsBigInteger().longValue(),
             blockHeader.getDifficulty().toString(),
             blockHeader.getMixHash().toHexString(),
             new BlobExcessGasAndPrice(0L, 1L),
@@ -408,11 +412,20 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
 
         try {
             this.strategy.sendBlockEnv(blockEnv);
+            lastBlockSent = blockHash;
             LOG.debug("Block Env sent for {}", blockHash);
         } catch (Exception e) {
             LOG.error("Error handling sendBlockEnv {}", e.getMessage());
-        } finally {
-            lastBlockSent = blockHash;
+        }
+    }
+    
+    /**
+     * Validates if the block is valid for sending it to the Credible Layer
+     * @param block
+     */
+    private void validateBlock(AddedBlockContext block) {
+        if (!block.getBlockHeader().getBaseFee().isPresent()) {
+            throw new IllegalStateException("Block base fee is not present");
         }
     }
 }
