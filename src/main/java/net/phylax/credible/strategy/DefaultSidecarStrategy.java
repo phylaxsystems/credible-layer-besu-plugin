@@ -66,7 +66,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         public String getMessage() { return message; }
         public long getLatencyMs() { return latencyMs; }
     }
-    
+
     public DefaultSidecarStrategy(
         List<ISidecarTransport> primaryTransports,
         List<ISidecarTransport> fallbackTransports,
