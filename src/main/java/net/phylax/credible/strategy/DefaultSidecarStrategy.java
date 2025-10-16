@@ -10,7 +10,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -21,12 +20,14 @@ import org.slf4j.LoggerFactory;
 
 import net.phylax.credible.metrics.CredibleMetricsRegistry;
 import net.phylax.credible.transport.ISidecarTransport;
+import net.phylax.credible.types.CredibleRejectionReason;
 import net.phylax.credible.types.SidecarApiModels.GetTransactionsResponse;
 import net.phylax.credible.types.SidecarApiModels.ReorgRequest;
 import net.phylax.credible.types.SidecarApiModels.ReorgResponse;
 import net.phylax.credible.types.SidecarApiModels.SendBlockEnvRequest;
 import net.phylax.credible.types.SidecarApiModels.SendTransactionsRequest;
 import net.phylax.credible.types.SidecarApiModels.TransactionResult;
+import net.phylax.credible.utils.Result;
 
 public class DefaultSidecarStrategy implements ISidecarStrategy {
     private static final Logger LOG = LoggerFactory.getLogger(DefaultSidecarStrategy.class);
@@ -229,45 +230,46 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                 LOG.debug("No pending request found for transaction {}", txHash);
                 continue;
             }
-            var txResponse = handleTransactionFuture(futures);
 
-            if (txResponse != null) {
-                results.addAll(txResponse.getResults());
+            Result<GetTransactionsResponse, CredibleRejectionReason> txResponseResult = handleTransactionFuture(futures);
+
+            if (txResponseResult.isSuccess()) {
+                results.addAll(txResponseResult.getSuccess().getResults());
+                continue;
             }
+
+            LOG.debug("Transaction {} rejected: {}", txHash, txResponseResult.getFailure());
         }
         return response;
     }
-
-    private GetTransactionsResponse handleTransactionFuture(List<CompletableFuture<GetTransactionsResponse>> futures) {
+    
+    private Result<GetTransactionsResponse, CredibleRejectionReason> handleTransactionFuture(List<CompletableFuture<GetTransactionsResponse>> futures) {
         long startTime = System.currentTimeMillis();
 
-        CompletableFuture<GetTransactionsResponse> anySuccess = anySuccessOf(futures)
+        CompletableFuture<Result<GetTransactionsResponse, CredibleRejectionReason>> anySuccess = anySuccessOf(futures)
             .orTimeout(processingTimeout, TimeUnit.MILLISECONDS)
+            .thenApply(res -> Result.<GetTransactionsResponse, CredibleRejectionReason>success(res))
             .exceptionally(ex -> {
                 long latency = System.currentTimeMillis() - startTime;
                 LOG.debug("Timeout or error getting transactions: exception {}, latency {}", 
                     ex.getMessage(), latency);
-                if (ex instanceof TimeoutException) {
-                    metricsRegistry.getTimeoutCounter().labels().inc();
-                    isActive.set(false);
-                }
-                return null;
+                metricsRegistry.getTimeoutCounter().labels().inc();
+                isActive.set(false);
+                return Result.failure(CredibleRejectionReason.TIMEOUT);
             });
         
         try {
-            GetTransactionsResponse response = anySuccess.get();
-            
-            if (response == null || response.getResults() == null || response.getResults().isEmpty()) {
-                LOG.debug("No valid results from sidecar");
-                return null;
+            Result<GetTransactionsResponse, CredibleRejectionReason> response = anySuccess.get();
+
+            if (response.isSuccess() && response.getSuccess().getResults().isEmpty()) {
+                return Result.failure(CredibleRejectionReason.NO_RESULT);
             }
             
-            LOG.debug("GetTransactionsResponse successfully handled: {}", response.getResults().get(0).getHash());
             return response;
         } catch (InterruptedException | ExecutionException e) {
             LOG.debug("Exception waiting for sidecar responses: {}", e.getMessage());
             metricsRegistry.getErrorCounter().labels().inc();
-            return null;
+            return Result.failure(CredibleRejectionReason.ERROR);
         }
     }
 
