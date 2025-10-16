@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 
 import com.google.common.base.Stopwatch;
 
+import io.opentelemetry.api.OpenTelemetry;
 import net.phylax.credible.metrics.CredibleMetricsRegistry;
 import net.phylax.credible.transport.MockTransport;
 import net.phylax.credible.transport.ISidecarTransport;
@@ -51,12 +52,15 @@ public class DefaultStrategyTest {
     ) {
         var metricsSystem = new SimpleMockMetricsSystem();
         var metrics = new CredibleMetricsRegistry(metricsSystem);
+
+        var openTelemetry = OpenTelemetry.noop();
         
         var strategy =  new DefaultSidecarStrategy(
             primaryTransports == null ? new ArrayList<>() : primaryTransports,
             fallbackTransports == null ? new ArrayList<>() : fallbackTransports,
             processingTimeout,
-            metrics);
+            metrics,
+            openTelemetry.getTracer("default-strategy"));
 
         var blockEnvRequest = generateBlockEnv();
         assertDoesNotThrow(() -> strategy.sendBlockEnv(blockEnvRequest).join());
