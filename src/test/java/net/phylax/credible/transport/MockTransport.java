@@ -80,19 +80,19 @@ public class MockTransport implements ISidecarTransport {
         Executor delayedExecutor = CompletableFuture.delayedExecutor(
             processingLatency, TimeUnit.MILLISECONDS);
 
-        final TransactionResult validResult;
+        final TransactionResult result;
 
         if (!emptyResults) {
-            validResult = new TransactionResult(txHash, getTxStatus, 21000L, "");
+            result = new TransactionResult(txHash, getTxStatus, 21000L, "");
         } else {
-            validResult = null;
+            result = null;
         }
         
         return CompletableFuture.supplyAsync(() -> {
             if (throwOnGetTx) {
                 throw new RuntimeException("GetTransactions failed");
             }
-            return new GetTransactionResponse(validResult);
+            return new GetTransactionResponse(result);
         }, delayedExecutor);
     }
 

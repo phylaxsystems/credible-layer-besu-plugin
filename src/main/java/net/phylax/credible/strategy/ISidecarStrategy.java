@@ -24,7 +24,7 @@ public interface ISidecarStrategy {
      * @param sendTxRequest SendTransactionsRequest instance
      * @return List of CompletableFutures, one future from a single transport
      */
-    List<CompletableFuture<GetTransactionsResponse>> dispatchTransactions(
+    List<CompletableFuture<GetTransactionResponse>> dispatchTransactions(
         SendTransactionsRequest sendTxRequest);
 
     /**
@@ -32,10 +32,10 @@ public interface ISidecarStrategy {
      * after the dispatchTransactions method and the futures should resolve inside of it.
      * 
      * @param txHashes List of transaction hashes
-     * @return Result<GetTransactionsResponse, CredibleRejectionReason> containing the results of the sidecar processing
+     * @return Result<GetTransactionResponse, CredibleRejectionReason> containing the results of the sidecar processing
      * or the reason it got rejected
      */
-    Result<GetTransactionsResponse, CredibleRejectionReason> getTransactionResults(List<String> txHashes);
+    Result<GetTransactionResponse, CredibleRejectionReason> getTransactionResult(String txHash);
 
     /**
      * Send the reorg request to the sidecar.
