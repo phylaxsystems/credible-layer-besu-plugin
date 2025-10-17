@@ -8,15 +8,15 @@ import org.hyperledger.besu.plugin.data.TransactionSelectionResult;
 import org.hyperledger.besu.plugin.services.txselection.PluginTransactionSelector;
 import org.hyperledger.besu.plugin.services.txselection.TransactionEvaluationContext;
 import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import net.phylax.credible.metrics.CredibleMetricsRegistry;
 import net.phylax.credible.strategy.ISidecarStrategy;
 import net.phylax.credible.types.SidecarApiModels.*;
 import net.phylax.credible.types.TransactionConverter;
+import net.phylax.credible.utils.CredibleLogger;
 
 public class CredibleTransactionSelector implements PluginTransactionSelector {
-  private static final Logger LOG = LoggerFactory.getLogger(CredibleTransactionSelector.class);
+  private static final Logger LOG = CredibleLogger.getLogger(CredibleTransactionSelector.class);
 
   public static class Config {
     private ISidecarStrategy strategy;
@@ -107,7 +107,7 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
                   TransactionStatus.FAILED.equals(status)) {
                   LOG.info("Transaction {} excluded due to status: {}", txHash, status);
                   metricsRegistry.getInvalidationCounter().labels().inc();
-                  return TransactionSelectionResult.invalid("TX rejected by sidecar");
+                  return TransactionSelectionResult.invalid("TX rejected by Credible layer");
               } else {
                   LOG.debug("Transaction {} included with status: {}", txHash, status);
                   return TransactionSelectionResult.SELECTED;

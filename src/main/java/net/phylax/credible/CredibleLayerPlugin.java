@@ -15,7 +15,6 @@ import org.hyperledger.besu.plugin.services.PicoCLIOptions;
 import org.hyperledger.besu.plugin.services.TransactionSelectionService;
 import org.hyperledger.besu.plugin.services.metrics.MetricCategoryRegistry;
 import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import com.google.auto.service.AutoService;
 
@@ -42,6 +41,7 @@ import net.phylax.credible.txselection.CredibleTransactionSelector;
 import net.phylax.credible.txselection.CredibleTransactionSelectorFactory;
 import net.phylax.credible.types.SidecarApiModels.BlobExcessGasAndPrice;
 import net.phylax.credible.types.SidecarApiModels.SendBlockEnvRequest;
+import net.phylax.credible.utils.CredibleLogger;
 import picocli.CommandLine;
 
 /**
@@ -49,7 +49,7 @@ import picocli.CommandLine;
  */
 @AutoService(BesuPlugin.class)
 public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedListener {
-    private static final Logger LOG = LoggerFactory.getLogger(CredibleLayerPlugin.class);
+    private static final Logger LOG = CredibleLogger.getLogger(CredibleLayerPlugin.class);
     private static final String PLUGIN_NAME = "credible-sidecar";
 
     private ServiceManager serviceManager;
@@ -431,6 +431,9 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
                 LOG.debug("Block already sent - Hash: {}, Number: {}", blockHash, blockNumber);
                 return;
             }
+
+            // Validates if the block is valid for sending it to the Credible Layer
+            validateBlock(block);
             
             LOG.debug("Processing new block - Hash: {}, Number: {}", blockHash, blockNumber);
             
@@ -460,6 +463,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
             );
 
             this.strategy.sendBlockEnv(blockEnv);
+            lastBlockSent = blockHash;
             LOG.debug("Block Env sent for {}", blockHash);
             span.setAttribute("block_added.sidecar_success", true);
         }catch (Exception e) {
@@ -468,6 +472,12 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         } finally {
             lastBlockSent = blockHash;
             span.end();
+        }
+    }
+
+    private void validateBlock(AddedBlockContext block) {
+        if (!block.getBlockHeader().getBaseFee().isPresent()) {
+            throw new IllegalStateException("Block base fee is not present");
         }
     }
 }
