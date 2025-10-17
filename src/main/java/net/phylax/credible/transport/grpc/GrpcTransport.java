@@ -5,7 +5,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
@@ -17,6 +16,7 @@ import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.instrumentation.grpc.v1_6.GrpcTelemetry;
 import net.phylax.credible.transport.ISidecarTransport;
 import net.phylax.credible.types.SidecarApiModels;
+import net.phylax.credible.utils.CredibleLogger;
 import sidecar.transport.v1.Sidecar;
 import sidecar.transport.v1.SidecarTransportGrpc;
 
@@ -25,7 +25,7 @@ import sidecar.transport.v1.SidecarTransportGrpc;
  * Communicates with the Credible Layer sidecar via gRPC protocol
  */
 public class GrpcTransport implements ISidecarTransport {
-    private static final Logger LOG = LoggerFactory.getLogger(GrpcTransport.class);
+    private static final Logger LOG = CredibleLogger.getLogger(GrpcTransport.class);
 
     private final ManagedChannel channel;
     private final SidecarTransportGrpc.SidecarTransportStub asyncStub;

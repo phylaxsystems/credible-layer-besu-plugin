@@ -15,7 +15,6 @@ import org.hyperledger.besu.plugin.services.PicoCLIOptions;
 import org.hyperledger.besu.plugin.services.TransactionSelectionService;
 import org.hyperledger.besu.plugin.services.metrics.MetricCategoryRegistry;
 import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import com.google.auto.service.AutoService;
 
@@ -42,6 +41,7 @@ import net.phylax.credible.txselection.CredibleTransactionSelector;
 import net.phylax.credible.txselection.CredibleTransactionSelectorFactory;
 import net.phylax.credible.types.SidecarApiModels.BlobExcessGasAndPrice;
 import net.phylax.credible.types.SidecarApiModels.SendBlockEnvRequest;
+import net.phylax.credible.utils.CredibleLogger;
 import picocli.CommandLine;
 
 /**
@@ -49,7 +49,7 @@ import picocli.CommandLine;
  */
 @AutoService(BesuPlugin.class)
 public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedListener {
-    private static final Logger LOG = LoggerFactory.getLogger(CredibleLayerPlugin.class);
+    private static final Logger LOG = CredibleLogger.getLogger(CredibleLayerPlugin.class);
     private static final String PLUGIN_NAME = "credible-sidecar";
 
     private ServiceManager serviceManager;
