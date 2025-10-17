@@ -11,7 +11,7 @@
         <Logger name="net.phylax.credible" level="DEBUG"/>
         
         <!-- Root Logger - catch everything else -->
-        <Root level="INFO">
+        <Root level="DEBUG">
             <AppenderRef ref="Console"/>
         </Root>
     </Loggers>

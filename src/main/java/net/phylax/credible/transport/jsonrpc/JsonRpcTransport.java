@@ -9,7 +9,6 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -33,6 +32,7 @@ import net.phylax.credible.types.SidecarApiModels.SendBlockEnvRequest;
 import net.phylax.credible.types.SidecarApiModels.SendBlockEnvResponse;
 import net.phylax.credible.types.SidecarApiModels.SendTransactionsRequest;
 import net.phylax.credible.types.SidecarApiModels.SendTransactionsResponse;
+import net.phylax.credible.utils.CredibleLogger;
 import okhttp3.Authenticator;
 import okhttp3.Call;
 import okhttp3.ConnectionPool;
@@ -55,7 +55,7 @@ import io.opentelemetry.instrumentation.okhttp.v3_0.OkHttpTelemetry;
  * Requires dependencies: okhttp3 and jackson-databind
  */
 public class JsonRpcTransport implements ISidecarTransport {
-    private static final Logger LOG = LoggerFactory.getLogger(JsonRpcTransport.class);
+    private static final Logger LOG = CredibleLogger.getLogger(JsonRpcTransport.class);
     
     // JSON RPC Request class
     @JsonInclude(JsonInclude.Include.NON_NULL)
