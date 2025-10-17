@@ -174,7 +174,7 @@ public class GrpcModelConverter {
     }
 
     /**
-     * Convert List of tx hashes to GetTransactionsRequest protobuf
+     * Convert a tx hash to GetTransactionsRequest protobuf
      */
     public static Sidecar.GetTransactionRequest toProtoGetTransactionRequest(String txHash) {
         return Sidecar.GetTransactionRequest.newBuilder()
