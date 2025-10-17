@@ -19,6 +19,18 @@ import org.slf4j.LoggerFactory;
 
 import com.google.auto.service.AutoService;
 
+import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.api.common.Attributes;
+import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator;
+import io.opentelemetry.context.Scope;
+import io.opentelemetry.context.propagation.ContextPropagators;
+import io.opentelemetry.exporter.otlp.http.trace.OtlpHttpSpanExporter;
+import io.opentelemetry.sdk.OpenTelemetrySdk;
+import io.opentelemetry.sdk.resources.Resource;
+import io.opentelemetry.sdk.trace.SdkTracerProvider;
+import io.opentelemetry.sdk.trace.export.BatchSpanProcessor;
+import io.opentelemetry.semconv.ServiceAttributes;
 import net.phylax.credible.metrics.CredibleMetricsCategory;
 import net.phylax.credible.metrics.CredibleMetricsRegistry;
 import net.phylax.credible.strategy.DefaultSidecarStrategy;
@@ -45,6 +57,8 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
     private MetricsSystem metricsSystem;
     private TransactionSelectionService transactionSelectionService;
     private ISidecarStrategy strategy;
+    private OpenTelemetry openTelemetry = null;
+    private Tracer tracer;
 
     private CredibleMetricsRegistry metricsRegistry;
     
@@ -139,6 +153,12 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         )
         private List<String> grpcFallbackEndpoints;
 
+        @CommandLine.Option(
+            names = {"--plugin-credible-sidecar-otel-endpoint"},
+            description = "Tracing HTTP endpoint"
+        )
+        private String otelEndpoint = null;
+
         public List<String> getRpcEndpoints() { return rpcEndpoints; }
         public List<String> getFallbackEndpoints() { return fallbackEndpoints; }
         public List<String> getGrpcEndpoints() { return grpcEndpoints; }
@@ -147,6 +167,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         public int getReadTimeout() { return readTimeout; }
         public int getWriteTimeout() { return writeTimeout; }
         public TransportType getTransportType() { return transportType; }
+        public String getOtelEndpoint() { return otelEndpoint; }
     }
 
     private static CrediblePluginConfiguration config = null;
@@ -211,6 +232,9 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
                 config.getProcessingTimeout());
         }
 
+        this.openTelemetry = config.getOtelEndpoint() != null ? initOpenTelemetry(config.getOtelEndpoint()) : OpenTelemetry.noop();
+        this.tracer = openTelemetry.getTracer("credible-sidecar-plugin");
+
         serviceManager
             .getService(BesuEvents.class)
             .ifPresentOrElse(this::startEvents, () -> LOG.error("BesuEvents service not available"));
@@ -235,13 +259,36 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
             fallbackTransports = createGrpcTransports(config.getGrpcFallbackEndpoints());
         }
 
-        strategy = new DefaultSidecarStrategy(primaryTransports, fallbackTransports, config.getProcessingTimeout(), metricsRegistry);
+        strategy = new DefaultSidecarStrategy(primaryTransports, fallbackTransports, config.getProcessingTimeout(), metricsRegistry, tracer);
 
         var credibleTxConfig = new CredibleTransactionSelector.Config(strategy);
 
         transactionSelectionService.registerPluginTransactionSelectorFactory(
             new CredibleTransactionSelectorFactory(credibleTxConfig, metricsRegistry)
         );
+    }
+
+    private static OpenTelemetry initOpenTelemetry(String otelEndpoint) {
+        Resource resource = Resource.getDefault()
+            .merge(Resource.create(Attributes.of(
+                ServiceAttributes.SERVICE_NAME, "credible-besu-plugin"
+            )));
+        
+        OtlpHttpSpanExporter spanExporter = OtlpHttpSpanExporter.builder()
+            .setEndpoint(otelEndpoint)
+            .build();
+        
+        SdkTracerProvider tracerProvider = SdkTracerProvider.builder()
+            .addSpanProcessor(BatchSpanProcessor.builder(spanExporter).setScheduleDelay(Duration.ofSeconds(1)).build())
+            .setResource(resource)
+            .build();
+
+        return OpenTelemetrySdk.builder()
+            .setTracerProvider(tracerProvider)
+            .setPropagators(ContextPropagators.create(
+                W3CTraceContextPropagator.getInstance()
+            ))
+            .buildAndRegisterGlobal();
     }
 
     /**
@@ -300,6 +347,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
             .map(endpoint -> new JsonRpcTransport.Builder()
                     .readTimeout(Duration.ofMillis(config.getReadTimeout()))
                     .writeTimeout(Duration.ofMillis(config.getWriteTimeout()))
+                    .openTelemetry(openTelemetry)
                     .baseUrl(endpoint)
                     .build())
             .collect(Collectors.toList());
@@ -373,56 +421,60 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         String blockHash = blockHeader.getBlockHash().toHexString();
         long blockNumber = blockHeader.getNumber();
 
-        // Check if we sent the block already
-        if (blockHash.equals(lastBlockSent)) {
-            LOG.debug("Block already sent - Hash: {}, Number: {}", blockHash, blockNumber);
-            return;
-        }
+        var span = tracer.spanBuilder("onBlockAdded").startSpan();
+        try(Scope scope = span.makeCurrent()) {
+            span.setAttribute("block_added.hash", blockHash);
+            span.setAttribute("block_added.number", blockNumber);
 
-        // Validates if the block is valid for sending it to the Credible Layer
-        validateBlock(block);
-                
-        LOG.debug("Processing new block - Hash: {}, Number: {}", blockHash, blockNumber);
-        
-        // Get transaction information from the actual block
-        int transactionCount = transactions.size();
-        String lastTxHash = null;
-        
-        if (!transactions.isEmpty()) {
-            lastTxHash = transactions.get(transactions.size() - 1).getHash().toHexString();
-        }
-        
-        LOG.debug("Sending block env with {} transactions, last tx hash: {}", 
-            transactionCount, lastTxHash);
-        
-        // NOTE: maybe move to some converter
-        SendBlockEnvRequest blockEnv = new SendBlockEnvRequest(
-            blockHeader.getNumber(),
-            blockHeader.getCoinbase().toHexString(),
-            blockHeader.getTimestamp(),
-            blockHeader.getGasLimit(),
-            // Safe to do as we validated the base fee to be present
-            blockHeader.getBaseFee().get().getAsBigInteger().longValue(),
-            blockHeader.getDifficulty().toString(),
-            blockHeader.getMixHash().toHexString(),
-            new BlobExcessGasAndPrice(0L, 1L),
-            transactionCount,
-            lastTxHash
-        );
+            // Check if we sent the block already
+            if (blockHash.equals(lastBlockSent)) {
+                LOG.debug("Block already sent - Hash: {}, Number: {}", blockHash, blockNumber);
+                return;
+            }
 
-        try {
+            // Validates if the block is valid for sending it to the Credible Layer
+            validateBlock(block);
+            
+            LOG.debug("Processing new block - Hash: {}, Number: {}", blockHash, blockNumber);
+            
+            // Get transaction information from the actual block
+            int transactionCount = transactions.size();
+            String lastTxHash = null;
+            
+            if (!transactions.isEmpty()) {
+                lastTxHash = transactions.get(transactions.size() - 1).getHash().toHexString();
+            }
+            
+            LOG.debug("Sending block env with {} transactions, last tx hash: {}", 
+                transactionCount, lastTxHash);
+            
+            // NOTE: maybe move to some converter
+            SendBlockEnvRequest blockEnv = new SendBlockEnvRequest(
+                blockHeader.getNumber(),
+                blockHeader.getCoinbase().toHexString(),
+                blockHeader.getTimestamp(),
+                blockHeader.getGasLimit(),
+                blockHeader.getBaseFee().map(quantity -> quantity.getAsBigInteger().longValue()).orElse(1L), // 1 Gwei
+                blockHeader.getDifficulty().toString(),
+                blockHeader.getMixHash().toHexString(),
+                new BlobExcessGasAndPrice(0L, 1L),
+                transactionCount,
+                lastTxHash
+            );
+
             this.strategy.sendBlockEnv(blockEnv);
             lastBlockSent = blockHash;
             LOG.debug("Block Env sent for {}", blockHash);
-        } catch (Exception e) {
+            span.setAttribute("block_added.sidecar_success", true);
+        }catch (Exception e) {
             LOG.error("Error handling sendBlockEnv {}", e.getMessage());
+            span.setAttribute("block_added.sidecar_success", false);
+        } finally {
+            lastBlockSent = blockHash;
+            span.end();
         }
     }
-    
-    /**
-     * Validates if the block is valid for sending it to the Credible Layer
-     * @param block
-     */
+
     private void validateBlock(AddedBlockContext block) {
         if (!block.getBlockHeader().getBaseFee().isPresent()) {
             throw new IllegalStateException("Block base fee is not present");

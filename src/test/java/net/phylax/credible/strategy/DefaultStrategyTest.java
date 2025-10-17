@@ -1,5 +1,6 @@
 package net.phylax.credible.strategy;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -13,10 +14,13 @@ import org.junit.jupiter.api.Test;
 
 import com.google.common.base.Stopwatch;
 
+import io.opentelemetry.api.OpenTelemetry;
 import net.phylax.credible.metrics.CredibleMetricsRegistry;
 import net.phylax.credible.transport.MockTransport;
 import net.phylax.credible.transport.ISidecarTransport;
+import net.phylax.credible.types.CredibleRejectionReason;
 import net.phylax.credible.types.SidecarApiModels.*;
+import net.phylax.credible.utils.Result;
 import net.phylax.credible.metrics.SimpleMockMetricsSystem;
 
 public class DefaultStrategyTest {
@@ -51,12 +55,15 @@ public class DefaultStrategyTest {
     ) {
         var metricsSystem = new SimpleMockMetricsSystem();
         var metrics = new CredibleMetricsRegistry(metricsSystem);
+
+        var openTelemetry = OpenTelemetry.noop();
         
         var strategy =  new DefaultSidecarStrategy(
             primaryTransports == null ? new ArrayList<>() : primaryTransports,
             fallbackTransports == null ? new ArrayList<>() : fallbackTransports,
             processingTimeout,
-            metrics);
+            metrics,
+            openTelemetry.getTracer("default-strategy"));
 
         var blockEnvRequest = generateBlockEnv();
         assertDoesNotThrow(() -> strategy.sendBlockEnv(blockEnvRequest).join());
@@ -82,7 +89,7 @@ public class DefaultStrategyTest {
      * @param strategy Strategy
      * @return GetTransactionsResponse
      */
-    GetTransactionsResponse sendTransaction(ISidecarStrategy strategy) {
+    Result<GetTransactionsResponse, CredibleRejectionReason> sendTransaction(ISidecarStrategy strategy) {
         var hashes = Arrays.asList("0x1" + new Random().nextInt(Integer.MAX_VALUE));
 
         strategy.dispatchTransactions(generateTransactionRequest(hashes));
@@ -98,25 +105,26 @@ public class DefaultStrategyTest {
         List<String> hashes = Arrays.asList("0x1");
         assertDoesNotThrow(() -> strategy.dispatchTransactions(generateTransactionRequest(hashes)));
         var response = strategy.getTransactionResults(hashes);
-        assertEquals(response.getResults().size(), 1);
+        assertEquals(response.getSuccess().getResults().size(), 1);
 
         List<String> hashes2 = Arrays.asList("0x2");
         assertDoesNotThrow(() -> strategy.dispatchTransactions(generateTransactionRequest(hashes2)));
         response = strategy.getTransactionResults(hashes2);
-        assertEquals(response.getResults().size(), 1);
+        assertEquals(response.getSuccess().getResults().size(), 1);
 
         List<String> hashes3 = Arrays.asList("0x3");
         assertDoesNotThrow(() -> strategy.dispatchTransactions(generateTransactionRequest(hashes3)));
         response = strategy.getTransactionResults(hashes3);
-        assertEquals(response.getResults().size(), 1);
+        assertEquals(response.getSuccess().getResults().size(), 1);
 
         // Return empty results
         mockTransport.setEmptyResults(true);
         List<String> hashes4 = Arrays.asList("0x4");
         assertDoesNotThrow(() -> strategy.dispatchTransactions(generateTransactionRequest(hashes4)));
         response = strategy.getTransactionResults(hashes4);
-        // No results should be returned
-        assertEquals(response.getResults().size(), 0);
+        // The response shouldn't be success
+        assertFalse(response.isSuccess());
+        assertTrue(response.getFailure() == CredibleRejectionReason.NO_RESULT);
     }
 
     @Test
@@ -126,7 +134,7 @@ public class DefaultStrategyTest {
         var strategy = initStrategy(mockTransport, mockTransportFallback, 500, true);
 
         var response = sendTransaction(strategy);
-        assertEquals(response.getResults().size(), 0);
+        assertEquals(response.getSuccess().getResults().size(), 0);
     }
 
     @Test
@@ -136,7 +144,7 @@ public class DefaultStrategyTest {
         var strategy = initStrategy(Arrays.asList(mockTransport, mockTransport2), null, 500, true);
 
         var response = sendTransaction(strategy);
-        assertEquals(response.getResults().size(), 1);
+        assertEquals(response.getSuccess().getResults().size(), 1);
     }
 
     @Test
@@ -150,7 +158,7 @@ public class DefaultStrategyTest {
 
         strategy.sendBlockEnv(generateBlockEnv());
         var response = sendTransaction(strategy);
-        assertEquals(response.getResults().size(), 1);
+        assertEquals(response.getSuccess().getResults().size(), 1);
 
         // First transport throws on getTransactions
         // NOTE: even though the first sidecar is faster, the result of the second one will be used
@@ -159,7 +167,7 @@ public class DefaultStrategyTest {
 
         strategy.sendBlockEnv(generateBlockEnv());
         response = sendTransaction(strategy);
-        assertEquals(response.getResults().size(), 1);
+        assertEquals(response.getSuccess().getResults().size(), 1);
     }
 
     @Test
@@ -182,7 +190,7 @@ public class DefaultStrategyTest {
         strategy.sendBlockEnv(generateBlockEnv()).join();
 
         var response = sendTransaction(strategy);
-        assertEquals(response.getResults().size(), 1);
+        assertEquals(response.getSuccess().getResults().size(), 1);
 
         // First sidecar gets back online
         mockTransport.setThrowOnSendBlockEnv(false);
@@ -190,7 +198,7 @@ public class DefaultStrategyTest {
         strategy.sendBlockEnv(generateBlockEnv()).join();
         response = sendTransaction(strategy);
         
-        assertEquals(response.getResults().size(), 1);
+        assertEquals(response.getSuccess().getResults().size(), 1);
     }
 
     @Test
@@ -216,7 +224,7 @@ public class DefaultStrategyTest {
         Stopwatch stopwatch = Stopwatch.createStarted();
         var response = sendTransaction(strategy);
         stopwatch.stop();
-        assertEquals(response.getResults().size(), 1);
+        assertEquals(response.getSuccess().getResults().size(), 1);
 
         // The time elapsed shouldn't be much more than the fastest one
         long elapsed = stopwatch.elapsed().toMillis();
@@ -233,7 +241,7 @@ public class DefaultStrategyTest {
         stopwatch = Stopwatch.createStarted();
         response = sendTransaction(strategy);
         stopwatch.stop();
-        assertEquals(response.getResults().size(), 1);
+        assertEquals(response.getSuccess().getResults().size(), 1);
 
         // Even though the first sidecar is faster in processing, the result of the second one
         // will be used because the first one is slower on sendTransactions
@@ -260,7 +268,7 @@ public class DefaultStrategyTest {
         strategy.sendBlockEnv(generateBlockEnv()).join();
 
         var response = sendTransaction(strategy);
-        assertEquals(response.getResults().size(), 1);
+        assertEquals(response.getSuccess().getResults().size(), 1);
         assertEquals(strategy.isActive(), true);
 
         // First two sidecars times out
@@ -268,28 +276,28 @@ public class DefaultStrategyTest {
         mockTransport2.setProcessingLatency(500);
 
         response = sendTransaction(strategy);
-        assertEquals(response.getResults().size(), 1);
+        assertEquals(response.getSuccess().getResults().size(), 1);
         assertEquals(strategy.isActive(), true);
 
         // Last sidecar times out
         mockTransport3.setProcessingLatency(500);
 
         response = sendTransaction(strategy);
-        assertEquals(response.getResults().size(), 0);
+        assertEquals(response.getSuccess().getResults().size(), 0);
         assertEquals(strategy.isActive(), false);
 
         // Should still be inactive
         response = sendTransaction(strategy);
-        assertEquals(response.getResults().size(), 0);
-        assertEquals(strategy.isActive(), false);
+        assertFalse(response.isSuccess());
+        assertTrue(response.getFailure() == CredibleRejectionReason.NO_ACTIVE_TRANSPORT);
 
         // One sidecar gets up again
         mockTransport3.setProcessingLatency(100);
 
         // Still inactive until next block
         response = sendTransaction(strategy);
-        assertEquals(response.getResults().size(), 0);
-        assertEquals(strategy.isActive(), false);
+        assertFalse(response.isSuccess());
+        assertTrue(response.getFailure() == CredibleRejectionReason.NO_ACTIVE_TRANSPORT);
 
         // All transport get back up
         mockTransport.setProcessingLatency(100);
@@ -297,14 +305,14 @@ public class DefaultStrategyTest {
 
         // Still inactive until next block
         response = sendTransaction(strategy);
-        assertEquals(response.getResults().size(), 0);
-        assertEquals(strategy.isActive(), false);
+        assertFalse(response.isSuccess());
+        assertTrue(response.getFailure() == CredibleRejectionReason.NO_ACTIVE_TRANSPORT);
 
         // New block, activate again
         strategy.sendBlockEnv(generateBlockEnv()).join();
 
         response = sendTransaction(strategy);
-        assertEquals(response.getResults().size(), 1);
+        assertEquals(response.getSuccess().getResults().size(), 1);
         assertEquals(strategy.isActive(), true);
     }
 

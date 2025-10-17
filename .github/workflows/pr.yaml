@@ -29,16 +29,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
-      - name: Cache Besu build outputs
-        uses: actions/cache@v4
-        with:
-          path: |
-            libs/besu/**/build/libs/*.jar
-            libs/besu/.gradle
-          key: ${{ runner.os }}-besu-${{ hashFiles('libs/besu/**/build.gradle', 'libs/besu/gradle.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-besu-
-
       - name: Cache plugin build outputs
         uses: actions/cache@v4
         with:

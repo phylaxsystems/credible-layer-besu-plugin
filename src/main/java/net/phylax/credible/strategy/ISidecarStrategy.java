@@ -3,7 +3,9 @@ package net.phylax.credible.strategy;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
+import net.phylax.credible.types.CredibleRejectionReason;
 import net.phylax.credible.types.SidecarApiModels.*;
+import net.phylax.credible.utils.Result;
 
 public interface ISidecarStrategy {
     /**
@@ -30,9 +32,10 @@ public interface ISidecarStrategy {
      * after the dispatchTransactions method and the futures should resolve inside of it.
      * 
      * @param txHashes List of transaction hashes
-     * @return GetTransactionsResponse containing the results of the sidecar processing
+     * @return Result<GetTransactionsResponse, CredibleRejectionReason> containing the results of the sidecar processing
+     * or the reason it got rejected
      */
-    GetTransactionsResponse getTransactionResults(List<String> txHashes);
+    Result<GetTransactionsResponse, CredibleRejectionReason> getTransactionResults(List<String> txHashes);
 
     /**
      * Send the reorg request to the sidecar.

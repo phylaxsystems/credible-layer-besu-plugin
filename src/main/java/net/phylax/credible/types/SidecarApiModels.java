@@ -444,10 +444,10 @@ public class SidecarApiModels {
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class GetTransactionsResponse {
         @JsonProperty("results")
-        private List<TransactionResult> results;
+        private List<TransactionResult> results = new ArrayList<>();
         
         @JsonProperty("not_found")
-        private List<String> notFound;
+        private List<String> notFound = new ArrayList<>();
         
         public GetTransactionsResponse() {}
         

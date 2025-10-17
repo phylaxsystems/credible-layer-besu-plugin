@@ -84,12 +84,16 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
     try {
         LOG.debug("Awaiting result for {}", txHash);
 
-        GetTransactionsResponse txResponse = config.strategy.getTransactionResults(Arrays.asList(txHash));
+        var txResponseResult = config.strategy.getTransactionResults(Arrays.asList(txHash));
 
-        if (txResponse == null ||
-            txResponse.getResults() == null ||
-            txResponse.getResults().isEmpty()
-        ) {
+        if (!txResponseResult.isSuccess()) {
+          LOG.warn("Credible Layer failed to process tx {}, reason: {}", txHash, txResponseResult.getFailure());
+          return TransactionSelectionResult.SELECTED;
+        }
+
+        var txResponse = txResponseResult.getSuccess();
+
+        if (txResponse.getResults().isEmpty()) {
             LOG.warn("Transaction {} not found in sidecar response", txHash);
             return TransactionSelectionResult.SELECTED;
         }
