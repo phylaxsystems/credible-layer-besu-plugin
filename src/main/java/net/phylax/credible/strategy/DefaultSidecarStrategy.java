@@ -163,7 +163,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         long startTime = System.currentTimeMillis();
         var span = tracer.spanBuilder("sendBlockEnvToTransport").startSpan();
         try(Scope scope = span.makeCurrent()) {
-            metricsRegistry.getSidecarRpcCounter().labels("sendBlockEnv").inc();
+            metricsRegistry.getSidecarRpcCounter().labels(CredibleLayerMethods.SEND_BLOCK_ENV).inc();
             return transport.sendBlockEnv(blockEnv)
                 .thenApply(blockResult -> {
                     long latency = System.currentTimeMillis() - startTime;
@@ -237,9 +237,9 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                         }
     
                         var timing = metricsRegistry.getPollingTimer().labels().startTimer();
-                        metricsRegistry.getSidecarRpcCounter().labels("getTransactions").inc();
+                        metricsRegistry.getSidecarRpcCounter().labels(CredibleLayerMethods.GET_TRANSACTIONS).inc();
                         
-                        var getTxSpan = tracer.spanBuilder("getTransactions").startSpan();
+                        var getTxSpan = tracer.spanBuilder(CredibleLayerMethods.GET_TRANSACTION).startSpan();
                         return transport.getTransaction(hashes.get(0))
                             .whenComplete((response, throwable) -> {
                                 try(Scope getScope = context.makeCurrent()) {
