@@ -36,6 +36,7 @@ public class GrpcTransportTest {
         public Sidecar.BlockEnvEnvelope lastBlockEnvRequest;
         public Sidecar.SendTransactionsRequest lastSendTransactionsRequest;
         public Sidecar.GetTransactionsRequest lastGetTransactionsRequest;
+        public Sidecar.GetTransactionRequest lastGetTransactionRequest;
         public Sidecar.ReorgRequest lastReorgRequest;
 
         // Configurable responses
@@ -76,6 +77,16 @@ public class GrpcTransportTest {
             responseObserver.onNext(Sidecar.GetTransactionsResponse.newBuilder()
                 .addAllResults(transactionResults)
                 .addAllNotFound(notFoundTxHashes)
+                .build());
+            responseObserver.onCompleted();
+        }
+
+        @Override
+        public void getTransaction(Sidecar.GetTransactionRequest request,
+                                   StreamObserver<Sidecar.GetTransactionResponse> responseObserver) {
+            lastGetTransactionRequest = request;
+            responseObserver.onNext(Sidecar.GetTransactionResponse.newBuilder()
+                .setResult(transactionResults.get(0))
                 .build());
             responseObserver.onCompleted();
         }
@@ -295,6 +306,38 @@ public class GrpcTransportTest {
         // Verify the request was received correctly
         assertNotNull(testService.lastGetTransactionsRequest);
         assertEquals(2, testService.lastGetTransactionsRequest.getTxHashesCount());
+    }
+
+    @Test
+    public void testGetTransaction() throws Exception {
+        // Configure test service with some results
+        testService.transactionResults.add(
+            Sidecar.TransactionResult.newBuilder()
+                .setHash("0xtxhash1")
+                .setStatus("success")
+                .setGasUsed(21000)
+                .setError("")
+                .build()
+        );
+
+        // Create request
+        String txHash = "0xtxhash1";
+
+        // Send the request
+        CompletableFuture<SidecarApiModels.GetTransactionResponse> future =
+            transport.getTransaction(txHash);
+        SidecarApiModels.GetTransactionResponse response = future.get();
+
+        // Verify the response
+        assertTrue(response.getResult() != null);
+
+        SidecarApiModels.TransactionResult result = response.getResult();
+        assertEquals("0xtxhash1", result.getHash());
+        assertEquals("success", result.getStatus());
+        assertEquals(21000, result.getGasUsed());
+
+        // Verify the request was received correctly
+        assertNotNull(testService.lastGetTransactionRequest);
     }
 
     @Test

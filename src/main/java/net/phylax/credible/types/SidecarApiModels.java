@@ -464,6 +464,23 @@ public class SidecarApiModels {
         public void setNotFound(List<String> notFound) { this.notFound = notFound; }
     }
 
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class GetTransactionResponse {
+        @JsonProperty("result")
+        private TransactionResult result;
+
+        public GetTransactionResponse() {}
+        
+        @JsonCreator
+        public GetTransactionResponse(@JsonProperty("result") TransactionResult result) {
+            this.result = result;
+        }
+        
+        public TransactionResult getResult() { return result; }
+        public void setResults(TransactionResult result) { this.result = result; }
+    
+    }
+
     /**
      * Response model for sendBlockEnv endpoint
      */
@@ -617,6 +634,7 @@ public class SidecarApiModels {
     public static class CredibleLayerMethods {
         public static final String SEND_TRANSACTIONS = "sendTransactions";
         public static final String GET_TRANSACTIONS = "getTransactions";
+        public static final String GET_TRANSACTION = "getTransaction";
         public static final String SEND_BLOCK_ENV = "sendBlockEnv";
         public static final String SEND_REORG = "reorg";
 

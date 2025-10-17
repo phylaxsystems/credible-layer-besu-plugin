@@ -17,6 +17,7 @@ import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.instrumentation.grpc.v1_6.GrpcTelemetry;
 import net.phylax.credible.transport.ISidecarTransport;
 import net.phylax.credible.types.SidecarApiModels;
+import net.phylax.credible.types.SidecarApiModels.CredibleLayerMethods;
 import sidecar.transport.v1.Sidecar;
 import sidecar.transport.v1.SidecarTransportGrpc;
 
@@ -54,7 +55,7 @@ public class GrpcTransport implements ISidecarTransport {
 
     @Override
     public CompletableFuture<SidecarApiModels.SendBlockEnvResponse> sendBlockEnv(SidecarApiModels.SendBlockEnvRequest blockEnv) {
-        var span = tracer.spanBuilder("sendBlockEnv").startSpan();
+        var span = tracer.spanBuilder(CredibleLayerMethods.SEND_BLOCK_ENV).startSpan();
         CompletableFuture<SidecarApiModels.SendBlockEnvResponse> future = new CompletableFuture<>();
 
         try {
@@ -98,7 +99,7 @@ public class GrpcTransport implements ISidecarTransport {
 
     @Override
     public CompletableFuture<SidecarApiModels.SendTransactionsResponse> sendTransactions(SidecarApiModels.SendTransactionsRequest transactions) {
-        var span = tracer.spanBuilder("sendTransactions").startSpan();
+        var span = tracer.spanBuilder(CredibleLayerMethods.SEND_TRANSACTIONS).startSpan();
         CompletableFuture<SidecarApiModels.SendTransactionsResponse> future = new CompletableFuture<>();
 
         try {
@@ -145,7 +146,7 @@ public class GrpcTransport implements ISidecarTransport {
 
     @Override
     public CompletableFuture<SidecarApiModels.GetTransactionsResponse> getTransactions(List<String> txHashes) {
-        var span = tracer.spanBuilder("getTransactions").startSpan();
+        var span = tracer.spanBuilder(CredibleLayerMethods.GET_TRANSACTIONS).startSpan();
         CompletableFuture<SidecarApiModels.GetTransactionsResponse> future = new CompletableFuture<>();
 
         try {
@@ -190,8 +191,54 @@ public class GrpcTransport implements ISidecarTransport {
     }
 
     @Override
+    public CompletableFuture<SidecarApiModels.GetTransactionResponse> getTransaction(String txHash) {
+        var span = tracer.spanBuilder(CredibleLayerMethods.GET_TRANSACTION).startSpan();
+        CompletableFuture<SidecarApiModels.GetTransactionResponse> future = new CompletableFuture<>();
+
+        try {
+            // Convert to Protobuf
+            Sidecar.GetTransactionRequest request =
+                GrpcModelConverter.toProtoGetTransactionRequest(txHash);
+
+            LOG.trace("Getting {} transaction via gRPC", txHash);
+
+            // Make async gRPC call with deadline
+            asyncStub
+                .withDeadlineAfter(deadlineMillis, TimeUnit.MILLISECONDS)
+                .getTransaction(request, new StreamObserver<Sidecar.GetTransactionResponse>() {
+                    @Override
+                    public void onNext(Sidecar.GetTransactionResponse response) {
+                        LOG.trace("Received GetTransaction response: {} results",
+                            response.getResult());
+                        future.complete(GrpcModelConverter.fromProtoGetTransactionResponse(response));
+                    }
+
+                    @Override
+                    public void onError(Throwable t) {
+                        LOG.error("GetTransaction gRPC error: {}", getErrorMessage(t), t);
+                        future.completeExceptionally(t);
+                        span.setAttribute("failed", true);
+                        span.end();
+                    }
+
+                    @Override
+                    public void onCompleted() {
+                        LOG.trace("GetTransaction gRPC call completed");
+                        span.end();
+                    }
+                });
+        } catch (Exception e) {
+            LOG.error("Error preparing GetTransaction request: {}", e.getMessage(), e);
+            future.completeExceptionally(e);
+            span.end();
+        }
+
+        return future;
+    }
+
+    @Override
     public CompletableFuture<SidecarApiModels.ReorgResponse> sendReorg(SidecarApiModels.ReorgRequest reorgRequest) {
-        var span = tracer.spanBuilder("sendReorg").startSpan();
+        var span = tracer.spanBuilder(CredibleLayerMethods.SEND_REORG).startSpan();
         CompletableFuture<SidecarApiModels.ReorgResponse> future = new CompletableFuture<>();
 
         try {
