@@ -24,18 +24,18 @@ public interface ISidecarStrategy {
      * @param sendTxRequest SendTransactionsRequest instance
      * @return List of CompletableFutures, one future from a single transport
      */
-    List<CompletableFuture<GetTransactionsResponse>> dispatchTransactions(
+    List<CompletableFuture<GetTransactionResponse>> dispatchTransactions(
         SendTransactionsRequest sendTxRequest);
 
     /**
-     * Get the results of the transactions from the sidecar. This method is called
+     * Get the result processing a transaction in the credible layer. This method is called
      * after the dispatchTransactions method and the futures should resolve inside of it.
      * 
-     * @param txHashes List of transaction hashes
-     * @return Result<GetTransactionsResponse, CredibleRejectionReason> containing the results of the sidecar processing
+     * @param txHash Hash of the transaction
+     * @return Result<GetTransactionResponse, CredibleRejectionReason> Contains either the result of the transaction processing 
      * or the reason it got rejected
      */
-    Result<GetTransactionsResponse, CredibleRejectionReason> getTransactionResults(List<String> txHashes);
+    Result<GetTransactionResponse, CredibleRejectionReason> getTransactionResult(String txHash);
 
     /**
      * Send the reorg request to the sidecar.

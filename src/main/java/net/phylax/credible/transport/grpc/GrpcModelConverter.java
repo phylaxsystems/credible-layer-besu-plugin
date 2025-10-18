@@ -174,6 +174,15 @@ public class GrpcModelConverter {
     }
 
     /**
+     * Convert a tx hash to GetTransactionsRequest protobuf
+     */
+    public static Sidecar.GetTransactionRequest toProtoGetTransactionRequest(String txHash) {
+        return Sidecar.GetTransactionRequest.newBuilder()
+            .setTxHash(txHash)
+            .build();
+    }
+
+    /**
      * Convert ReorgRequest POJO to protobuf
      */
     public static Sidecar.ReorgRequest toProtoReorgRequest(
@@ -231,6 +240,15 @@ public class GrpcModelConverter {
             results,
             new ArrayList<>(proto.getNotFoundList())
         );
+    }
+
+    /**
+     * Convert GetTransactionResponse protobuf to POJO
+     */
+    public static SidecarApiModels.GetTransactionResponse fromProtoGetTransactionResponse(
+            Sidecar.GetTransactionResponse proto) {
+        SidecarApiModels.TransactionResult result = fromProtoTransactionResult(proto.getResult());
+        return new SidecarApiModels.GetTransactionResponse(result);
     }
 
     /**

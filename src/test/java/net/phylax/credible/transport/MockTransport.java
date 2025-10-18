@@ -76,6 +76,27 @@ public class MockTransport implements ISidecarTransport {
     }
 
     @Override
+    public CompletableFuture<GetTransactionResponse> getTransaction(String txHash) {
+        Executor delayedExecutor = CompletableFuture.delayedExecutor(
+            processingLatency, TimeUnit.MILLISECONDS);
+
+        final TransactionResult result;
+
+        if (!emptyResults) {
+            result = new TransactionResult(txHash, getTxStatus, 21000L, "");
+        } else {
+            result = null;
+        }
+        
+        return CompletableFuture.supplyAsync(() -> {
+            if (throwOnGetTx) {
+                throw new RuntimeException("GetTransactions failed");
+            }
+            return new GetTransactionResponse(result);
+        }, delayedExecutor);
+    }
+
+    @Override
     public CompletableFuture<ReorgResponse> sendReorg(ReorgRequest reorgRequest) {
         return CompletableFuture.completedFuture(new ReorgResponse(reorgSuccess, ""));
     }
