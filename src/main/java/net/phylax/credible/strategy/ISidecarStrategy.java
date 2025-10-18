@@ -28,11 +28,11 @@ public interface ISidecarStrategy {
         SendTransactionsRequest sendTxRequest);
 
     /**
-     * Get the results of the transactions from the sidecar. This method is called
+     * Get the result processing a transaction in the credible layer. This method is called
      * after the dispatchTransactions method and the futures should resolve inside of it.
      * 
-     * @param txHashes List of transaction hashes
-     * @return Result<GetTransactionResponse, CredibleRejectionReason> containing the results of the sidecar processing
+     * @param txHash Hash of the transaction
+     * @return Result<GetTransactionResponse, CredibleRejectionReason> Contains either the result of the transaction processing 
      * or the reason it got rejected
      */
     Result<GetTransactionResponse, CredibleRejectionReason> getTransactionResult(String txHash);

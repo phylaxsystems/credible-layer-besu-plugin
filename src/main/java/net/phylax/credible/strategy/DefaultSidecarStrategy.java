@@ -237,7 +237,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                         }
     
                         var timing = metricsRegistry.getPollingTimer().labels().startTimer();
-                        metricsRegistry.getSidecarRpcCounter().labels(CredibleLayerMethods.GET_TRANSACTIONS).inc();
+                        metricsRegistry.getSidecarRpcCounter().labels(CredibleLayerMethods.GET_TRANSACTION).inc();
                         
                         var getTxSpan = tracer.spanBuilder(CredibleLayerMethods.GET_TRANSACTION).startSpan();
                         return transport.getTransaction(hashes.get(0))
