@@ -40,7 +40,6 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
     private List<ISidecarTransport> fallbackTransports = new CopyOnWriteArrayList<>();
     // Future that holds the last block env sent to the sidecars
     private volatile CompletableFuture<Void> lastBlockEnvSent = CompletableFuture.completedFuture(null);
-    private long blockEnvTimeout = 1000;
 
     private AtomicBoolean isActive = new AtomicBoolean(false);
 
