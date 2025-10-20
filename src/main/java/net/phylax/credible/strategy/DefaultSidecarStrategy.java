@@ -197,11 +197,9 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
             if (!lastBlockEnvSent.isDone()) {
                 try {
                     // Wait for the block env to finish
-                    lastBlockEnvSent.get(blockEnvTimeout, TimeUnit.MILLISECONDS);
+                    lastBlockEnvSent.get();
                 } catch (Exception e) {
-                    LOG.error("Error waiting for block env update", e);
-                    isActive.set(false);
-                    return Collections.emptyList();
+                    LOG.warn("Error waiting for block env update", e);
                 }
             }
 
