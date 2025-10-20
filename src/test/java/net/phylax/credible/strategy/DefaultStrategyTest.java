@@ -306,5 +306,23 @@ public class DefaultStrategyTest {
         assertEquals(strategy.isActive(), true);
     }
 
+    @Test
+    void shouldFailOnSlowBlockEnvUpdate() {
+        // First transport throws on sendTransactions
+        var mockTransport = new MockTransport(200);
+        mockTransport.setSendBlockEnvLatency(1000);
+
+        var strategy = initStrategy(Arrays.asList(mockTransport), null, 800, false);
+
+        strategy.sendBlockEnv(generateBlockEnv());
+        // It should return an empty list (same as when transports aren't active)
+        var response = strategy.dispatchTransactions(generateTransactionRequest("0x1"));
+        assertTrue(response.isEmpty());
+
+        // GetTransactions should reject
+        var result = strategy.getTransactionResult("0x1");
+        assertEquals(result.getFailure(), CredibleRejectionReason.NO_ACTIVE_TRANSPORT);
+    }
+
     
 }

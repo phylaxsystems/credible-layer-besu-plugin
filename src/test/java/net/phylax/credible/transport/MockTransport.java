@@ -15,6 +15,7 @@ public class MockTransport implements ISidecarTransport {
     private String getTxStatus = TransactionStatus.SUCCESS;
     private boolean reorgSuccess = true;
     private int sendTransactionsLatency = 0;
+    private int sendBlockEnvLatency = 0;
 
     // Whether to return empty results on getTransactions
     private boolean emptyResults = false;
@@ -29,12 +30,15 @@ public class MockTransport implements ISidecarTransport {
 
     @Override
     public CompletableFuture<SendBlockEnvResponse> sendBlockEnv(SendBlockEnvRequest blockEnv) {
+        Executor delayedExecutor = CompletableFuture.delayedExecutor(
+            sendBlockEnvLatency, TimeUnit.MILLISECONDS);
+
         return CompletableFuture.supplyAsync(() -> {
             if (throwOnSendBlockEnv) {
                 throw new RuntimeException("SendBlockEnv failed");
             }
             return new SendBlockEnvResponse("accepted", 1L, "BlockEnv successfully accepted");
-        });
+        }, delayedExecutor);
     }
 
     @Override
@@ -139,5 +143,9 @@ public class MockTransport implements ISidecarTransport {
 
     public void setSendTransactionsLatency(int sendTransactionsLatency) {
         this.sendTransactionsLatency = sendTransactionsLatency;
+    }
+
+    public void setSendBlockEnvLatency(int sendBlockEnvLatency) {
+        this.sendBlockEnvLatency = sendBlockEnvLatency;
     }
 }
