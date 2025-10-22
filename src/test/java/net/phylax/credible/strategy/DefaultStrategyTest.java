@@ -306,5 +306,36 @@ public class DefaultStrategyTest {
         assertEquals(strategy.isActive(), true);
     }
 
-    
+    @Test
+    void shouldProcessOnSlowBlockEnv() {
+        // First transport throws on sendTransactions
+        var mockTransport = new MockTransport(200);
+        mockTransport.setSendBlockEnvLatency(1000);
+
+        var strategy = initStrategy(Arrays.asList(mockTransport), null, 800, false);
+
+        strategy.sendBlockEnv(generateBlockEnv());
+        // It should return an empty list (same as when transports aren't active)
+        var response = strategy.dispatchTransactions(generateTransactionRequest("0x1"));
+        assertTrue(response.size() == 1);
+
+        // GetTransactions should reject
+        var result = strategy.getTransactionResult("0x1");
+        assertNotNull(result.getSuccess().getResult());
+    }
+
+    @Test
+    void shouldProcessFromSidecarThatDoesntTimeoutOnSendBlockEnv() {
+        // First transport throws on sendTransactions
+        var mockTransport = new MockTransport(200);
+
+        var mockTransport2 = new MockTransport(200);
+        mockTransport.setSendBlockEnvLatency(1000);
+
+        var strategy = initStrategy(Arrays.asList(mockTransport, mockTransport2), null, 800, false);
+
+        strategy.sendBlockEnv(generateBlockEnv());
+        var response = sendTransaction(strategy);
+        assertNotNull(response.getSuccess().getResult());
+    }
 }

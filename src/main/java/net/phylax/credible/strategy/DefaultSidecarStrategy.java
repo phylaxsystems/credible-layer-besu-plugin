@@ -38,6 +38,8 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
     private List<ISidecarTransport> primaryTransports = new ArrayList<>();
     private List<ISidecarTransport> activeTransports = new CopyOnWriteArrayList<>();
     private List<ISidecarTransport> fallbackTransports = new CopyOnWriteArrayList<>();
+    // Future that holds the last block env sent to the sidecars
+    private volatile CompletableFuture<Void> lastBlockEnvSent = CompletableFuture.completedFuture(null);
 
     private AtomicBoolean isActive = new AtomicBoolean(false);
 
@@ -94,7 +96,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                 .map(transport -> sendBlockEnvToTransport(blockEnv, transport))
                 .collect(Collectors.toList());
         
-            return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+            lastBlockEnvSent = CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
                 .whenComplete((voidResult, exception) -> {
                     try(Scope primaryTransportScope = context.makeCurrent()) {
                         long failedCount = futures.stream()
@@ -131,6 +133,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                         }
                     }
             });
+            return lastBlockEnvSent;
         }
     }
 
@@ -189,6 +192,16 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         SendTransactionsRequest sendTxRequest) {
         var span = tracer.spanBuilder("dispatchTransactions").startSpan();
         try(Scope scope = span.makeCurrent()) {
+            // Check if the block env was sent
+            if (!lastBlockEnvSent.isDone()) {
+                try {
+                    // Wait for the block env to finish
+                    lastBlockEnvSent.get();
+                } catch (Exception e) {
+                    LOG.warn("Error waiting for block env update", e);
+                }
+            }
+
             if (activeTransports.isEmpty()) {
                 LOG.warn("Active sidecars empty");
                 span.setAttribute("failed", true);
