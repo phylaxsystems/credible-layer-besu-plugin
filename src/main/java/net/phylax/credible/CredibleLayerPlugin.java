@@ -34,6 +34,7 @@ import net.phylax.credible.metrics.CredibleMetricsCategory;
 import net.phylax.credible.metrics.CredibleMetricsRegistry;
 import net.phylax.credible.strategy.DefaultSidecarStrategy;
 import net.phylax.credible.strategy.ISidecarStrategy;
+import net.phylax.credible.tracer.CredibleOperationTracer;
 import net.phylax.credible.transport.ISidecarTransport;
 import net.phylax.credible.transport.grpc.GrpcTransport;
 import net.phylax.credible.transport.jsonrpc.JsonRpcTransport;
@@ -60,6 +61,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
     private OpenTelemetry openTelemetry = null;
     private Tracer tracer;
 
+    private CredibleOperationTracer operationTracer;
     private CredibleMetricsRegistry metricsRegistry;
     
     // Keeps track of the last (block_hash, block_number) sent
@@ -259,12 +261,13 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
             fallbackTransports = createGrpcTransports(config.getGrpcFallbackEndpoints());
         }
 
-        strategy = new DefaultSidecarStrategy(primaryTransports, fallbackTransports, config.getProcessingTimeout(), metricsRegistry, tracer);
+        operationTracer = new CredibleOperationTracer();
+        strategy = new DefaultSidecarStrategy(primaryTransports, fallbackTransports, operationTracer, config.getProcessingTimeout(), metricsRegistry, tracer);
 
         var credibleTxConfig = new CredibleTransactionSelector.Config(strategy);
 
         transactionSelectionService.registerPluginTransactionSelectorFactory(
-            new CredibleTransactionSelectorFactory(credibleTxConfig, metricsRegistry)
+            new CredibleTransactionSelectorFactory(credibleTxConfig, operationTracer, metricsRegistry)
         );
     }
 
@@ -435,7 +438,11 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
             // Validates if the block is valid for sending it to the Credible Layer
             validateBlock(block);
             
-            LOG.debug("Processing new block - Hash: {}, Number: {}", blockHash, blockNumber);
+            Long iterationId = operationTracer.getIterationForHash(blockHash);
+            if (iterationId == null) {
+                LOG.warn("Iteration for hash {} not found", blockHash);
+            }
+            LOG.debug("Processing new block - Hash: {}, Number: {}, Iteration: {}", blockHash, blockNumber, iterationId);
             
             // Get transaction information from the actual block
             int transactionCount = transactions.size();
@@ -471,6 +478,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
             span.setAttribute("block_added.sidecar_success", false);
         } finally {
             lastBlockSent = blockHash;
+            operationTracer.clear();
             span.end();
         }
     }
