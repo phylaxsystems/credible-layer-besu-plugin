@@ -10,8 +10,13 @@ import org.hyperledger.besu.plugin.data.BlockHeader;
 import org.hyperledger.besu.plugin.data.ProcessableBlockHeader;
 import org.hyperledger.besu.plugin.services.tracer.BlockAwareOperationTracer;
 
+/**
+ * Implementation of the operation tracer that tracks the repetitions of block creation processes
+ * for the same block height.
+ */
 public class CredibleOperationTracer implements BlockAwareOperationTracer {
     private long currentIterationId = 0;
+    // Maps blockHash -> iterationId
     private Map<String, Long> blockHashToIterationId = new HashMap<>();
 
     @Override
@@ -20,7 +25,7 @@ public class CredibleOperationTracer implements BlockAwareOperationTracer {
         final BlockHeader blockHeader,
         final BlockBody blockBody,
         final Address miningBeneficiary) {
-        currentIterationId++;
+        handleStartBlock();
     }
 
     @Override
@@ -33,9 +38,10 @@ public class CredibleOperationTracer implements BlockAwareOperationTracer {
         final WorldView worldView,
         final ProcessableBlockHeader processableBlockHeader,
         final Address miningBeneficiary) {
-        currentIterationId++;
+        handleStartBlock();
     }
 
+    // Clears the internal state
     public void clear() {
         blockHashToIterationId.clear();
     }
@@ -46,5 +52,9 @@ public class CredibleOperationTracer implements BlockAwareOperationTracer {
 
     public Long getIterationForHash(final String blockHash) {
         return blockHashToIterationId.get(blockHash);
+    }
+
+    private void handleStartBlock() {
+        currentIterationId++;
     }
 }
