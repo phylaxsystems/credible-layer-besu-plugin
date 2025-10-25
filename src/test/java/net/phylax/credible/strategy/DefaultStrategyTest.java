@@ -23,6 +23,7 @@ import net.phylax.credible.types.CredibleRejectionReason;
 import net.phylax.credible.types.SidecarApiModels.*;
 import net.phylax.credible.utils.Result;
 import net.phylax.credible.metrics.SimpleMockMetricsSystem;
+import net.phylax.credible.tracer.CredibleOperationTracer;
 
 public class DefaultStrategyTest {
     SendBlockEnvRequest generateBlockEnv() {
@@ -56,10 +57,13 @@ public class DefaultStrategyTest {
         var metrics = new CredibleMetricsRegistry(metricsSystem);
 
         var openTelemetry = OpenTelemetry.noop();
+
+        var operationTracer = new CredibleOperationTracer();
         
         var strategy =  new DefaultSidecarStrategy(
             primaryTransports == null ? new ArrayList<>() : primaryTransports,
             fallbackTransports == null ? new ArrayList<>() : fallbackTransports,
+            operationTracer,
             processingTimeout,
             metrics,
             openTelemetry.getTracer("default-strategy"));

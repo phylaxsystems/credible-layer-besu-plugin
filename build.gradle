@@ -105,9 +105,9 @@ repositories {
 
 dependencies {
     // Besu Plugin API and core dependencies
-    compileOnly 'org.hyperledger.besu:besu-plugin-api:25.9.0'
-    compileOnly 'org.hyperledger.besu:besu-evm:25.9.0'
-    compileOnly 'org.hyperledger.besu:besu-datatypes:25.9.0'
+    compileOnly 'org.hyperledger.besu:besu-plugin-api:25.10.0'
+    compileOnly 'org.hyperledger.besu:besu-evm:25.10.0'
+    compileOnly 'org.hyperledger.besu:besu-datatypes:25.10.0'
 
     implementation 'io.consensys.tuweni:tuweni-units:2.7.1'
     

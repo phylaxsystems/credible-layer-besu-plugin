@@ -21,6 +21,7 @@ import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
 import net.phylax.credible.metrics.CredibleMetricsRegistry;
+import net.phylax.credible.tracer.CredibleOperationTracer;
 import net.phylax.credible.transport.ISidecarTransport;
 import net.phylax.credible.types.CredibleRejectionReason;
 import net.phylax.credible.types.SidecarApiModels.CredibleLayerMethods;
@@ -38,6 +39,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
     private List<ISidecarTransport> primaryTransports = new ArrayList<>();
     private List<ISidecarTransport> activeTransports = new CopyOnWriteArrayList<>();
     private List<ISidecarTransport> fallbackTransports = new CopyOnWriteArrayList<>();
+    private CredibleOperationTracer operationTracer;
     // Future that holds the last block env sent to the sidecars
     private volatile CompletableFuture<Void> lastBlockEnvSent = CompletableFuture.completedFuture(null);
 
@@ -74,6 +76,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
     public DefaultSidecarStrategy(
         List<ISidecarTransport> primaryTransports,
         List<ISidecarTransport> fallbackTransports,
+        CredibleOperationTracer operationTracer,
         int processingTimeout,
         final CredibleMetricsRegistry metricsRegistry,
         final Tracer tracer
@@ -81,6 +84,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         this.primaryTransports = primaryTransports;
         this.activeTransports = new CopyOnWriteArrayList<>();
         this.fallbackTransports = fallbackTransports;
+        this.operationTracer = operationTracer;
         this.processingTimeout = processingTimeout;
         this.metricsRegistry = metricsRegistry;
         this.tracer = tracer;

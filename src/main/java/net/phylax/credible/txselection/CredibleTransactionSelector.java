@@ -10,6 +10,7 @@ import org.slf4j.Logger;
 
 import net.phylax.credible.metrics.CredibleMetricsRegistry;
 import net.phylax.credible.strategy.ISidecarStrategy;
+import net.phylax.credible.tracer.CredibleOperationTracer;
 import net.phylax.credible.types.SidecarApiModels.*;
 import net.phylax.credible.types.TransactionConverter;
 import net.phylax.credible.utils.CredibleLogger;
@@ -28,13 +29,22 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
       return strategy;
     }
   }
-
+  private final CredibleOperationTracer operationTracer;
   private final Config config;
   private final CredibleMetricsRegistry metricsRegistry;
 
-  public CredibleTransactionSelector(final Config config, final CredibleMetricsRegistry metricsRegistry) {
+  public CredibleTransactionSelector(
+    final Config config,
+    final CredibleOperationTracer operationTracer,
+    final CredibleMetricsRegistry metricsRegistry) {
     this.config = config;
+    this.operationTracer = operationTracer;
     this.metricsRegistry = metricsRegistry;
+  }
+
+  @Override
+  public CredibleOperationTracer getOperationTracer() {
+    return operationTracer;
   }
 
   @Override
