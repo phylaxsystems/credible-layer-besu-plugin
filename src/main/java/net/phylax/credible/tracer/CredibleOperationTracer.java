@@ -1,7 +1,8 @@
 package net.phylax.credible.tracer;
 
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.hyperledger.besu.datatypes.Address;
 import org.hyperledger.besu.evm.worldstate.WorldView;
@@ -15,22 +16,13 @@ import org.hyperledger.besu.plugin.services.tracer.BlockAwareOperationTracer;
  * for the same block height.
  */
 public class CredibleOperationTracer implements BlockAwareOperationTracer {
-    private long currentIterationId = 0;
+    private final AtomicLong currentIterationId = new AtomicLong(0L);
     // Maps blockHash -> iterationId
-    private Map<String, Long> blockHashToIterationId = new HashMap<>();
-
-    @Override
-    public void traceStartBlock(
-        final WorldView worldView,
-        final BlockHeader blockHeader,
-        final BlockBody blockBody,
-        final Address miningBeneficiary) {
-        handleStartBlock();
-    }
+    private final Map<String, Long> blockHashToIterationId = new ConcurrentHashMap<>();
 
     @Override
     public void traceEndBlock(final BlockHeader blockHeader, final BlockBody blockBody) {
-        blockHashToIterationId.putIfAbsent(blockHeader.getBlockHash().toHexString(), currentIterationId);
+        blockHashToIterationId.putIfAbsent(blockHeader.getBlockHash().toHexString(), currentIterationId.get());
     }
 
     @Override
@@ -47,7 +39,7 @@ public class CredibleOperationTracer implements BlockAwareOperationTracer {
     }
 
     public long getCurrentIterationId() {
-        return currentIterationId;
+        return currentIterationId.get();
     }
 
     public Long getIterationForHash(final String blockHash) {
@@ -55,6 +47,6 @@ public class CredibleOperationTracer implements BlockAwareOperationTracer {
     }
 
     private void handleStartBlock() {
-        currentIterationId++;
+        currentIterationId.incrementAndGet();
     }
 }
