@@ -31,7 +31,7 @@ public interface ISidecarStrategy {
      * Get the result processing a transaction in the credible layer. This method is called
      * after the dispatchTransactions method and the futures should resolve inside of it.
      * 
-     * @param txExecId TxExecutionId containing the block number, hash and the iteration ID
+     * @param txExecId TxExecutionId containing the block number, iteration ID and hash 
      * @return Result<GetTransactionResponse, CredibleRejectionReason> Contains either the result of the transaction processing 
      * or the reason it got rejected
      */
