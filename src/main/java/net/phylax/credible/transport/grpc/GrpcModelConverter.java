@@ -84,9 +84,9 @@ public class GrpcModelConverter {
     }
 
     /**
-     * Convert TransactionWithHash POJO to Transaction protobuf
+     * Convert TransactionExecutionPayload POJO to Transaction protobuf
      */
-    private static Sidecar.Transaction toProtoTransaction(SidecarApiModels.TransactionWithHash pojo) {
+    private static Sidecar.Transaction toProtoTransaction(SidecarApiModels.TransactionExecutionPayload pojo) {
         return Sidecar.Transaction.newBuilder()
             .setTxExecutionId(toProtoTxExecutionId(pojo.getTxExecutionId()))
             .setTxEnv(toProtoTransactionEnv(pojo.getTxEnv()))
@@ -103,8 +103,8 @@ public class GrpcModelConverter {
 
         return Sidecar.TxExecutionId.newBuilder()
             .setBlockNumber(pojo.getBlockNumber())
-            .setTxHash(pojo.getTxHash())
             .setIterationId(pojo.getIterationId())
+            .setTxHash(pojo.getTxHash())
             .build();
     }
 
@@ -187,9 +187,9 @@ public class GrpcModelConverter {
     /**
      * Convert List of TxExecutionId to GetTransactionsRequest protobuf
      */
-    public static Sidecar.GetTransactionsRequest toProtoGetTransactionsRequest(List<SidecarApiModels.TxExecutionId> txExecutionIds) {
-        List<Sidecar.TxExecutionId> protoIds = txExecutionIds != null
-            ? txExecutionIds.stream()
+    public static Sidecar.GetTransactionsRequest toProtoGetTransactionsRequest(SidecarApiModels.GetTransactionsRequest request) {
+        List<Sidecar.TxExecutionId> protoIds = request != null
+            ? request.getTxExecutionIds().stream()
                 .map(GrpcModelConverter::toProtoTxExecutionId)
                 .collect(Collectors.toList())
             : new ArrayList<>();
@@ -202,9 +202,13 @@ public class GrpcModelConverter {
     /**
      * Convert TxExecutionId to GetTransactionRequest protobuf
      */
-    public static Sidecar.GetTransactionRequest toProtoGetTransactionRequest(SidecarApiModels.TxExecutionId txExecutionId) {
+    public static Sidecar.GetTransactionRequest toProtoGetTransactionRequest(SidecarApiModels.GetTransactionRequest request) {
+        var txExecId = Sidecar.TxExecutionId.newBuilder()
+            .setBlockNumber(request.getBlockNumber())
+            .setIterationId(request.getIterationId())
+            .setTxHash(request.getTxHash());
         return Sidecar.GetTransactionRequest.newBuilder()
-            .setTxExecutionId(toProtoTxExecutionId(txExecutionId))
+            .setTxExecutionId(txExecId)
             .build();
     }
 
@@ -214,12 +218,9 @@ public class GrpcModelConverter {
     public static Sidecar.ReorgRequest toProtoReorgRequest(
             SidecarApiModels.ReorgRequest request) {
         Sidecar.TxExecutionId.Builder txExecIdBuilder = Sidecar.TxExecutionId.newBuilder()
-            .setTxHash(request.getTxHash() != null ? request.getTxHash() : "")
-            .setBlockNumber(request.getBlockNumber() != null ? request.getBlockNumber() : 0L);
-
-        if (request.getIterationId() != null) {
-            txExecIdBuilder.setIterationId(request.getIterationId());
-        }
+            .setBlockNumber(request.getBlockNumber())
+            .setIterationId(request.getIterationId())
+            .setTxHash(request.getTxHash());
 
         return Sidecar.ReorgRequest.newBuilder()
             .setTxExecutionId(txExecIdBuilder.build())
@@ -292,7 +293,7 @@ public class GrpcModelConverter {
             Sidecar.TransactionResult proto) {
         SidecarApiModels.TxExecutionId txExecutionId = fromProtoTxExecutionId(proto.getTxExecutionId());
         return new SidecarApiModels.TransactionResult(
-            txExecutionId.getTxHash(),
+            txExecutionId,
             proto.getStatus(),
             proto.getGasUsed(),
             proto.getError().isEmpty() ? null : proto.getError()

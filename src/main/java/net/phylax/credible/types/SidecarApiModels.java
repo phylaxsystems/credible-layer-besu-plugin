@@ -316,17 +316,17 @@ public class SidecarApiModels {
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class SendTransactionsRequest {
         @JsonProperty("transactions")
-        private List<TransactionWithHash> transactions;
+        private List<TransactionExecutionPayload> transactions;
         
         public SendTransactionsRequest() {}
         
         @JsonCreator
-        public SendTransactionsRequest(@JsonProperty("transactions") List<TransactionWithHash> transactions) {
+        public SendTransactionsRequest(@JsonProperty("transactions") List<TransactionExecutionPayload> transactions) {
             this.transactions = transactions;
         }
         
-        public List<TransactionWithHash> getTransactions() { return transactions; }
-        public void setTransactions(List<TransactionWithHash> transactions) { this.transactions = transactions; }
+        public List<TransactionExecutionPayload> getTransactions() { return transactions; }
+        public void setTransactions(List<TransactionExecutionPayload> transactions) { this.transactions = transactions; }
     }
 
     /**
@@ -334,18 +334,18 @@ public class SidecarApiModels {
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class GetTransactionsRequest {
-        @JsonProperty("hashes")
-        private List<String> hashes;
+        @JsonProperty("tx_execution_ids")
+        private List<TxExecutionId> txExecutionIds;
         
         public GetTransactionsRequest() {}
         
         @JsonCreator
-        public GetTransactionsRequest(@JsonProperty("hashes") List<String> hashes) {
-            this.hashes = hashes;
+        public GetTransactionsRequest(@JsonProperty("tx_execution_ids") List<TxExecutionId> txExecutionIds) {
+            this.txExecutionIds = txExecutionIds;
         }
         
-        public List<String> getHashes() { return hashes; }
-        public void setHashes(List<String> hashes) { this.hashes = hashes; }
+        public List<TxExecutionId> getTxExecutionIds() { return txExecutionIds; }
+        public void setTxExecutionIds(List<TxExecutionId> txExecutionIds) { this.txExecutionIds = txExecutionIds; }
     }
 
     /**
@@ -668,12 +668,63 @@ public class SidecarApiModels {
     }
 
     /**
+     * GetTransactionRequest
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class GetTransactionRequest {
+        @JsonProperty("block_number")
+        private Long blockNumber;
+
+        @JsonProperty("iteration_id")
+        private Long iterationId;
+
+        @JsonProperty("tx_hash")
+        private String txHash;
+
+        public GetTransactionRequest() {}
+
+        @JsonCreator
+        public GetTransactionRequest(
+            @JsonProperty("block_number") Long blockNumber,
+            @JsonProperty("iteration_id") Long iterationId,
+            @JsonProperty("tx_hash") String txHash
+        ) {
+            this.blockNumber = blockNumber;
+            this.iterationId = iterationId;
+            this.txHash = txHash;
+        }
+
+        public Long getBlockNumber() { return blockNumber; }
+        public void setBlockNumber(Long blockNumber) { this.blockNumber = blockNumber; }
+
+        public Long getIterationId() { return iterationId; }
+        public void setIterationId(Long iterationId) { this.iterationId = iterationId; }
+
+        public String getTxHash() { return txHash; }
+        public void setTxHash(String txHash) { this.txHash = txHash; }
+
+        @Override
+        public String toString() {
+            return String.format("GetTransactionRequest{blockNumber=%d, iterationId='%s', txHash='%s'}",
+                blockNumber, iterationId, txHash);
+        }
+
+        public static GetTransactionRequest fromTxExecutionId(TxExecutionId txExecutionId) {
+            return new GetTransactionRequest(txExecutionId.getBlockNumber(), txExecutionId.getIterationId(), txExecutionId.getTxHash());
+        }
+
+        public TxExecutionId toTxExecutionId() {
+            return new TxExecutionId(blockNumber, iterationId, txHash);
+        }
+    }
+
+    /**
      * Individual transaction result in getTransactions response
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class TransactionResult {
-        @JsonProperty("hash")
-        private String hash;
+        @JsonProperty("tx_execution_id")
+        private TxExecutionId txExecutionId;
         
         @JsonProperty("status")
         private String status; // "success", "assertion_failed", "failed"
@@ -687,16 +738,16 @@ public class SidecarApiModels {
         public TransactionResult() {}
         
         @JsonCreator
-        public TransactionResult(@JsonProperty("hash") String hash, @JsonProperty("status") String status,
+        public TransactionResult(@JsonProperty("tx_execution_id") TxExecutionId txExecutionId, @JsonProperty("status") String status,
             @JsonProperty("gas_used") Long gasUsed, @JsonProperty("error") String error) {
-            this.hash = hash;
+            this.txExecutionId = txExecutionId;
             this.status = status;
             this.gasUsed = gasUsed;
             this.error = error;
         }
         
-        public String getHash() { return hash; }
-        public void setHash(String hash) { this.hash = hash; }
+        public TxExecutionId getTxExecutionId() { return txExecutionId; }
+        public void setTxExecutionId(TxExecutionId txExecutionId) { this.txExecutionId = txExecutionId; }
         
         public String getStatus() { return status; }
         public void setStatus(String status) { this.status = status; }
@@ -709,10 +760,10 @@ public class SidecarApiModels {
     }
 
     /**
-     * Transaction with execution ID wrapper for sendTransactions
+     * Transaction payload for sidecar processing
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    public static class TransactionWithHash {
+    public static class TransactionExecutionPayload {
         @JsonProperty("tx_execution_id")
         private TxExecutionId txExecutionId;
 
@@ -720,7 +771,7 @@ public class SidecarApiModels {
         private TxEnv txEnv;
 
         @JsonCreator
-        public TransactionWithHash(
+        public TransactionExecutionPayload(
             @JsonProperty("tx_execution_id") TxExecutionId txExecutionId,
             @JsonProperty("tx_env") TxEnv txEnv
         ) {

@@ -145,16 +145,16 @@ public class GrpcTransport implements ISidecarTransport {
     }
 
     @Override
-    public CompletableFuture<SidecarApiModels.GetTransactionsResponse> getTransactions(List<SidecarApiModels.TxExecutionId> txExecutionIds) {
+    public CompletableFuture<SidecarApiModels.GetTransactionsResponse> getTransactions(SidecarApiModels.GetTransactionsRequest txRequest) {
         var span = tracer.spanBuilder(CredibleLayerMethods.GET_TRANSACTIONS).startSpan();
         CompletableFuture<SidecarApiModels.GetTransactionsResponse> future = new CompletableFuture<>();
 
         try {
             // Convert to Protobuf
             Sidecar.GetTransactionsRequest request =
-                GrpcModelConverter.toProtoGetTransactionsRequest(txExecutionIds);
+                GrpcModelConverter.toProtoGetTransactionsRequest(txRequest);
 
-            LOG.trace("Getting {} transactions via gRPC", txExecutionIds.size());
+            LOG.trace("Getting {} transactions via gRPC", txRequest.getTxExecutionIds().size());
 
             // Make async gRPC call with deadline
             asyncStub
@@ -191,16 +191,16 @@ public class GrpcTransport implements ISidecarTransport {
     }
 
     @Override
-    public CompletableFuture<SidecarApiModels.GetTransactionResponse> getTransaction(SidecarApiModels.TxExecutionId txExecutionId) {
+    public CompletableFuture<SidecarApiModels.GetTransactionResponse> getTransaction(SidecarApiModels.GetTransactionRequest txRequest) {
         var span = tracer.spanBuilder(CredibleLayerMethods.GET_TRANSACTION).startSpan();
         CompletableFuture<SidecarApiModels.GetTransactionResponse> future = new CompletableFuture<>();
 
         try {
             // Convert to Protobuf
             Sidecar.GetTransactionRequest request =
-                GrpcModelConverter.toProtoGetTransactionRequest(txExecutionId);
+                GrpcModelConverter.toProtoGetTransactionRequest(txRequest);
 
-            LOG.trace("Getting transaction via gRPC: {}", txExecutionId);
+            LOG.trace("Getting transaction via gRPC: {}", request);
 
             // Make async gRPC call with deadline
             asyncStub

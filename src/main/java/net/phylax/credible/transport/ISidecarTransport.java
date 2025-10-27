@@ -8,7 +8,7 @@ import net.phylax.credible.types.SidecarApiModels.*;
 public interface ISidecarTransport {
     CompletableFuture<SendBlockEnvResponse> sendBlockEnv(SendBlockEnvRequest blockEnv);
     CompletableFuture<SendTransactionsResponse> sendTransactions(SendTransactionsRequest transactions);
-    CompletableFuture<GetTransactionsResponse> getTransactions(List<TxExecutionId> txExecutionIds);
-    CompletableFuture<GetTransactionResponse> getTransaction(TxExecutionId txExecutionId);
+    CompletableFuture<GetTransactionsResponse> getTransactions(GetTransactionsRequest transactions);
+    CompletableFuture<GetTransactionResponse> getTransaction(GetTransactionRequest transactions);
     CompletableFuture<ReorgResponse> sendReorg(ReorgRequest reorgRequest);
 }

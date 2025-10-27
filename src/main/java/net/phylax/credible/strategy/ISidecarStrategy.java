@@ -35,7 +35,7 @@ public interface ISidecarStrategy {
      * @return Result<GetTransactionResponse, CredibleRejectionReason> Contains either the result of the transaction processing 
      * or the reason it got rejected
      */
-    Result<GetTransactionResponse, CredibleRejectionReason> getTransactionResult(TxExecutionId txExecId);
+    Result<GetTransactionResponse, CredibleRejectionReason> getTransactionResult(GetTransactionRequest transactionRequest);
 
     /**
      * Send the reorg request to the sidecar.
@@ -43,7 +43,7 @@ public interface ISidecarStrategy {
      * @param txExecId TxExecutionId containing the block number, iteration ID and transaction hash to reorg
      * @return List of ReorgResponses, one from each instance of the transport
      */
-    List<ReorgResponse> sendReorgRequest(TxExecutionId txExecId);
+    List<ReorgResponse> sendReorgRequest(ReorgRequest reorgRequest);
 
     /**
      * Determines if the strategy is active or not, i.e. are the sidecars available and responding.

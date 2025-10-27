@@ -24,7 +24,9 @@ import com.fasterxml.jackson.databind.json.JsonMapper;
 
 import net.phylax.credible.transport.ISidecarTransport;
 import net.phylax.credible.types.SidecarApiModels.CredibleLayerMethods;
+import net.phylax.credible.types.SidecarApiModels.GetTransactionRequest;
 import net.phylax.credible.types.SidecarApiModels.GetTransactionResponse;
+import net.phylax.credible.types.SidecarApiModels.GetTransactionsRequest;
 import net.phylax.credible.types.SidecarApiModels.GetTransactionsResponse;
 import net.phylax.credible.types.SidecarApiModels.ReorgRequest;
 import net.phylax.credible.types.SidecarApiModels.ReorgResponse;
@@ -534,19 +536,19 @@ public class JsonRpcTransport implements ISidecarTransport {
     }
 
     @Override
-    public CompletableFuture<GetTransactionsResponse> getTransactions(List<TxExecutionId> txExecutionIds) {
+    public CompletableFuture<GetTransactionsResponse> getTransactions(GetTransactionsRequest transactions) {
         return this.callAsync(
             CredibleLayerMethods.GET_TRANSACTIONS,
-            txExecutionIds,
+            transactions,
             GetTransactionsResponse.class
         );
     }
 
     @Override
-    public CompletableFuture<GetTransactionResponse> getTransaction(TxExecutionId txExecutionId) {
+    public CompletableFuture<GetTransactionResponse> getTransaction(GetTransactionRequest transaction) {
         return this.callAsync(
             CredibleLayerMethods.GET_TRANSACTION,
-            txExecutionId,
+            transaction,
             GetTransactionResponse.class
         );
     }

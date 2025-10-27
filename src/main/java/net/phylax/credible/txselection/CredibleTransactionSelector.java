@@ -64,7 +64,7 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
 
         TxExecutionId txExecutionId = new TxExecutionId(blockNumber, iterationId, txHash);
         SendTransactionsRequest sendRequest = new SendTransactionsRequest();
-        sendRequest.setTransactions(List.of(new TransactionWithHash(txExecutionId, txEnv)));
+        sendRequest.setTransactions(List.of(new TransactionExecutionPayload(txExecutionId, txEnv)));
 
         config.strategy.dispatchTransactions(sendRequest);
 
@@ -97,9 +97,9 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
     try {
         LOG.debug("Awaiting result for, hash: {}, iteration: {}", txHash, iterationId);
 
-        TxExecutionId txExecutionId = new TxExecutionId(blockNumber, iterationId, txHash);
+        GetTransactionRequest txRequest = new GetTransactionRequest(blockNumber, iterationId, txHash);
 
-        var txResponseResult = config.strategy.getTransactionResult(txExecutionId);
+        var txResponseResult = config.strategy.getTransactionResult(txRequest);
 
         if (!txResponseResult.isSuccess()) {
           LOG.warn("Credible Layer failed to process, tx: {}, iteration: {}, reason: {}", txHash, iterationId, txResponseResult.getFailure());
@@ -141,8 +141,8 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
         LOG.debug("Sending reorg request for transaction {} due to: {}", txHash, reason);
 
         // Create TxExecutionId with block number, iteration ID, and transaction hash
-        TxExecutionId txExecutionId = new TxExecutionId(blockNumber, iterationId, txHash);
-        var reorgResponses = config.strategy.sendReorgRequest(txExecutionId);
+        ReorgRequest reorgRequest = new ReorgRequest(blockNumber, iterationId, txHash);
+        var reorgResponses = config.strategy.sendReorgRequest(reorgRequest);
 
         LOG.debug("Reorg request successful for transaction {}, got {} responses", txHash, reorgResponses.size());
     } catch (Exception e) {

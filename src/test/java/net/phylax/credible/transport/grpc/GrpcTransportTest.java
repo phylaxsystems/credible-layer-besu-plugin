@@ -203,7 +203,7 @@ public class GrpcTransportTest {
     @Test
     public void testSendTransactions() throws Exception {
         // Create test transactions
-        List<SidecarApiModels.TransactionWithHash> transactions = new ArrayList<>();
+        List<SidecarApiModels.TransactionExecutionPayload> transactions = new ArrayList<>();
 
         SidecarApiModels.TxEnv txEnv = new SidecarApiModels.TxEnv();
         txEnv.setCaller("0xsender123");
@@ -235,7 +235,7 @@ public class GrpcTransportTest {
         SidecarApiModels.TxExecutionId txExecutionId = new SidecarApiModels.TxExecutionId(
             12345L, 1L, "0xtxhash1"
         );
-        transactions.add(new SidecarApiModels.TransactionWithHash(
+        transactions.add(new SidecarApiModels.TransactionExecutionPayload(
             txExecutionId, txEnv
         ));
 
@@ -287,9 +287,9 @@ public class GrpcTransportTest {
         testService.transactionResults.add(
             Sidecar.TransactionResult.newBuilder()
                 .setTxExecutionId(Sidecar.TxExecutionId.newBuilder()
-                    .setTxHash("0xtxhash1")
                     .setBlockNumber(0L)
                     .setIterationId(0L)
+                    .setTxHash("0xtxhash1")
                     .build())
                 .setStatus("success")
                 .setGasUsed(21000)
@@ -299,14 +299,15 @@ public class GrpcTransportTest {
         testService.notFoundTxHashes.add("0xtxhash2");
 
         // Create request with TxExecutionId
-        List<SidecarApiModels.TxExecutionId> txExecutionIds = List.of(
+        SidecarApiModels.GetTransactionsRequest txReq = new SidecarApiModels.GetTransactionsRequest();
+        txReq.setTxExecutionIds(List.of(
             new SidecarApiModels.TxExecutionId(1000L, 1L, "0xtxhash1"),
             new SidecarApiModels.TxExecutionId(1000L, 1L, "0xtxhash2")
-        );
+        ));
 
         // Send the request
         CompletableFuture<SidecarApiModels.GetTransactionsResponse> future =
-            transport.getTransactions(txExecutionIds);
+            transport.getTransactions(txReq);
         SidecarApiModels.GetTransactionsResponse response = future.get();
 
         // Verify the response
@@ -314,7 +315,7 @@ public class GrpcTransportTest {
         assertEquals(1, response.getNotFound().size());
 
         SidecarApiModels.TransactionResult result = response.getResults().get(0);
-        assertEquals("0xtxhash1", result.getHash());
+        assertEquals("0xtxhash1", result.getTxExecutionId().getTxHash());
         assertEquals("success", result.getStatus());
         assertEquals(21000, result.getGasUsed());
 
@@ -331,9 +332,9 @@ public class GrpcTransportTest {
         testService.transactionResults.add(
             Sidecar.TransactionResult.newBuilder()
                 .setTxExecutionId(Sidecar.TxExecutionId.newBuilder()
-                    .setTxHash("0xtxhash1")
                     .setBlockNumber(0L)
                     .setIterationId(0L)
+                    .setTxHash("0xtxhash1")
                     .build())
                 .setStatus("success")
                 .setGasUsed(21000)
@@ -342,18 +343,18 @@ public class GrpcTransportTest {
         );
 
         // Create request with TxExecutionId
-        SidecarApiModels.TxExecutionId txExecutionId = new SidecarApiModels.TxExecutionId(1000L, 1L, "0xtxhash1");
+        SidecarApiModels.GetTransactionRequest txReq = new SidecarApiModels.GetTransactionRequest(1000L, 1L, "0xtxhash1");
 
         // Send the request
         CompletableFuture<SidecarApiModels.GetTransactionResponse> future =
-            transport.getTransaction(txExecutionId);
+            transport.getTransaction(txReq);
         SidecarApiModels.GetTransactionResponse response = future.get();
 
         // Verify the response
         assertTrue(response.getResult() != null);
 
         SidecarApiModels.TransactionResult result = response.getResult();
-        assertEquals("0xtxhash1", result.getHash());
+        assertEquals("0xtxhash1", result.getTxExecutionId().getTxHash());
         assertEquals("success", result.getStatus());
         assertEquals(21000, result.getGasUsed());
 

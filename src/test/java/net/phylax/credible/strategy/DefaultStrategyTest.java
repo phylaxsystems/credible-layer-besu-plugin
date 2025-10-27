@@ -48,9 +48,9 @@ public class DefaultStrategyTest {
 
     SendTransactionsRequest generateTransactionRequest(String hash) {
         // generate transaction request
-        var transactions = new ArrayList<TransactionWithHash>();
+        var transactions = new ArrayList<TransactionExecutionPayload>();
         TxExecutionId txExecutionId = new TxExecutionId(0L, 1L, hash);
-        transactions.add(new TransactionWithHash(txExecutionId, new TxEnv()));
+        transactions.add(new TransactionExecutionPayload(txExecutionId, new TxEnv()));
         return new SendTransactionsRequest(transactions);
     }
 
@@ -103,8 +103,8 @@ public class DefaultStrategyTest {
         var hash = "0x1" + new Random().nextInt(Integer.MAX_VALUE);
 
         strategy.dispatchTransactions(generateTransactionRequest(hash));
-        TxExecutionId txExecutionId = new TxExecutionId(0L, 1L, hash);
-        var response = strategy.getTransactionResult(txExecutionId);
+        GetTransactionRequest txRequest = new GetTransactionRequest(0L, 1L, hash);
+        var response = strategy.getTransactionResult(txRequest);
         return response;
     }
 
@@ -115,20 +115,20 @@ public class DefaultStrategyTest {
 
         String hash1 = "0x1";
         assertDoesNotThrow(() -> strategy.dispatchTransactions(generateTransactionRequest(hash1)));
-        TxExecutionId txExecutionId1 = new TxExecutionId(0L, 1L, hash1);
-        var response = strategy.getTransactionResult(txExecutionId1);
+        GetTransactionRequest txReq1 = new GetTransactionRequest(0L, 1L, hash1);
+        var response = strategy.getTransactionResult(txReq1);
         assertNotNull(response.getSuccess().getResult());
 
         String hash2 = "0x2";
         assertDoesNotThrow(() -> strategy.dispatchTransactions(generateTransactionRequest(hash2)));
-        TxExecutionId txExecutionId2 = new TxExecutionId(0L, 1L, hash2);
-        response = strategy.getTransactionResult(txExecutionId2);
+        GetTransactionRequest txReq2 = new GetTransactionRequest(0L, 1L, hash2);
+        response = strategy.getTransactionResult(txReq2);
         assertNotNull(response.getSuccess().getResult());
 
         String hash3 = "0x3";
         assertDoesNotThrow(() -> strategy.dispatchTransactions(generateTransactionRequest(hash3)));
-        TxExecutionId txExecutionId3 = new TxExecutionId(0L, 1L, hash3);
-        response = strategy.getTransactionResult(txExecutionId3);
+        GetTransactionRequest txReq3 = new GetTransactionRequest(0L, 1L, hash3);
+        response = strategy.getTransactionResult(txReq3);
         assertNotNull(response.getSuccess().getResult());
     }
 
@@ -335,8 +335,8 @@ public class DefaultStrategyTest {
         assertTrue(response.size() == 1);
 
         // GetTransactions should reject
-        TxExecutionId txExecutionId = new TxExecutionId(0L, 1L, "0x1");
-        var result = strategy.getTransactionResult(txExecutionId);
+        GetTransactionRequest txReq = new GetTransactionRequest(0L, 1L, "0x1");
+        var result = strategy.getTransactionResult(txReq);
         assertNotNull(result.getSuccess().getResult());
     }
 

@@ -59,15 +59,15 @@ public class MockTransport implements ISidecarTransport {
     }
 
     @Override
-    public CompletableFuture<GetTransactionsResponse> getTransactions(List<TxExecutionId> txExecutionIds) {
+    public CompletableFuture<GetTransactionsResponse> getTransactions(GetTransactionsRequest req) {
         Executor delayedExecutor = CompletableFuture.delayedExecutor(
             processingLatency, TimeUnit.MILLISECONDS);
 
         List<TransactionResult> validResults = new ArrayList<>();
 
         if (!emptyResults) {
-            for(TxExecutionId txExecutionId : txExecutionIds) {
-                validResults.add(new TransactionResult(txExecutionId.getTxHash(), getTxStatus, 21000L, ""));
+            for(TxExecutionId txExecutionId : req.getTxExecutionIds()) {
+                validResults.add(new TransactionResult(txExecutionId, getTxStatus, 21000L, ""));
             }
         }
 
@@ -80,14 +80,14 @@ public class MockTransport implements ISidecarTransport {
     }
 
     @Override
-    public CompletableFuture<GetTransactionResponse> getTransaction(TxExecutionId txExecutionId) {
+    public CompletableFuture<GetTransactionResponse> getTransaction(GetTransactionRequest req) {
         Executor delayedExecutor = CompletableFuture.delayedExecutor(
             processingLatency, TimeUnit.MILLISECONDS);
 
         final TransactionResult result;
 
         if (!emptyResults) {
-            result = new TransactionResult(txExecutionId.getTxHash(), getTxStatus, 21000L, "");
+            result = new TransactionResult(req.toTxExecutionId(), getTxStatus, 21000L, "");
         } else {
             result = null;
         }
