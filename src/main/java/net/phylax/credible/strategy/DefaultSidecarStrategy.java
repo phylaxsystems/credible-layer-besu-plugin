@@ -50,7 +50,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
     private Tracer tracer;
 
     // Maps a transaction hash to a list of futures for each transport
-    private final Map<String, List<CompletableFuture<GetTransactionResponse>>> pendingTxRequests = 
+    private final Map<TxExecutionId, List<CompletableFuture<GetTransactionResponse>>> pendingTxRequests = 
         new ConcurrentHashMap<>();
 
     private int processingTimeout;
@@ -214,10 +214,6 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                 span.end();
                 return Collections.emptyList();
             }
-    
-            List<String> hashes = sendTxRequest.getTransactions().stream()
-                .map(tx -> tx.getTxExecutionId().getTxHash())
-                .collect(Collectors.toList());
 
             List<TxExecutionId> txExecutionIds = sendTxRequest.getTransactions().stream()
                 .map(tx -> tx.getTxExecutionId())
@@ -286,7 +282,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
             
             // NOTE: making the assumption that it's only 1 transaction per request
             // which is implied with the TransactionSelectionPlugin
-            pendingTxRequests.put(hashes.get(0), futures);
+            pendingTxRequests.put(txExecutionIds.get(0), futures);
             
             return futures;
         }
@@ -302,10 +298,10 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                 return Result.failure(CredibleRejectionReason.NO_ACTIVE_TRANSPORT);
             }
 
-            String txHash = transactionRequest.getTxHash();
-            List<CompletableFuture<GetTransactionResponse>> futures = pendingTxRequests.remove(txHash);
+            TxExecutionId txExecId = transactionRequest.toTxExecutionId();
+            List<CompletableFuture<GetTransactionResponse>> futures = pendingTxRequests.remove(txExecId);
                 if (futures == null || futures.isEmpty()) {
-                    LOG.debug("No pending request found for transaction {}", txHash);
+                    LOG.debug("No pending request found for transaction {}", txExecId);
                     span.setAttribute("failed", true);
                     return Result.failure(CredibleRejectionReason.NO_RESULT);
                 }

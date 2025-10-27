@@ -6,6 +6,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.ArrayList;
 
 public class SidecarApiModels {
@@ -664,6 +665,20 @@ public class SidecarApiModels {
         public String toString() {
             return String.format("TxExecutionId{blockNumber=%d, iterationId='%s', txHash='%s'}",
                 blockNumber, iterationId, txHash);
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            
+            TxExecutionId tx = (TxExecutionId) o;
+            return blockNumber.equals(tx.blockNumber) && iterationId.equals(tx.iterationId) && txHash.equals(tx.txHash);
+        }
+        
+        @Override
+        public int hashCode() {
+            return Objects.hash(blockNumber, iterationId, txHash);
         }
     }
 
