@@ -59,8 +59,8 @@ public class TransactionConverter {
             // Contract call
             txEnv.setKind(transaction.getTo().get().toHexString());
         } else {
-            // Contract creation - kind should be null
-            txEnv.setKind(null);
+            // Contract creation - kind should be empty/0x (taken from spec)
+            txEnv.setKind("0x");
         }
         
         // Data/payload - use getData() if available, otherwise getPayload()

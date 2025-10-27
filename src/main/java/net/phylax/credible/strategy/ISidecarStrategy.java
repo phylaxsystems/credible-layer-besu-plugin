@@ -31,19 +31,19 @@ public interface ISidecarStrategy {
      * Get the result processing a transaction in the credible layer. This method is called
      * after the dispatchTransactions method and the futures should resolve inside of it.
      * 
-     * @param txHash Hash of the transaction
+     * @param txExecId TxExecutionId containing the block number, hash and the iteration ID
      * @return Result<GetTransactionResponse, CredibleRejectionReason> Contains either the result of the transaction processing 
      * or the reason it got rejected
      */
-    Result<GetTransactionResponse, CredibleRejectionReason> getTransactionResult(String txHash);
+    Result<GetTransactionResponse, CredibleRejectionReason> getTransactionResult(TxExecutionId txExecId);
 
     /**
      * Send the reorg request to the sidecar.
-     * 
-     * @param reorgRequest ReorgRequest instance
+     *
+     * @param txExecId TxExecutionId containing the block number, iteration ID and transaction hash to reorg
      * @return List of ReorgResponses, one from each instance of the transport
      */
-    List<ReorgResponse> sendReorgRequest(ReorgRequest reorgRequest);
+    List<ReorgResponse> sendReorgRequest(TxExecutionId txExecId);
 
     /**
      * Determines if the strategy is active or not, i.e. are the sidecars available and responding.

@@ -32,6 +32,7 @@ import net.phylax.credible.types.SidecarApiModels.SendBlockEnvRequest;
 import net.phylax.credible.types.SidecarApiModels.SendBlockEnvResponse;
 import net.phylax.credible.types.SidecarApiModels.SendTransactionsRequest;
 import net.phylax.credible.types.SidecarApiModels.SendTransactionsResponse;
+import net.phylax.credible.types.SidecarApiModels.TxExecutionId;
 import net.phylax.credible.utils.CredibleLogger;
 import okhttp3.Authenticator;
 import okhttp3.Call;
@@ -533,19 +534,19 @@ public class JsonRpcTransport implements ISidecarTransport {
     }
 
     @Override
-    public CompletableFuture<GetTransactionsResponse> getTransactions(List<String> txHashes) {
+    public CompletableFuture<GetTransactionsResponse> getTransactions(List<TxExecutionId> txExecutionIds) {
         return this.callAsync(
             CredibleLayerMethods.GET_TRANSACTIONS,
-            txHashes,
+            txExecutionIds,
             GetTransactionsResponse.class
         );
     }
 
     @Override
-    public CompletableFuture<GetTransactionResponse> getTransaction(String txHash) {
+    public CompletableFuture<GetTransactionResponse> getTransaction(TxExecutionId txExecutionId) {
         return this.callAsync(
             CredibleLayerMethods.GET_TRANSACTION,
-            List.of(txHash),
+            txExecutionId,
             GetTransactionResponse.class
         );
     }
