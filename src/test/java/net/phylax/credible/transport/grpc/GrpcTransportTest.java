@@ -138,7 +138,7 @@ public class GrpcTransportTest {
     @Test
     public void testSendBlockEnv() throws Exception {
         // Create a test block env request
-        SidecarApiModels.SendBlockEnvRequest request = new SidecarApiModels.SendBlockEnvRequest(
+        SidecarApiModels.BlockEnv blockEnvData = new SidecarApiModels.BlockEnv(
             12345L,                                      // number
             "0x1234567890123456789012345678901234567890", // beneficiary
             1234567890L,                                 // timestamp
@@ -146,9 +146,13 @@ public class GrpcTransportTest {
             1000000000L,                                 // baseFee
             "0",                                         // difficulty
             "0x0000000000000000000000000000000000000000000000000000000000000000", // prevrandao
-            new SidecarApiModels.BlobExcessGasAndPrice(0L, 1L), // blobExcessGasAndPrice
-            10,                                          // nTransactions
-            "0xabcdef1234567890"                         // lastTxHash
+            new SidecarApiModels.BlobExcessGasAndPrice(0L, 1L) // blobExcessGasAndPrice
+        );
+        SidecarApiModels.SendBlockEnvRequest request = new SidecarApiModels.SendBlockEnvRequest(
+            blockEnvData,
+            "0xabcdef1234567890",
+            10,
+            200000L
         );
 
         // Send the request
@@ -178,11 +182,14 @@ public class GrpcTransportTest {
         testService.blockEnvAccepted = false;
         testService.blockEnvMessage = "Block rejected due to invalid data";
 
-        SidecarApiModels.SendBlockEnvRequest request = new SidecarApiModels.SendBlockEnvRequest(
+        SidecarApiModels.BlockEnv blockEnvData = new SidecarApiModels.BlockEnv(
             12345L, "0x1234567890123456789012345678901234567890",
             1234567890L, 30000000L, 1000000000L, "0",
             "0x0000000000000000000000000000000000000000000000000000000000000000",
-            new SidecarApiModels.BlobExcessGasAndPrice(0L, 1L), 0, null
+            new SidecarApiModels.BlobExcessGasAndPrice(0L, 1L)
+        );
+        SidecarApiModels.SendBlockEnvRequest request = new SidecarApiModels.SendBlockEnvRequest(
+            blockEnvData, "0x1234567890abcdef1234567890abcdef", 0, 1L
         );
 
         CompletableFuture<SidecarApiModels.SendBlockEnvResponse> future = transport.sendBlockEnv(request);
@@ -196,7 +203,7 @@ public class GrpcTransportTest {
     @Test
     public void testSendTransactions() throws Exception {
         // Create test transactions
-        List<SidecarApiModels.TransactionWithHash> transactions = new ArrayList<>();
+        List<SidecarApiModels.TransactionExecutionPayload> transactions = new ArrayList<>();
 
         SidecarApiModels.TxEnv txEnv = new SidecarApiModels.TxEnv();
         txEnv.setCaller("0xsender123");
@@ -225,8 +232,11 @@ public class GrpcTransportTest {
         authorizationListEntry.setNonce(5L);
         txEnv.setAuthorizationList(List.of(authorizationListEntry));
 
-        transactions.add(new SidecarApiModels.TransactionWithHash(
-            txEnv, "0xtxhash1"
+        SidecarApiModels.TxExecutionId txExecutionId = new SidecarApiModels.TxExecutionId(
+            12345L, 1L, "0xtxhash1"
+        );
+        transactions.add(new SidecarApiModels.TransactionExecutionPayload(
+            txExecutionId, txEnv
         ));
 
         SidecarApiModels.SendTransactionsRequest request =
@@ -248,7 +258,7 @@ public class GrpcTransportTest {
         assertNotNull(testService.lastSendTransactionsRequest);
         assertEquals(1, testService.lastSendTransactionsRequest.getTransactionsCount());
         assertEquals("0xtxhash1",
-                    testService.lastSendTransactionsRequest.getTransactions(0).getHash());
+                    testService.lastSendTransactionsRequest.getTransactions(0).getTxExecutionId().getTxHash());
 
         Sidecar.TransactionEnv protoEnv =
             testService.lastSendTransactionsRequest.getTransactions(0).getTxEnv();
@@ -276,7 +286,11 @@ public class GrpcTransportTest {
         // Configure test service with some results
         testService.transactionResults.add(
             Sidecar.TransactionResult.newBuilder()
-                .setHash("0xtxhash1")
+                .setTxExecutionId(Sidecar.TxExecutionId.newBuilder()
+                    .setBlockNumber(0L)
+                    .setIterationId(0L)
+                    .setTxHash("0xtxhash1")
+                    .build())
                 .setStatus("success")
                 .setGasUsed(21000)
                 .setError("")
@@ -284,12 +298,16 @@ public class GrpcTransportTest {
         );
         testService.notFoundTxHashes.add("0xtxhash2");
 
-        // Create request
-        List<String> txHashes = List.of("0xtxhash1", "0xtxhash2");
+        // Create request with TxExecutionId
+        SidecarApiModels.GetTransactionsRequest txReq = new SidecarApiModels.GetTransactionsRequest();
+        txReq.setTxExecutionIds(List.of(
+            new SidecarApiModels.TxExecutionId(1000L, 1L, "0xtxhash1"),
+            new SidecarApiModels.TxExecutionId(1000L, 1L, "0xtxhash2")
+        ));
 
         // Send the request
         CompletableFuture<SidecarApiModels.GetTransactionsResponse> future =
-            transport.getTransactions(txHashes);
+            transport.getTransactions(txReq);
         SidecarApiModels.GetTransactionsResponse response = future.get();
 
         // Verify the response
@@ -297,7 +315,7 @@ public class GrpcTransportTest {
         assertEquals(1, response.getNotFound().size());
 
         SidecarApiModels.TransactionResult result = response.getResults().get(0);
-        assertEquals("0xtxhash1", result.getHash());
+        assertEquals("0xtxhash1", result.getTxExecutionId().getTxHash());
         assertEquals("success", result.getStatus());
         assertEquals(21000, result.getGasUsed());
 
@@ -305,7 +323,7 @@ public class GrpcTransportTest {
 
         // Verify the request was received correctly
         assertNotNull(testService.lastGetTransactionsRequest);
-        assertEquals(2, testService.lastGetTransactionsRequest.getTxHashesCount());
+        assertEquals(2, testService.lastGetTransactionsRequest.getTxExecutionIdCount());
     }
 
     @Test
@@ -313,26 +331,30 @@ public class GrpcTransportTest {
         // Configure test service with some results
         testService.transactionResults.add(
             Sidecar.TransactionResult.newBuilder()
-                .setHash("0xtxhash1")
+                .setTxExecutionId(Sidecar.TxExecutionId.newBuilder()
+                    .setBlockNumber(0L)
+                    .setIterationId(0L)
+                    .setTxHash("0xtxhash1")
+                    .build())
                 .setStatus("success")
                 .setGasUsed(21000)
                 .setError("")
                 .build()
         );
 
-        // Create request
-        String txHash = "0xtxhash1";
+        // Create request with TxExecutionId
+        SidecarApiModels.GetTransactionRequest txReq = new SidecarApiModels.GetTransactionRequest(1000L, 1L, "0xtxhash1");
 
         // Send the request
         CompletableFuture<SidecarApiModels.GetTransactionResponse> future =
-            transport.getTransaction(txHash);
+            transport.getTransaction(txReq);
         SidecarApiModels.GetTransactionResponse response = future.get();
 
         // Verify the response
         assertTrue(response.getResult() != null);
 
         SidecarApiModels.TransactionResult result = response.getResult();
-        assertEquals("0xtxhash1", result.getHash());
+        assertEquals("0xtxhash1", result.getTxExecutionId().getTxHash());
         assertEquals("success", result.getStatus());
         assertEquals(21000, result.getGasUsed());
 
@@ -342,9 +364,9 @@ public class GrpcTransportTest {
 
     @Test
     public void testSendReorg() throws Exception {
-        // Create reorg request
+        // Create reorg request with TxExecutionId
         SidecarApiModels.ReorgRequest request =
-            new SidecarApiModels.ReorgRequest("0xremovedtxhash");
+            new SidecarApiModels.ReorgRequest(12345L, 1L, "0xremovedtxhash");
 
         // Send the request
         CompletableFuture<SidecarApiModels.ReorgResponse> future = transport.sendReorg(request);
@@ -356,16 +378,21 @@ public class GrpcTransportTest {
 
         // Verify the request was received correctly
         assertNotNull(testService.lastReorgRequest);
-        assertEquals("0xremovedtxhash", testService.lastReorgRequest.getRemovedTxHash());
+        assertEquals("0xremovedtxhash", testService.lastReorgRequest.getTxExecutionId().getTxHash());
+        assertEquals(12345L, testService.lastReorgRequest.getTxExecutionId().getBlockNumber());
+        assertEquals(1L, testService.lastReorgRequest.getTxExecutionId().getIterationId());
     }
 
     @Test
     public void testModelConversionsAreReversible() throws Exception {
         // Test that converting POJO → Proto → POJO maintains data integrity
-        SidecarApiModels.SendBlockEnvRequest originalRequest = new SidecarApiModels.SendBlockEnvRequest(
+        SidecarApiModels.BlockEnv blockEnvData = new SidecarApiModels.BlockEnv(
             99999L, "0xabcd", 9876543210L, 15000000L, 2000000000L, "12345",
             "0x1111111111111111111111111111111111111111111111111111111111111111",
-            new SidecarApiModels.BlobExcessGasAndPrice(100L, 50L), 5, "0xlasttx"
+            new SidecarApiModels.BlobExcessGasAndPrice(100L, 50L)
+        );
+        SidecarApiModels.SendBlockEnvRequest originalRequest = new SidecarApiModels.SendBlockEnvRequest(
+            blockEnvData, "0xlasttx", 5, 1L
         );
 
         // Convert to proto
@@ -386,7 +413,7 @@ public class GrpcTransportTest {
 
         assertTrue(response.getSuccess());
         assertNotNull(testService.lastBlockEnvRequest);
-        assertEquals(originalRequest.getNumber(),
+        assertEquals(originalRequest.getBlockEnv().getNumber(),
                     testService.lastBlockEnvRequest.getBlockEnv().getNumber());
     }
 }

@@ -25,11 +25,13 @@ import net.phylax.credible.tracer.CredibleOperationTracer;
 import net.phylax.credible.transport.ISidecarTransport;
 import net.phylax.credible.types.CredibleRejectionReason;
 import net.phylax.credible.types.SidecarApiModels.CredibleLayerMethods;
+import net.phylax.credible.types.SidecarApiModels.GetTransactionRequest;
 import net.phylax.credible.types.SidecarApiModels.GetTransactionResponse;
 import net.phylax.credible.types.SidecarApiModels.ReorgRequest;
 import net.phylax.credible.types.SidecarApiModels.ReorgResponse;
 import net.phylax.credible.types.SidecarApiModels.SendBlockEnvRequest;
 import net.phylax.credible.types.SidecarApiModels.SendTransactionsRequest;
+import net.phylax.credible.types.SidecarApiModels.TxExecutionId;
 import net.phylax.credible.utils.CredibleLogger;
 import net.phylax.credible.utils.Result;
 
@@ -48,7 +50,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
     private Tracer tracer;
 
     // Maps a transaction hash to a list of futures for each transport
-    private final Map<String, List<CompletableFuture<GetTransactionResponse>>> pendingTxRequests = 
+    private final Map<TxExecutionId, List<CompletableFuture<GetTransactionResponse>>> pendingTxRequests = 
         new ConcurrentHashMap<>();
 
     private int processingTimeout;
@@ -212,19 +214,19 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                 span.end();
                 return Collections.emptyList();
             }
-    
-            List<String> hashes = sendTxRequest.getTransactions().stream()
-                .map(tx -> tx.getHash())
+
+            List<TxExecutionId> txExecutionIds = sendTxRequest.getTransactions().stream()
+                .map(tx -> tx.getTxExecutionId())
                 .collect(Collectors.toList());
 
             Context context = Context.current();
-    
+
             // Calls sendTransactions and chain getTransactions per sidecar
             // In this way we track the send->get request chain per transport without blocking
             List<CompletableFuture<GetTransactionResponse>> futures = activeTransports.stream()
             .map(transport -> {
                 metricsRegistry.getSidecarRpcCounter().labels(CredibleLayerMethods.SEND_TRANSACTIONS).inc();
-                
+
                 var sendTxSpan = tracer.spanBuilder(CredibleLayerMethods.SEND_TRANSACTIONS).startSpan();
                 return transport.sendTransactions(sendTxRequest)
                     .whenComplete((result, ex) -> {
@@ -238,8 +240,8 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                                 sendTxSpan.setAttribute("failed", true);
                                 span.end();
                             } else {
-                                LOG.debug("SendTransactions response: count - {}, message - {}", 
-                                    result.getRequestCount(), 
+                                LOG.debug("SendTransactions response: count - {}, message - {}",
+                                    result.getRequestCount(),
                                     result.getMessage());
                                 sendTxSpan.setAttribute("message", result.getMessage());
                             }
@@ -252,12 +254,12 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                             LOG.debug("Transports aren't active!");
                             return CompletableFuture.completedFuture(null);
                         }
-    
+
                         var timing = metricsRegistry.getPollingTimer().labels().startTimer();
                         metricsRegistry.getSidecarRpcCounter().labels(CredibleLayerMethods.GET_TRANSACTION).inc();
-                        
+
                         var getTxSpan = tracer.spanBuilder(CredibleLayerMethods.GET_TRANSACTION).startSpan();
-                        return transport.getTransaction(hashes.get(0))
+                        return transport.getTransaction(GetTransactionRequest.fromTxExecutionId(txExecutionIds.get(0)))
                             .whenComplete((response, throwable) -> {
                                 try(Scope getScope = context.makeCurrent()) {
                                     if (throwable != null) {
@@ -280,14 +282,14 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
             
             // NOTE: making the assumption that it's only 1 transaction per request
             // which is implied with the TransactionSelectionPlugin
-            pendingTxRequests.put(hashes.get(0), futures);
+            pendingTxRequests.put(txExecutionIds.get(0), futures);
             
             return futures;
         }
     }
     
     @Override
-    public Result<GetTransactionResponse, CredibleRejectionReason> getTransactionResult(String txHash) {
+    public Result<GetTransactionResponse, CredibleRejectionReason> getTransactionResult(GetTransactionRequest transactionRequest) {
         var span = tracer.spanBuilder(CredibleLayerMethods.GET_TRANSACTIONS).startSpan();
         span.setAttribute("active", isActive.get());
         try(Scope scope = span.makeCurrent()) {
@@ -295,10 +297,11 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
             if (!isActive.get()) {
                 return Result.failure(CredibleRejectionReason.NO_ACTIVE_TRANSPORT);
             }
-    
-            List<CompletableFuture<GetTransactionResponse>> futures = pendingTxRequests.remove(txHash);
+
+            TxExecutionId txExecId = transactionRequest.toTxExecutionId();
+            List<CompletableFuture<GetTransactionResponse>> futures = pendingTxRequests.remove(txExecId);
                 if (futures == null || futures.isEmpty()) {
-                    LOG.debug("No pending request found for transaction {}", txHash);
+                    LOG.debug("No pending request found for transaction {}", txExecId);
                     span.setAttribute("failed", true);
                     return Result.failure(CredibleRejectionReason.NO_RESULT);
                 }
@@ -385,7 +388,6 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         var span = tracer.spanBuilder("sendReorgRequest").startSpan();
         try(Scope scope = span.makeCurrent()) {
             List<ReorgResponse> successfulResponses = new ArrayList<>();
-    
             for (ISidecarTransport transport : activeTransports) {
                 try {
                     ReorgResponse response = transport.sendReorg(reorgRequest).join();
@@ -395,7 +397,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                 } catch (Exception e) {
                     // Safe to remove with CopyOnWriteArrayList
                     activeTransports.remove(transport);
-                    LOG.debug("Exception sending reorg request to transport {}: {}", 
+                    LOG.debug("Exception sending reorg request to transport {}: {}",
                         transport.toString(), e.getMessage());
                     metricsRegistry.getErrorCounter().labels().inc();
                     span.setAttribute("failed", true);

@@ -6,6 +6,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.ArrayList;
 
 public class SidecarApiModels {
@@ -231,109 +232,47 @@ public class SidecarApiModels {
     // ==================== REQUEST MODELS ====================
 
     /**
-     * Request model for sendTransactions endpoint
+     * Block environment data
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    public static class SendTransactionsRequest {
-        @JsonProperty("transactions")
-        private List<TransactionWithHash> transactions;
-        
-        public SendTransactionsRequest() {}
-        
-        @JsonCreator
-        public SendTransactionsRequest(@JsonProperty("transactions") List<TransactionWithHash> transactions) {
-            this.transactions = transactions;
-        }
-        
-        public List<TransactionWithHash> getTransactions() { return transactions; }
-        public void setTransactions(List<TransactionWithHash> transactions) { this.transactions = transactions; }
-    }
-
-    /**
-     * Request model for getTransactions endpoint
-     */
-    @JsonInclude(JsonInclude.Include.NON_NULL)
-    public static class GetTransactionsRequest {
-        @JsonProperty("hashes")
-        private List<String> hashes;
-        
-        public GetTransactionsRequest() {}
-        
-        @JsonCreator
-        public GetTransactionsRequest(@JsonProperty("hashes") List<String> hashes) {
-            this.hashes = hashes;
-        }
-        
-        public List<String> getHashes() { return hashes; }
-        public void setHashes(List<String> hashes) { this.hashes = hashes; }
-    }
-
-    /**
-    * Request model for reorg endpoint
-    */
-    @JsonInclude(JsonInclude.Include.NON_NULL)
-    public static class ReorgRequest {
-        @JsonProperty("removedTxHash")
-        private String removedTxHash;
-
-        public ReorgRequest() {}
-
-        @JsonCreator
-        public ReorgRequest(@JsonProperty("removedTxHash") String removedTxHash) {
-            this.removedTxHash = removedTxHash;
-        }
-
-        public String getRemovedTxHash() {
-            return removedTxHash;
-        }
-
-        public void setRemovedTxHash(String removedTxHash) {
-            this.removedTxHash = removedTxHash;
-        }
-    }
-
-    /**
-     * Request model for sendBlockEnv endpoint
-     */
-    @JsonInclude(JsonInclude.Include.NON_NULL)
-    public static class SendBlockEnvRequest {
+    public static class BlockEnv {
         @JsonProperty("number")
         private Long number;
-        
+
         @JsonProperty("beneficiary")
         private String beneficiary;
-        
+
         @JsonProperty("timestamp")
         private Long timestamp;
-        
+
         @JsonProperty("gas_limit")
         private Long gasLimit;
-        
+
         @JsonProperty("basefee")
         private Long baseFee;
-        
+
         @JsonProperty("difficulty")
         private String difficulty;
-        
+
         @JsonProperty("prevrandao")
         private String prevrandao;
 
         @JsonProperty("blob_excess_gas_and_price")
         private BlobExcessGasAndPrice blobExcessGasAndPrice;
-        
-        @JsonProperty("n_transactions")
-        private Integer nTransactions;
-        
-        @JsonProperty("last_tx_hash")
-        private String lastTxHash;
-        
-        public SendBlockEnvRequest() {}
+
+        public BlockEnv() {}
 
         @JsonCreator
-        public SendBlockEnvRequest(@JsonProperty("number") Long number, @JsonProperty("beneficiary") String beneficiary, @JsonProperty("timestamp") Long timestamp,
-            @JsonProperty("gas_limit")Long gasLimit, @JsonProperty("basefee") Long baseFee, @JsonProperty("difficulty") String difficulty,
-            @JsonProperty("prevrandao") String prevrandao, @JsonProperty("blob_excess_gas_and_price") BlobExcessGasAndPrice blobExcessGasAndPrice,
-            @JsonProperty("n_transactions") Integer nTransactions, @JsonProperty("last_tx_hash") String lastTxHash) {
+        public BlockEnv(
+            @JsonProperty("number") Long number,
+            @JsonProperty("beneficiary") String beneficiary,
+            @JsonProperty("timestamp") Long timestamp,
+            @JsonProperty("gas_limit") Long gasLimit,
+            @JsonProperty("basefee") Long baseFee,
+            @JsonProperty("difficulty") String difficulty,
+            @JsonProperty("prevrandao") String prevrandao,
+            @JsonProperty("blob_excess_gas_and_price") BlobExcessGasAndPrice blobExcessGasAndPrice
+        ) {
             this.number = number;
             this.beneficiary = beneficiary;
             this.timestamp = timestamp;
@@ -342,29 +281,27 @@ public class SidecarApiModels {
             this.difficulty = difficulty;
             this.prevrandao = prevrandao;
             this.blobExcessGasAndPrice = blobExcessGasAndPrice;
-            this.nTransactions = nTransactions;
-            this.lastTxHash = lastTxHash;
         }
-        
+
         // Getters and setters
         public Long getNumber() { return number; }
         public void setNumber(Long number) { this.number = number; }
-        
+
         public String getBeneficiary() { return beneficiary; }
         public void setBeneficiary(String beneficiary) { this.beneficiary = beneficiary; }
-        
+
         public Long getTimestamp() { return timestamp; }
         public void setTimestamp(Long timestamp) { this.timestamp = timestamp; }
-        
+
         public Long getGasLimit() { return gasLimit; }
         public void setGasLimit(Long gasLimit) { this.gasLimit = gasLimit; }
-        
+
         public Long getBaseFee() { return baseFee; }
         public void setBaseFee(Long baseFee) { this.baseFee = baseFee; }
-        
+
         public String getDifficulty() { return difficulty; }
         public void setDifficulty(String difficulty) { this.difficulty = difficulty; }
-        
+
         public String getPrevrandao() { return prevrandao; }
         public void setPrevrandao(String prevrandao) { this.prevrandao = prevrandao; }
 
@@ -372,12 +309,150 @@ public class SidecarApiModels {
         public void setBlobExcessGasAndPrice(BlobExcessGasAndPrice blobExcessGasAndPrice) {
             this.blobExcessGasAndPrice = blobExcessGasAndPrice;
         }
+    }
+
+    /**
+     * Request model for sendTransactions endpoint
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class SendTransactionsRequest {
+        @JsonProperty("transactions")
+        private List<TransactionExecutionPayload> transactions;
+        
+        public SendTransactionsRequest() {}
+        
+        @JsonCreator
+        public SendTransactionsRequest(@JsonProperty("transactions") List<TransactionExecutionPayload> transactions) {
+            this.transactions = transactions;
+        }
+        
+        public List<TransactionExecutionPayload> getTransactions() { return transactions; }
+        public void setTransactions(List<TransactionExecutionPayload> transactions) { this.transactions = transactions; }
+    }
+
+    /**
+     * Request model for getTransactions endpoint
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class GetTransactionsRequest {
+        @JsonProperty("tx_execution_ids")
+        private List<TxExecutionId> txExecutionIds;
+        
+        public GetTransactionsRequest() {}
+        
+        @JsonCreator
+        public GetTransactionsRequest(@JsonProperty("tx_execution_ids") List<TxExecutionId> txExecutionIds) {
+            this.txExecutionIds = txExecutionIds;
+        }
+        
+        public List<TxExecutionId> getTxExecutionIds() { return txExecutionIds; }
+        public void setTxExecutionIds(List<TxExecutionId> txExecutionIds) { this.txExecutionIds = txExecutionIds; }
+    }
+
+    /**
+    * Request model for reorg endpoint
+    */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class ReorgRequest {
+        @JsonProperty("block_number")
+        private Long blockNumber;
+
+        @JsonProperty("iteration_id")
+        private Long iterationId;
+
+        @JsonProperty("tx_hash")
+        private String txHash;
+
+        public ReorgRequest() {}
+
+        @JsonCreator
+        public ReorgRequest(
+            @JsonProperty("block_number") Long blockNumber,
+            @JsonProperty("iteration_id") Long iterationId,
+            @JsonProperty("tx_hash") String txHash
+        ) {
+            this.blockNumber = blockNumber;
+            this.iterationId = iterationId;
+            this.txHash = txHash;
+        }
+
+        public static ReorgRequest fromTxExecutionId(TxExecutionId txExecutionId) {
+            return new ReorgRequest(
+                txExecutionId.getBlockNumber(),
+                txExecutionId.getIterationId(),
+                txExecutionId.getTxHash()
+            );
+        }
+
+        public Long getBlockNumber() {
+            return blockNumber;
+        }
+
+        public void setBlockNumber(Long blockNumber) {
+            this.blockNumber = blockNumber;
+        }
+
+        public Long getIterationId() {
+            return iterationId;
+        }
+
+        public void setIterationId(Long iterationId) {
+            this.iterationId = iterationId;
+        }
+
+        public String getTxHash() {
+            return txHash;
+        }
+
+        public void setTxHash(String txHash) {
+            this.txHash = txHash;
+        }
+    }
+
+    /**
+     * Request model for sendBlockEnv endpoint
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class SendBlockEnvRequest {
+        @JsonProperty("block_env")
+        private BlockEnv blockEnv;
+
+        @JsonProperty("last_tx_hash")
+        private String lastTxHash;
+
+        @JsonProperty("n_transactions")
+        private Integer nTransactions;
+
+        @JsonProperty("selected_iteration_id")
+        private Long selectedIterationId;
+
+        public SendBlockEnvRequest() {}
+
+        @JsonCreator
+        public SendBlockEnvRequest(
+            @JsonProperty("block_env") BlockEnv blockEnv,
+            @JsonProperty("last_tx_hash") String lastTxHash,
+            @JsonProperty("n_transactions") Integer nTransactions,
+            @JsonProperty("selected_iteration_id") Long selectedIterationId
+        ) {
+            this.blockEnv = blockEnv;
+            this.lastTxHash = lastTxHash;
+            this.nTransactions = nTransactions;
+            this.selectedIterationId = selectedIterationId;
+        }
+
+        // Getters and setters
+        public BlockEnv getBlockEnv() { return blockEnv; }
+        public void setBlockEnv(BlockEnv blockEnv) { this.blockEnv = blockEnv; }
+
+        public String getLastTxHash() { return lastTxHash; }
+        public void setLastTxHash(String lastTxHash) { this.lastTxHash = lastTxHash; }
 
         public Integer getNTransactions() { return nTransactions; }
         public void setNTransactions(Integer nTransactions) { this.nTransactions = nTransactions; }
-        
-        public String getLastTxHash() { return lastTxHash; }
-        public void setLastTxHash(String lastTxHash) { this.lastTxHash = lastTxHash; }
+
+        public Long getSelectedIterationId() { return selectedIterationId; }
+        public void setSelectedIterationId(Long selectedIterationId) { this.selectedIterationId = selectedIterationId; }
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -551,12 +626,120 @@ public class SidecarApiModels {
     // ==================== NESTED MODELS ====================
 
     /**
+     * Transaction execution identifier
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class TxExecutionId {
+        @JsonProperty("block_number")
+        private Long blockNumber;
+
+        @JsonProperty("iteration_id")
+        private Long iterationId;
+
+        @JsonProperty("tx_hash")
+        private String txHash;
+
+        public TxExecutionId() {}
+
+        @JsonCreator
+        public TxExecutionId(
+            @JsonProperty("block_number") Long blockNumber,
+            @JsonProperty("iteration_id") Long iterationId,
+            @JsonProperty("tx_hash") String txHash
+        ) {
+            this.blockNumber = blockNumber;
+            this.iterationId = iterationId;
+            this.txHash = txHash;
+        }
+
+        public Long getBlockNumber() { return blockNumber; }
+        public void setBlockNumber(Long blockNumber) { this.blockNumber = blockNumber; }
+
+        public Long getIterationId() { return iterationId; }
+        public void setIterationId(Long iterationId) { this.iterationId = iterationId; }
+
+        public String getTxHash() { return txHash; }
+        public void setTxHash(String txHash) { this.txHash = txHash; }
+
+        @Override
+        public String toString() {
+            return String.format("TxExecutionId{blockNumber=%d, iterationId='%s', txHash='%s'}",
+                blockNumber, iterationId, txHash);
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            
+            TxExecutionId tx = (TxExecutionId) o;
+            return blockNumber.equals(tx.blockNumber) && iterationId.equals(tx.iterationId) && txHash.equals(tx.txHash);
+        }
+        
+        @Override
+        public int hashCode() {
+            return Objects.hash(blockNumber, iterationId, txHash);
+        }
+    }
+
+    /**
+     * GetTransactionRequest
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class GetTransactionRequest {
+        @JsonProperty("block_number")
+        private Long blockNumber;
+
+        @JsonProperty("iteration_id")
+        private Long iterationId;
+
+        @JsonProperty("tx_hash")
+        private String txHash;
+
+        public GetTransactionRequest() {}
+
+        @JsonCreator
+        public GetTransactionRequest(
+            @JsonProperty("block_number") Long blockNumber,
+            @JsonProperty("iteration_id") Long iterationId,
+            @JsonProperty("tx_hash") String txHash
+        ) {
+            this.blockNumber = blockNumber;
+            this.iterationId = iterationId;
+            this.txHash = txHash;
+        }
+
+        public Long getBlockNumber() { return blockNumber; }
+        public void setBlockNumber(Long blockNumber) { this.blockNumber = blockNumber; }
+
+        public Long getIterationId() { return iterationId; }
+        public void setIterationId(Long iterationId) { this.iterationId = iterationId; }
+
+        public String getTxHash() { return txHash; }
+        public void setTxHash(String txHash) { this.txHash = txHash; }
+
+        @Override
+        public String toString() {
+            return String.format("GetTransactionRequest{blockNumber=%d, iterationId='%s', txHash='%s'}",
+                blockNumber, iterationId, txHash);
+        }
+
+        public static GetTransactionRequest fromTxExecutionId(TxExecutionId txExecutionId) {
+            return new GetTransactionRequest(txExecutionId.getBlockNumber(), txExecutionId.getIterationId(), txExecutionId.getTxHash());
+        }
+
+        public TxExecutionId toTxExecutionId() {
+            return new TxExecutionId(blockNumber, iterationId, txHash);
+        }
+    }
+
+    /**
      * Individual transaction result in getTransactions response
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class TransactionResult {
-        @JsonProperty("hash")
-        private String hash;
+        @JsonProperty("tx_execution_id")
+        private TxExecutionId txExecutionId;
         
         @JsonProperty("status")
         private String status; // "success", "assertion_failed", "failed"
@@ -570,16 +753,16 @@ public class SidecarApiModels {
         public TransactionResult() {}
         
         @JsonCreator
-        public TransactionResult(@JsonProperty("hash") String hash, @JsonProperty("status") String status,
+        public TransactionResult(@JsonProperty("tx_execution_id") TxExecutionId txExecutionId, @JsonProperty("status") String status,
             @JsonProperty("gas_used") Long gasUsed, @JsonProperty("error") String error) {
-            this.hash = hash;
+            this.txExecutionId = txExecutionId;
             this.status = status;
             this.gasUsed = gasUsed;
             this.error = error;
         }
         
-        public String getHash() { return hash; }
-        public void setHash(String hash) { this.hash = hash; }
+        public TxExecutionId getTxExecutionId() { return txExecutionId; }
+        public void setTxExecutionId(TxExecutionId txExecutionId) { this.txExecutionId = txExecutionId; }
         
         public String getStatus() { return status; }
         public void setStatus(String status) { this.status = status; }
@@ -592,27 +775,30 @@ public class SidecarApiModels {
     }
 
     /**
-     * Transaction with hash wrapper for sendTransactions
+     * Transaction payload for sidecar processing
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    public static class TransactionWithHash {
-        @JsonProperty("txEnv")
+    public static class TransactionExecutionPayload {
+        @JsonProperty("tx_execution_id")
+        private TxExecutionId txExecutionId;
+
+        @JsonProperty("tx_env")
         private TxEnv txEnv;
-        
-        @JsonProperty("hash")
-        private String hash;
-        
+
         @JsonCreator
-        public TransactionWithHash(@JsonProperty("txEnv") TxEnv txEnv, @JsonProperty("hash") String hash) {
+        public TransactionExecutionPayload(
+            @JsonProperty("tx_execution_id") TxExecutionId txExecutionId,
+            @JsonProperty("tx_env") TxEnv txEnv
+        ) {
+            this.txExecutionId = txExecutionId;
             this.txEnv = txEnv;
-            this.hash = hash;
         }
-        
+
+        public TxExecutionId getTxExecutionId() { return txExecutionId; }
+        public void setTxExecutionId(TxExecutionId txExecutionId) { this.txExecutionId = txExecutionId; }
+
         public TxEnv getTxEnv() { return txEnv; }
         public void setTxEnv(TxEnv txEnv) { this.txEnv = txEnv; }
-        
-        public String getHash() { return hash; }
-        public void setHash(String hash) { this.hash = hash; }
     }
 
     // ==================== ENUMS & CONSTANTS ====================
@@ -624,7 +810,9 @@ public class SidecarApiModels {
         public static final String SUCCESS = "success";
         public static final String ASSERTION_FAILED = "assertion_failed";
         public static final String FAILED = "failed";
-        
+        public static final String REVERTED = "reverted";
+        public static final String HALTED = "halted";
+
         private TransactionStatus() {} // Utility class
     }
 

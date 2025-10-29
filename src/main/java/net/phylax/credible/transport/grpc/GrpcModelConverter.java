@@ -19,8 +19,9 @@ public class GrpcModelConverter {
      */
     public static Sidecar.BlockEnvEnvelope toProtoBlockEnvEnvelope(SidecarApiModels.SendBlockEnvRequest request) {
         Sidecar.BlockEnvEnvelope.Builder builder = Sidecar.BlockEnvEnvelope.newBuilder()
-            .setBlockEnv(toProtoBlockEnv(request))
-            .setNTransactions(request.getNTransactions() != null ? request.getNTransactions() : 0);
+            .setBlockEnv(toProtoBlockEnv(request.getBlockEnv()))
+            .setNTransactions(request.getNTransactions())
+            .setSelectedIterationId(request.getSelectedIterationId());
 
         if (request.getLastTxHash() != null && !request.getLastTxHash().isEmpty()) {
             builder.setLastTxHash(request.getLastTxHash());
@@ -30,24 +31,28 @@ public class GrpcModelConverter {
     }
 
     /**
-     * Convert SendBlockEnvRequest to BlockEnv protobuf
+     * Convert BlockEnv POJO to BlockEnv protobuf
      */
-    private static Sidecar.BlockEnv toProtoBlockEnv(SidecarApiModels.SendBlockEnvRequest request) {
-        Sidecar.BlockEnv.Builder builder = Sidecar.BlockEnv.newBuilder()
-            .setNumber(request.getNumber() != null ? request.getNumber() : 0L)
-            .setBeneficiary(request.getBeneficiary() != null ? request.getBeneficiary() : "")
-            .setTimestamp(request.getTimestamp() != null ? request.getTimestamp() : 0L)
-            .setGasLimit(request.getGasLimit() != null ? request.getGasLimit() : 0L)
-            .setBasefee(request.getBaseFee() != null ? request.getBaseFee() : 0L)
-            .setDifficulty(request.getDifficulty() != null ? request.getDifficulty() : "0");
-
-        if (request.getPrevrandao() != null) {
-            builder.setPrevrandao(request.getPrevrandao());
+    private static Sidecar.BlockEnv toProtoBlockEnv(SidecarApiModels.BlockEnv blockEnv) {
+        if (blockEnv == null) {
+            return Sidecar.BlockEnv.getDefaultInstance();
         }
 
-        if (request.getBlobExcessGasAndPrice() != null) {
+        Sidecar.BlockEnv.Builder builder = Sidecar.BlockEnv.newBuilder()
+            .setNumber(blockEnv.getNumber())
+            .setBeneficiary(blockEnv.getBeneficiary())
+            .setTimestamp(blockEnv.getTimestamp())
+            .setGasLimit(blockEnv.getGasLimit())
+            .setBasefee(blockEnv.getBaseFee())
+            .setDifficulty(blockEnv.getDifficulty());
+
+        if (blockEnv.getPrevrandao() != null) {
+            builder.setPrevrandao(blockEnv.getPrevrandao());
+        }
+
+        if (blockEnv.getBlobExcessGasAndPrice() != null) {
             builder.setBlobExcessGasAndPrice(
-                toProtoBlobExcessGasAndPrice(request.getBlobExcessGasAndPrice()));
+                toProtoBlobExcessGasAndPrice(blockEnv.getBlobExcessGasAndPrice()));
         }
 
         return builder.build();
@@ -59,8 +64,8 @@ public class GrpcModelConverter {
     private static Sidecar.BlobExcessGasAndPrice toProtoBlobExcessGasAndPrice(
             SidecarApiModels.BlobExcessGasAndPrice pojo) {
         return Sidecar.BlobExcessGasAndPrice.newBuilder()
-            .setExcessBlobGas(pojo.getExcessBlobGas() != null ? pojo.getExcessBlobGas() : 0L)
-            .setBlobGasprice(pojo.getBlobGasPrice() != null ? String.valueOf(pojo.getBlobGasPrice()) : "0")
+            .setExcessBlobGas(pojo.getExcessBlobGas())
+            .setBlobGasprice(String.valueOf(pojo.getBlobGasPrice()))
             .build();
     }
 
@@ -79,12 +84,27 @@ public class GrpcModelConverter {
     }
 
     /**
-     * Convert TransactionWithHash POJO to Transaction protobuf
+     * Convert TransactionExecutionPayload POJO to Transaction protobuf
      */
-    private static Sidecar.Transaction toProtoTransaction(SidecarApiModels.TransactionWithHash pojo) {
+    private static Sidecar.Transaction toProtoTransaction(SidecarApiModels.TransactionExecutionPayload pojo) {
         return Sidecar.Transaction.newBuilder()
-            .setHash(pojo.getHash() != null ? pojo.getHash() : "")
+            .setTxExecutionId(toProtoTxExecutionId(pojo.getTxExecutionId()))
             .setTxEnv(toProtoTransactionEnv(pojo.getTxEnv()))
+            .build();
+    }
+
+    /**
+     * Convert TxExecutionId POJO to protobuf
+     */
+    public static Sidecar.TxExecutionId toProtoTxExecutionId(SidecarApiModels.TxExecutionId pojo) {
+        if (pojo == null) {
+            return Sidecar.TxExecutionId.getDefaultInstance();
+        }
+
+        return Sidecar.TxExecutionId.newBuilder()
+            .setBlockNumber(pojo.getBlockNumber())
+            .setIterationId(pojo.getIterationId())
+            .setTxHash(pojo.getTxHash())
             .build();
     }
 
@@ -98,14 +118,14 @@ public class GrpcModelConverter {
 
         Sidecar.TransactionEnv.Builder builder = Sidecar.TransactionEnv.newBuilder()
             .setTxType(Byte.toUnsignedInt(pojo.getTxType()))
-            .setCaller(pojo.getCaller() != null ? pojo.getCaller() : "")
-            .setGasLimit(pojo.getGasLimit() != null ? pojo.getGasLimit() : 0L)
-            .setGasPrice(pojo.getGasPrice() != null ? String.valueOf(pojo.getGasPrice()) : "0")
-            .setKind(pojo.getKind() != null ? pojo.getKind() : "")
-            .setValue(pojo.getValue() != null ? pojo.getValue() : "0")
-            .setData(pojo.getData() != null ? pojo.getData() : "")
-            .setNonce(pojo.getNonce() != null ? pojo.getNonce() : 0L)
-            .setMaxFeePerBlobGas(pojo.getMaxFeePerBlobGas() != null ? String.valueOf(pojo.getMaxFeePerBlobGas()) : "0");
+            .setCaller(pojo.getCaller())
+            .setGasLimit(pojo.getGasLimit())
+            .setGasPrice(String.valueOf(pojo.getGasPrice()))
+            .setKind(pojo.getKind())
+            .setValue(pojo.getValue())
+            .setData(pojo.getData())
+            .setNonce(pojo.getNonce())
+            .setMaxFeePerBlobGas(String.valueOf(pojo.getMaxFeePerBlobGas()));
 
         if (pojo.getChainId() != null) {
             builder.setChainId(pojo.getChainId());
@@ -165,20 +185,30 @@ public class GrpcModelConverter {
     }
 
     /**
-     * Convert List of tx hashes to GetTransactionsRequest protobuf
+     * Convert List of TxExecutionId to GetTransactionsRequest protobuf
      */
-    public static Sidecar.GetTransactionsRequest toProtoGetTransactionsRequest(List<String> txHashes) {
+    public static Sidecar.GetTransactionsRequest toProtoGetTransactionsRequest(SidecarApiModels.GetTransactionsRequest request) {
+        List<Sidecar.TxExecutionId> protoIds = request != null
+            ? request.getTxExecutionIds().stream()
+                .map(GrpcModelConverter::toProtoTxExecutionId)
+                .collect(Collectors.toList())
+            : new ArrayList<>();
+
         return Sidecar.GetTransactionsRequest.newBuilder()
-            .addAllTxHashes(txHashes != null ? txHashes : new ArrayList<>())
+            .addAllTxExecutionId(protoIds)
             .build();
     }
 
     /**
-     * Convert a tx hash to GetTransactionsRequest protobuf
+     * Convert TxExecutionId to GetTransactionRequest protobuf
      */
-    public static Sidecar.GetTransactionRequest toProtoGetTransactionRequest(String txHash) {
+    public static Sidecar.GetTransactionRequest toProtoGetTransactionRequest(SidecarApiModels.GetTransactionRequest request) {
+        var txExecId = Sidecar.TxExecutionId.newBuilder()
+            .setBlockNumber(request.getBlockNumber())
+            .setIterationId(request.getIterationId())
+            .setTxHash(request.getTxHash());
         return Sidecar.GetTransactionRequest.newBuilder()
-            .setTxHash(txHash)
+            .setTxExecutionId(txExecId)
             .build();
     }
 
@@ -187,8 +217,13 @@ public class GrpcModelConverter {
      */
     public static Sidecar.ReorgRequest toProtoReorgRequest(
             SidecarApiModels.ReorgRequest request) {
+        Sidecar.TxExecutionId.Builder txExecIdBuilder = Sidecar.TxExecutionId.newBuilder()
+            .setBlockNumber(request.getBlockNumber())
+            .setIterationId(request.getIterationId())
+            .setTxHash(request.getTxHash());
+
         return Sidecar.ReorgRequest.newBuilder()
-            .setRemovedTxHash(request.getRemovedTxHash() != null ? request.getRemovedTxHash() : "")
+            .setTxExecutionId(txExecIdBuilder.build())
             .build();
     }
 
@@ -223,7 +258,7 @@ public class GrpcModelConverter {
         return new SidecarApiModels.SendTransactionsResponse(
             "success", // Status field
             proto.getMessage(),
-            proto.getRequestCount()
+            proto.getAcceptedCount()
         );
     }
 
@@ -256,11 +291,24 @@ public class GrpcModelConverter {
      */
     private static SidecarApiModels.TransactionResult fromProtoTransactionResult(
             Sidecar.TransactionResult proto) {
+        SidecarApiModels.TxExecutionId txExecutionId = fromProtoTxExecutionId(proto.getTxExecutionId());
         return new SidecarApiModels.TransactionResult(
-            proto.getHash(),
+            txExecutionId,
             proto.getStatus(),
             proto.getGasUsed(),
             proto.getError().isEmpty() ? null : proto.getError()
+        );
+    }
+
+    /**
+     * Convert TxExecutionId protobuf to POJO
+     */
+    private static SidecarApiModels.TxExecutionId fromProtoTxExecutionId(
+            Sidecar.TxExecutionId proto) {
+        return new SidecarApiModels.TxExecutionId(
+            proto.getBlockNumber(),
+            proto.getIterationId(),
+            proto.getTxHash()
         );
     }
 }

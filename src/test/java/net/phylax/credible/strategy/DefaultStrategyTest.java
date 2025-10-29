@@ -28,22 +28,29 @@ import net.phylax.credible.tracer.CredibleOperationTracer;
 public class DefaultStrategyTest {
     SendBlockEnvRequest generateBlockEnv() {
         // generate block env
-        return new SendBlockEnvRequest(1L,
-        "0x0000000000000000000000000000000000000001",
-        System.currentTimeMillis(),
-        200000L, 
-        10L,
-        "0x123",
-        "0x123123123123123123123123123123",
-        new BlobExcessGasAndPrice(1L, 1L),
-        1,
-        "0x1110002220003330004000505060494959658484939485493845");
+        BlockEnv blockEnvData = new BlockEnv(
+            1L,
+            "0x0000000000000000000000000000000000000001",
+            System.currentTimeMillis(),
+            200000L,
+            10L,
+            "0x123",
+            "0x123123123123123123123123123123",
+            new BlobExcessGasAndPrice(1L, 1L)
+        );
+        return new SendBlockEnvRequest(
+            blockEnvData,
+            "0x1110002220003330004000505060494959658484939485493845",
+            1,
+            null
+        );
     }
 
     SendTransactionsRequest generateTransactionRequest(String hash) {
-        // generate transaction request\
-        var transactions = new ArrayList<TransactionWithHash>();
-        transactions.add(new TransactionWithHash(new TxEnv(), hash));
+        // generate transaction request
+        var transactions = new ArrayList<TransactionExecutionPayload>();
+        TxExecutionId txExecutionId = new TxExecutionId(0L, 1L, hash);
+        transactions.add(new TransactionExecutionPayload(txExecutionId, new TxEnv()));
         return new SendTransactionsRequest(transactions);
     }
 
@@ -96,7 +103,8 @@ public class DefaultStrategyTest {
         var hash = "0x1" + new Random().nextInt(Integer.MAX_VALUE);
 
         strategy.dispatchTransactions(generateTransactionRequest(hash));
-        var response = strategy.getTransactionResult(hash);
+        GetTransactionRequest txRequest = new GetTransactionRequest(0L, 1L, hash);
+        var response = strategy.getTransactionResult(txRequest);
         return response;
     }
 
@@ -107,17 +115,20 @@ public class DefaultStrategyTest {
 
         String hash1 = "0x1";
         assertDoesNotThrow(() -> strategy.dispatchTransactions(generateTransactionRequest(hash1)));
-        var response = strategy.getTransactionResult(hash1);
+        GetTransactionRequest txReq1 = new GetTransactionRequest(0L, 1L, hash1);
+        var response = strategy.getTransactionResult(txReq1);
         assertNotNull(response.getSuccess().getResult());
 
         String hash2 = "0x2";
         assertDoesNotThrow(() -> strategy.dispatchTransactions(generateTransactionRequest(hash2)));
-        response = strategy.getTransactionResult(hash2);
+        GetTransactionRequest txReq2 = new GetTransactionRequest(0L, 1L, hash2);
+        response = strategy.getTransactionResult(txReq2);
         assertNotNull(response.getSuccess().getResult());
 
         String hash3 = "0x3";
         assertDoesNotThrow(() -> strategy.dispatchTransactions(generateTransactionRequest(hash3)));
-        response = strategy.getTransactionResult(hash3);
+        GetTransactionRequest txReq3 = new GetTransactionRequest(0L, 1L, hash3);
+        response = strategy.getTransactionResult(txReq3);
         assertNotNull(response.getSuccess().getResult());
     }
 
@@ -324,7 +335,8 @@ public class DefaultStrategyTest {
         assertTrue(response.size() == 1);
 
         // GetTransactions should reject
-        var result = strategy.getTransactionResult("0x1");
+        GetTransactionRequest txReq = new GetTransactionRequest(0L, 1L, "0x1");
+        var result = strategy.getTransactionResult(txReq);
         assertNotNull(result.getSuccess().getResult());
     }
 

@@ -62,7 +62,7 @@ public class GrpcTransport implements ISidecarTransport {
             // Convert POJO to Protobuf
             Sidecar.BlockEnvEnvelope request = GrpcModelConverter.toProtoBlockEnvEnvelope(blockEnv);
 
-            LOG.trace("Sending BlockEnv via gRPC: number={}", blockEnv.getNumber());
+            LOG.trace("Sending BlockEnv via gRPC: number={}", blockEnv.getBlockEnv().getNumber());
 
             // Make async gRPC call with deadline
             asyncStub
@@ -145,16 +145,16 @@ public class GrpcTransport implements ISidecarTransport {
     }
 
     @Override
-    public CompletableFuture<SidecarApiModels.GetTransactionsResponse> getTransactions(List<String> txHashes) {
+    public CompletableFuture<SidecarApiModels.GetTransactionsResponse> getTransactions(SidecarApiModels.GetTransactionsRequest txRequest) {
         var span = tracer.spanBuilder(CredibleLayerMethods.GET_TRANSACTIONS).startSpan();
         CompletableFuture<SidecarApiModels.GetTransactionsResponse> future = new CompletableFuture<>();
 
         try {
             // Convert to Protobuf
             Sidecar.GetTransactionsRequest request =
-                GrpcModelConverter.toProtoGetTransactionsRequest(txHashes);
+                GrpcModelConverter.toProtoGetTransactionsRequest(txRequest);
 
-            LOG.trace("Getting {} transactions via gRPC", txHashes.size());
+            LOG.trace("Getting {} transactions via gRPC", txRequest.getTxExecutionIds().size());
 
             // Make async gRPC call with deadline
             asyncStub
@@ -191,16 +191,16 @@ public class GrpcTransport implements ISidecarTransport {
     }
 
     @Override
-    public CompletableFuture<SidecarApiModels.GetTransactionResponse> getTransaction(String txHash) {
+    public CompletableFuture<SidecarApiModels.GetTransactionResponse> getTransaction(SidecarApiModels.GetTransactionRequest txRequest) {
         var span = tracer.spanBuilder(CredibleLayerMethods.GET_TRANSACTION).startSpan();
         CompletableFuture<SidecarApiModels.GetTransactionResponse> future = new CompletableFuture<>();
 
         try {
             // Convert to Protobuf
             Sidecar.GetTransactionRequest request =
-                GrpcModelConverter.toProtoGetTransactionRequest(txHash);
+                GrpcModelConverter.toProtoGetTransactionRequest(txRequest);
 
-            LOG.trace("Getting {} transaction via gRPC", txHash);
+            LOG.trace("Getting transaction via gRPC: {}", request);
 
             // Make async gRPC call with deadline
             asyncStub
@@ -246,7 +246,10 @@ public class GrpcTransport implements ISidecarTransport {
             Sidecar.ReorgRequest request =
                 GrpcModelConverter.toProtoReorgRequest(reorgRequest);
 
-            LOG.trace("Sending reorg via gRPC: removedTxHash={}", reorgRequest.getRemovedTxHash());
+            LOG.trace("Sending reorg via gRPC: blockNumber={}, iterationId={}, txHash={}",
+                reorgRequest.getBlockNumber(),
+                reorgRequest.getIterationId(),
+                reorgRequest.getTxHash());
 
             // Make async gRPC call with deadline
             asyncStub

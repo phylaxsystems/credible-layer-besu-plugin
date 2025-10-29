@@ -41,6 +41,7 @@ import net.phylax.credible.transport.jsonrpc.JsonRpcTransport;
 import net.phylax.credible.txselection.CredibleTransactionSelector;
 import net.phylax.credible.txselection.CredibleTransactionSelectorFactory;
 import net.phylax.credible.types.SidecarApiModels.BlobExcessGasAndPrice;
+import net.phylax.credible.types.SidecarApiModels.BlockEnv;
 import net.phylax.credible.types.SidecarApiModels.SendBlockEnvRequest;
 import net.phylax.credible.utils.CredibleLogger;
 import picocli.CommandLine;
@@ -452,11 +453,11 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
                 lastTxHash = transactions.get(transactions.size() - 1).getHash().toHexString();
             }
             
-            LOG.debug("Sending block env with {} transactions, last tx hash: {}", 
+            LOG.debug("Sending block env with {} transactions, last tx hash: {}",
                 transactionCount, lastTxHash);
-            
+
             // NOTE: maybe move to some converter
-            SendBlockEnvRequest blockEnv = new SendBlockEnvRequest(
+            BlockEnv blockEnvData = new BlockEnv(
                 blockHeader.getNumber(),
                 blockHeader.getCoinbase().toHexString(),
                 blockHeader.getTimestamp(),
@@ -464,14 +465,19 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
                 blockHeader.getBaseFee().map(quantity -> quantity.getAsBigInteger().longValue()).orElse(1L), // 1 Gwei
                 blockHeader.getDifficulty().toString(),
                 blockHeader.getMixHash().toHexString(),
-                new BlobExcessGasAndPrice(0L, 1L),
+                new BlobExcessGasAndPrice(0L, 1L)
+            );
+
+            SendBlockEnvRequest blockEnv = new SendBlockEnvRequest(
+                blockEnvData,
+                lastTxHash,
                 transactionCount,
-                lastTxHash
+                iterationId
             );
 
             this.strategy.sendBlockEnv(blockEnv);
             lastBlockSent = blockHash;
-            LOG.debug("Block Env sent for {}", blockHash);
+            LOG.debug("Block Env sent, hash: {}, iteration: {}", blockHash, iterationId);
             span.setAttribute("block_added.sidecar_success", true);
         }catch (Exception e) {
             LOG.error("Error handling sendBlockEnv {}", e.getMessage());

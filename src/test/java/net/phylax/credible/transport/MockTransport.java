@@ -59,18 +59,18 @@ public class MockTransport implements ISidecarTransport {
     }
 
     @Override
-    public CompletableFuture<GetTransactionsResponse> getTransactions(List<String> txHashes) {
+    public CompletableFuture<GetTransactionsResponse> getTransactions(GetTransactionsRequest req) {
         Executor delayedExecutor = CompletableFuture.delayedExecutor(
             processingLatency, TimeUnit.MILLISECONDS);
 
         List<TransactionResult> validResults = new ArrayList<>();
 
         if (!emptyResults) {
-            for(String txHash : txHashes) {
-                validResults.add(new TransactionResult(txHash, getTxStatus, 21000L, ""));
+            for(TxExecutionId txExecutionId : req.getTxExecutionIds()) {
+                validResults.add(new TransactionResult(txExecutionId, getTxStatus, 21000L, ""));
             }
         }
-        
+
         return CompletableFuture.supplyAsync(() -> {
             if (throwOnGetTx) {
                 throw new RuntimeException("GetTransactions failed");
@@ -80,18 +80,18 @@ public class MockTransport implements ISidecarTransport {
     }
 
     @Override
-    public CompletableFuture<GetTransactionResponse> getTransaction(String txHash) {
+    public CompletableFuture<GetTransactionResponse> getTransaction(GetTransactionRequest req) {
         Executor delayedExecutor = CompletableFuture.delayedExecutor(
             processingLatency, TimeUnit.MILLISECONDS);
 
         final TransactionResult result;
 
         if (!emptyResults) {
-            result = new TransactionResult(txHash, getTxStatus, 21000L, "");
+            result = new TransactionResult(req.toTxExecutionId(), getTxStatus, 21000L, "");
         } else {
             result = null;
         }
-        
+
         return CompletableFuture.supplyAsync(() -> {
             if (throwOnGetTx) {
                 throw new RuntimeException("GetTransactions failed");
