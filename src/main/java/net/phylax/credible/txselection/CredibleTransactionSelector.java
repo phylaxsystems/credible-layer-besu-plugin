@@ -32,6 +32,7 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
   private final CredibleOperationTracer operationTracer;
   private final Config config;
   private final CredibleMetricsRegistry metricsRegistry;
+  private boolean txSent = false;
 
   public CredibleTransactionSelector(
     final Config config,
@@ -68,6 +69,8 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
 
         config.strategy.dispatchTransactions(sendRequest);
 
+        // Mark transaction as sent
+        txSent = true;
         LOG.debug("Started async transaction processing for {}", txHash);
     } catch (Exception e) {
         LOG.error("Error in transaction preprocessing for {}: {}", txHash, e.getMessage());
@@ -130,15 +133,19 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
   public void onTransactionNotSelected(
       final TransactionEvaluationContext evaluationContext,
       final TransactionSelectionResult transactionSelectionResult) {
-
     var transaction = evaluationContext.getPendingTransaction().getTransaction();
     String txHash = transaction.getHash().toHexString();
     String reason = transactionSelectionResult.toString();
     long blockNumber = evaluationContext.getPendingBlockHeader().getNumber();
     long iterationId = getOperationTracer().getCurrentIterationId();
 
+    if (!txSent) {
+      LOG.debug("Skipping reorg request for transaction {}, iteration {}, reason: not sent", txHash, iterationId);
+      return;
+    }
+    
     try {
-        LOG.debug("Sending reorg request for transaction {} due to: {}", txHash, reason);
+        LOG.debug("Sending reorg request for transaction {}, iteration {} due to: {}", txHash, iterationId, reason);
 
         // Create TxExecutionId with block number, iteration ID, and transaction hash
         ReorgRequest reorgRequest = new ReorgRequest(blockNumber, iterationId, txHash);
