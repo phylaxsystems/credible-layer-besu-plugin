@@ -6,7 +6,8 @@ on:
       - main
     tags:
       # X.Y.Z and X.Y.Z-rc{VERSION}
-      - '[0-9]+.[0-9]+.[0-9]+(-rc[0-9]+)?'
+      - '[0-9]+.[0-9]+.[0-9]+'
+      - '[0-9]+.[0-9]+.[0-9]+-rc[0-9]+'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
