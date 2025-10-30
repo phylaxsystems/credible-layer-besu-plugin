@@ -407,6 +407,10 @@ public class SidecarApiModels {
         public void setTxHash(String txHash) {
             this.txHash = txHash;
         }
+
+        public TxExecutionId toTxExecutionId() {
+            return new TxExecutionId(blockNumber, iterationId, txHash);
+        }
     }
 
     /**

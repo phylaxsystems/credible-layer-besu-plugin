@@ -31,6 +31,7 @@ import net.phylax.credible.types.SidecarApiModels.ReorgRequest;
 import net.phylax.credible.types.SidecarApiModels.ReorgResponse;
 import net.phylax.credible.types.SidecarApiModels.SendBlockEnvRequest;
 import net.phylax.credible.types.SidecarApiModels.SendTransactionsRequest;
+import net.phylax.credible.types.SidecarApiModels.SendTransactionsResponse;
 import net.phylax.credible.types.SidecarApiModels.TxExecutionId;
 import net.phylax.credible.utils.CredibleLogger;
 import net.phylax.credible.utils.Result;
@@ -51,6 +52,10 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
 
     // Maps a transaction hash to a list of futures for each transport
     private final Map<TxExecutionId, List<CompletableFuture<GetTransactionResponse>>> pendingTxRequests = 
+        new ConcurrentHashMap<>();
+
+    // Stores all sendTransactions futures per TxExecutionId 
+    private final Map<TxExecutionId, List<CompletableFuture<SendTransactionsResponse>>> sendTxFutures = 
         new ConcurrentHashMap<>();
 
     private int processingTimeout;
@@ -163,6 +168,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
             activeTransports.addAll(successfulTransports);
             metricsRegistry.registerActiveTransportsGauge(successfulTransports::size);
             LOG.debug("Updated active sidecars - count {}", successfulTransports.size());
+            sendTxFutures.clear();
         } finally {
             span.end();
         }
@@ -228,7 +234,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                 metricsRegistry.getSidecarRpcCounter().labels(CredibleLayerMethods.SEND_TRANSACTIONS).inc();
 
                 var sendTxSpan = tracer.spanBuilder(CredibleLayerMethods.SEND_TRANSACTIONS).startSpan();
-                return transport.sendTransactions(sendTxRequest)
+                var sendFuture = transport.sendTransactions(sendTxRequest)
                     .whenComplete((result, ex) -> {
                         try(Scope sendScope = context.makeCurrent()) {
                             if (ex != null) {
@@ -248,8 +254,16 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                         } finally {
                             sendTxSpan.end();
                         }
-                    })
-                    .thenCompose(sendResult -> {
+                    });
+
+                var val = sendTxFutures.get(txExecutionIds.get(0));
+                if (val != null) {
+                    val.add(sendFuture);
+                } else {
+                    sendTxFutures.put(txExecutionIds.get(0), new CopyOnWriteArrayList<>(Collections.singletonList(sendFuture)));
+                }
+
+                return sendFuture.thenCompose(sendResult -> {
                         if (!isActive.get()) {
                             LOG.debug("Transports aren't active!");
                             return CompletableFuture.completedFuture(null);
@@ -300,13 +314,13 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
 
             TxExecutionId txExecId = transactionRequest.toTxExecutionId();
             List<CompletableFuture<GetTransactionResponse>> futures = pendingTxRequests.remove(txExecId);
-                if (futures == null || futures.isEmpty()) {
-                    LOG.debug("No pending request found for transaction {}", txExecId);
-                    span.setAttribute("failed", true);
-                    return Result.failure(CredibleRejectionReason.NO_RESULT);
-                }
-                var txResponseResult = handleTransactionFuture(futures);
-                return txResponseResult;
+            if (futures == null || futures.isEmpty()) {
+                LOG.debug("No pending request found for transaction {}", txExecId);
+                span.setAttribute("failed", true);
+                return Result.failure(CredibleRejectionReason.NO_RESULT);
+            }
+            var txResponseResult = handleTransactionFuture(futures);
+            return txResponseResult;
         } finally {
             span.end();
         }
@@ -386,27 +400,39 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
     @Override
     public List<ReorgResponse> sendReorgRequest(ReorgRequest reorgRequest) {
         var span = tracer.spanBuilder("sendReorgRequest").startSpan();
-        try(Scope scope = span.makeCurrent()) {
-            List<ReorgResponse> successfulResponses = new ArrayList<>();
-            for (ISidecarTransport transport : activeTransports) {
-                try {
-                    ReorgResponse response = transport.sendReorg(reorgRequest).join();
-                    successfulResponses.add(response);
-                    metricsRegistry.getReorgRequestCounter().labels().inc();
-                    span.setAttribute("success", response.getSuccess());
-                } catch (Exception e) {
-                    // Safe to remove with CopyOnWriteArrayList
-                    activeTransports.remove(transport);
-                    LOG.debug("Exception sending reorg request to transport {}: {}",
-                        transport.toString(), e.getMessage());
-                    metricsRegistry.getErrorCounter().labels().inc();
-                    span.setAttribute("failed", true);
-                }
-            }
-            return successfulResponses;
-        } finally {
-            span.end();
+        var futures = sendTxFutures.get(reorgRequest.toTxExecutionId());
+        
+        // If transaction wasn't sent, skip
+        if (futures == null || futures.isEmpty()) {
+            LOG.debug("No reorg request found for transaction {}", reorgRequest.toTxExecutionId());
+            return Collections.emptyList();
         }
+
+        // Await all sendTransaction calls before sending the reorg request
+        return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+            .handle((res, err) -> {
+                try(Scope scope = span.makeCurrent()) {
+                    List<ReorgResponse> successfulResponses = new ArrayList<>();
+                    for (ISidecarTransport transport : activeTransports) {
+                        try {
+                            ReorgResponse response = transport.sendReorg(reorgRequest).join();
+                            successfulResponses.add(response);
+                            metricsRegistry.getReorgRequestCounter().labels().inc();
+                            span.setAttribute("success", response.getSuccess());
+                        } catch (Exception e) {
+                            // Safe to remove with CopyOnWriteArrayList
+                            activeTransports.remove(transport);
+                            LOG.debug("Exception sending reorg request to transport {}: {}",
+                                transport.toString(), e.getMessage());
+                            metricsRegistry.getErrorCounter().labels().inc();
+                            span.setAttribute("failed", true);
+                        }
+                    }
+                    return successfulResponses;
+                } finally {
+                    span.end();
+                }
+            }).join();
     }
 
     @Override
