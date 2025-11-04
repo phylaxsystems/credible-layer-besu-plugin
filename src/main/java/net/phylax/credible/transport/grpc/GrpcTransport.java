@@ -17,6 +17,8 @@ import io.opentelemetry.instrumentation.grpc.v1_6.GrpcTelemetry;
 import net.phylax.credible.transport.ISidecarTransport;
 import net.phylax.credible.types.SidecarApiModels;
 import net.phylax.credible.types.SidecarApiModels.CredibleLayerMethods;
+import net.phylax.credible.types.SidecarApiModels.SendEventsRequest;
+import net.phylax.credible.types.SidecarApiModels.SendEventsResponse;
 import net.phylax.credible.utils.CredibleLogger;
 import sidecar.transport.v1.Sidecar;
 import sidecar.transport.v1.SidecarTransportGrpc;
@@ -361,5 +363,49 @@ public class GrpcTransport implements ISidecarTransport {
             ManagedChannel channel = channelBuilder.build();
             return new GrpcTransport(channel, deadlineMillis, openTelemetry);
         }
+    }
+
+    @Override
+    public CompletableFuture<SendEventsResponse> sendEvents(SendEventsRequest events) {
+        var span = tracer.spanBuilder(CredibleLayerMethods.SEND_EVENTS).startSpan();
+        CompletableFuture<SendEventsResponse> future = new CompletableFuture<>();
+
+        try {
+            // Convert POJO to Protobuf
+            Sidecar.SendEvents request = GrpcModelConverter.toProtoSendEvents(events);
+
+            LOG.trace("Sending {} events via gRPC", events.getEvents().size());
+
+            // Make async gRPC call with deadline
+            asyncStub
+                .withDeadlineAfter(deadlineMillis, TimeUnit.MILLISECONDS)
+                .sendEvents(request, new StreamObserver<Sidecar.BasicAck>() {
+                    @Override
+                    public void onNext(Sidecar.BasicAck response) {
+                        LOG.trace("Received SendEvents response: accepted={}", response.getAccepted());
+                        future.complete(GrpcModelConverter.fromProtoBasicAckToSendEventsResponse(response));
+                    }
+
+                    @Override
+                    public void onError(Throwable t) {
+                        LOG.error("SendEvents gRPC error: {}", getErrorMessage(t), t);
+                        future.completeExceptionally(t);
+                        span.setAttribute("failed", true);
+                        span.end();
+                    }
+
+                    @Override
+                    public void onCompleted() {
+                        LOG.trace("SendEvents gRPC call completed");
+                        span.end();
+                    }
+                });
+        } catch (Exception e) {
+            LOG.error("Error preparing SendEvents request: {}", e.getMessage(), e);
+            future.completeExceptionally(e);
+            span.end();
+        }
+
+        return future;
     }
 }

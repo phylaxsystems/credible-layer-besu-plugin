@@ -4,6 +4,9 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonSubTypes;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import com.fasterxml.jackson.annotation.JsonUnwrapped;
 
 import java.util.List;
 import java.util.Objects;
@@ -231,6 +234,48 @@ public class SidecarApiModels {
 
     // ==================== REQUEST MODELS ====================
 
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class CommitHead {
+        @JsonProperty("last_tx_hash")
+        private String lastTxHash;
+
+        @JsonProperty("n_transactions")
+        private Integer nTransactions;
+
+        @JsonProperty("block_number")
+        private Long blockNumber;
+
+        @JsonProperty("selected_iteration_id")
+        private Long selectedIterationId;
+
+        public CommitHead() {}
+
+        @JsonCreator
+        public CommitHead(
+            @JsonProperty("last_tx_hash") String lastTxHash,
+            @JsonProperty("n_transactions") Integer nTransactions,
+            @JsonProperty("block_number") Long blockNumber,
+            @JsonProperty("selected_iteration_id") Long selectedIterationId
+        ) {
+            this.lastTxHash = lastTxHash;
+            this.nTransactions = nTransactions;
+            this.blockNumber = blockNumber;
+            this.selectedIterationId = selectedIterationId;
+        }
+
+        public String getLastTxHash() { return lastTxHash; }
+        public void setLastTxHash(String lastTxHash) { this.lastTxHash = lastTxHash; }
+
+        public Integer getNTransactions() { return nTransactions; }
+        public void setNTransactions(Integer nTransactions) { this.nTransactions = nTransactions; }
+
+        public Long getBlockNumber() { return blockNumber; }
+        public void setBlockNumber(Long blockNumber) { this.blockNumber = blockNumber; }
+
+        public Long getSelectedIterationId() { return selectedIterationId; }
+        public void setSelectedIterationId(Long selectedIterationId) { this.selectedIterationId = selectedIterationId; }
+    }
+
     /**
      * Block environment data
      */
@@ -309,6 +354,97 @@ public class SidecarApiModels {
         public void setBlobExcessGasAndPrice(BlobExcessGasAndPrice blobExcessGasAndPrice) {
             this.blobExcessGasAndPrice = blobExcessGasAndPrice;
         }
+    }
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class NewIteration {
+        @JsonProperty("iteration_id")
+        private Long iterationId;
+
+        @JsonProperty("block_env")
+        private BlockEnv blockEnv;
+        
+        public NewIteration() {}
+        
+        @JsonCreator
+        public NewIteration(@JsonProperty("iteration_id") Long iterationId, @JsonProperty("block_env") BlockEnv blockEnv) {
+            this.blockEnv = blockEnv;
+            this.iterationId = iterationId;
+        }
+        
+        public Long getIterationId() { return iterationId; }
+        public void setIterationId(Long iterationId) { this.iterationId = iterationId; }
+
+        public BlockEnv getBlockEnv() { return blockEnv; }
+        public void setBlockEnv(BlockEnv blockEnv) { this.blockEnv = blockEnv; }
+    }
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class SendEventsRequest {
+        @JsonProperty("events")
+        private List<SendEventsRequestItem> events = new ArrayList<>();
+        
+        public SendEventsRequest() {}
+        
+        @JsonCreator
+        public SendEventsRequest(@JsonProperty("events") List<SendEventsRequestItem> events) {
+            this.events = events;
+        }
+        
+        public List<SendEventsRequestItem> getEvents() { return events; }
+        public void setEvents(List<SendEventsRequestItem> events) { this.events = events; }
+    }
+
+    @JsonTypeInfo(
+        use = JsonTypeInfo.Id.DEDUCTION
+    )
+    @JsonSubTypes({
+        @JsonSubTypes.Type(value = CommitHeadReqItem.class),
+        @JsonSubTypes.Type(value = NewIterationReqItem.class),
+        @JsonSubTypes.Type(value = TransactionReqItem.class)
+    })
+    public static class SendEventsRequestItem {}
+
+    public static class CommitHeadReqItem extends SendEventsRequestItem {
+        @JsonProperty("commit_head")
+        private CommitHead commitHead;
+
+        public CommitHeadReqItem() {}
+
+        public CommitHeadReqItem(@JsonProperty("commit_head") CommitHead commitHead) {
+            this.commitHead = commitHead;
+        }
+
+        public CommitHead getCommitHead() { return commitHead; }
+        public void setCommitHead(CommitHead commitHead) { this.commitHead = commitHead; }
+    }
+
+    public static class NewIterationReqItem extends SendEventsRequestItem {
+        @JsonProperty("new_iteration")
+        private NewIteration newIteration;
+
+        public NewIterationReqItem() {}
+
+        public NewIterationReqItem(@JsonProperty("new_iteration") NewIteration newIteration) {
+            this.newIteration = newIteration;
+        }
+
+        public NewIteration getNewIteration() { return newIteration; }
+        public void setNewIteration(NewIteration newIteration) { this.newIteration = newIteration; }
+    }
+
+    public static class TransactionReqItem extends SendEventsRequestItem {
+        @JsonProperty("transaction")
+        private TransactionExecutionPayload transaction;
+
+        public TransactionReqItem() {}
+
+        public TransactionReqItem(@JsonProperty("transaction") TransactionExecutionPayload transaction) {
+            this.transaction = transaction;
+        }
+
+        public TransactionExecutionPayload getTransaction() { return transaction; }
+        public void setTransaction(TransactionExecutionPayload transaction) { this.transaction = transaction; }
     }
 
     /**
@@ -505,6 +641,31 @@ public class SidecarApiModels {
         
         @JsonCreator
         public SendTransactionsResponse(@JsonProperty("status") String status, @JsonProperty("message") String message,
+            @JsonProperty("request_count") Long requestCount) {
+            this.status = status;
+            this.message = message;
+            this.requestCount = requestCount;
+        }
+        
+        public String getStatus() { return status; }
+        
+        public String getMessage() { return message; }
+        public Long getRequestCount() { return requestCount; }
+    }
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class SendEventsResponse {
+        @JsonProperty("status")
+        private String status;
+        
+        @JsonProperty("message")
+        private String message;
+
+        @JsonProperty("request_count")
+        private Long requestCount;
+        
+        @JsonCreator
+        public SendEventsResponse(@JsonProperty("status") String status, @JsonProperty("message") String message,
             @JsonProperty("request_count") Long requestCount) {
             this.status = status;
             this.message = message;
@@ -829,6 +990,7 @@ public class SidecarApiModels {
         public static final String GET_TRANSACTION = "getTransaction";
         public static final String SEND_BLOCK_ENV = "sendBlockEnv";
         public static final String SEND_REORG = "reorg";
+        public static final String SEND_EVENTS = "sendEvents";
 
         private CredibleLayerMethods() {} // Utility class
     }

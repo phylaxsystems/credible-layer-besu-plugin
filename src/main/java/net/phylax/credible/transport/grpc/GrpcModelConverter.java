@@ -227,6 +227,74 @@ public class GrpcModelConverter {
             .build();
     }
 
+    /**
+     * Convert SendEventsRequest POJO to SendEvents protobuf
+     */
+    public static Sidecar.SendEvents toProtoSendEvents(SidecarApiModels.SendEventsRequest request) {
+        List<Sidecar.SendEvents.Event> events = request.getEvents().stream()
+            .map(GrpcModelConverter::toProtoSendEventsEvent)
+            .collect(Collectors.toList());
+
+        return Sidecar.SendEvents.newBuilder()
+            .addAllEvents(events)
+            .build();
+    }
+
+    /**
+     * Convert SendEventsRequestItem POJO to SendEvents.Event protobuf
+     */
+    private static Sidecar.SendEvents.Event toProtoSendEventsEvent(SidecarApiModels.SendEventsRequestItem item) {
+        Sidecar.SendEvents.Event.Builder builder = Sidecar.SendEvents.Event.newBuilder();
+
+        if (item instanceof SidecarApiModels.CommitHeadReqItem) {
+            SidecarApiModels.CommitHeadReqItem commitHeadItem = (SidecarApiModels.CommitHeadReqItem) item;
+            if (commitHeadItem.getCommitHead() != null) {
+                builder.setCommitHead(toProtoCommitHead(commitHeadItem.getCommitHead()));
+            }
+        } else if (item instanceof SidecarApiModels.NewIterationReqItem) {
+            SidecarApiModels.NewIterationReqItem newIterationItem = (SidecarApiModels.NewIterationReqItem) item;
+            if (newIterationItem.getNewIteration() != null) {
+                builder.setNewIteration(toProtoNewIteration(newIterationItem.getNewIteration()));
+            }
+        } else if (item instanceof SidecarApiModels.TransactionReqItem) {
+            SidecarApiModels.TransactionReqItem transactionItem = (SidecarApiModels.TransactionReqItem) item;
+            if (transactionItem.getTransaction() != null) {
+                builder.setTransaction(toProtoTransaction(transactionItem.getTransaction()));
+            }
+        }
+
+        return builder.build();
+    }
+
+    /**
+     * Convert CommitHead POJO to protobuf
+     */
+    private static Sidecar.CommitHead toProtoCommitHead(SidecarApiModels.CommitHead pojo) {
+        Sidecar.CommitHead.Builder builder = Sidecar.CommitHead.newBuilder()
+            .setBlockNumber(pojo.getBlockNumber())
+            .setNTransactions(pojo.getNTransactions());
+
+        if (pojo.getLastTxHash() != null && !pojo.getLastTxHash().isEmpty()) {
+            builder.setLastTxHash(pojo.getLastTxHash());
+        }
+
+        if (pojo.getSelectedIterationId() != null) {
+            builder.setSelectedIterationId(pojo.getSelectedIterationId());
+        }
+
+        return builder.build();
+    }
+
+    /**
+     * Convert NewIteration POJO to protobuf
+     */
+    private static Sidecar.NewIteration toProtoNewIteration(SidecarApiModels.NewIteration pojo) {
+        return Sidecar.NewIteration.newBuilder()
+            .setIterationId(pojo.getIterationId())
+            .setBlockEnv(toProtoBlockEnv(pojo.getBlockEnv()))
+            .build();
+    }
+
     // ==================== RESPONSE CONVERSIONS (Protobuf → POJO) ====================
 
     /**
@@ -247,6 +315,17 @@ public class GrpcModelConverter {
         return new SidecarApiModels.ReorgResponse(
             proto.getAccepted(),
             proto.getAccepted() ? null : proto.getMessage()
+        );
+    }
+
+    /**
+     * Convert BasicAck protobuf to SendEventsResponse POJO
+     */
+    public static SidecarApiModels.SendEventsResponse fromProtoBasicAckToSendEventsResponse(Sidecar.BasicAck proto) {
+        return new SidecarApiModels.SendEventsResponse(
+            proto.getAccepted() ? "accepted" : "failed",
+            proto.getMessage().isEmpty() ? null : proto.getMessage(),
+            proto.getAccepted() ? 1L : 0L
         );
     }
 
