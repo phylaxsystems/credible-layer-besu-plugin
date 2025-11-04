@@ -34,15 +34,12 @@ import net.phylax.credible.metrics.CredibleMetricsCategory;
 import net.phylax.credible.metrics.CredibleMetricsRegistry;
 import net.phylax.credible.strategy.DefaultSidecarStrategy;
 import net.phylax.credible.strategy.ISidecarStrategy;
-import net.phylax.credible.tracer.CredibleOperationTracer;
 import net.phylax.credible.transport.ISidecarTransport;
 import net.phylax.credible.transport.grpc.GrpcTransport;
 import net.phylax.credible.transport.jsonrpc.JsonRpcTransport;
 import net.phylax.credible.txselection.CredibleTransactionSelector;
 import net.phylax.credible.txselection.CredibleTransactionSelectorFactory;
-import net.phylax.credible.types.SidecarApiModels.BlobExcessGasAndPrice;
-import net.phylax.credible.types.SidecarApiModels.BlockEnv;
-import net.phylax.credible.types.SidecarApiModels.SendBlockEnvRequest;
+import net.phylax.credible.types.SidecarApiModels.CommitHead;
 import net.phylax.credible.utils.CredibleLogger;
 import picocli.CommandLine;
 
@@ -62,7 +59,6 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
     private OpenTelemetry openTelemetry = null;
     private Tracer tracer;
 
-    private CredibleOperationTracer operationTracer;
     private CredibleMetricsRegistry metricsRegistry;
     
     // Keeps track of the last (block_hash, block_number) sent
@@ -262,13 +258,12 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
             fallbackTransports = createGrpcTransports(config.getGrpcFallbackEndpoints());
         }
 
-        operationTracer = new CredibleOperationTracer();
-        strategy = new DefaultSidecarStrategy(primaryTransports, fallbackTransports, operationTracer, config.getProcessingTimeout(), metricsRegistry, tracer);
+        strategy = new DefaultSidecarStrategy(primaryTransports, fallbackTransports, config.getProcessingTimeout(), metricsRegistry, tracer);
 
         var credibleTxConfig = new CredibleTransactionSelector.Config(strategy);
 
         transactionSelectionService.registerPluginTransactionSelectorFactory(
-            new CredibleTransactionSelectorFactory(credibleTxConfig, operationTracer, metricsRegistry)
+            new CredibleTransactionSelectorFactory(credibleTxConfig, metricsRegistry)
         );
     }
 
@@ -439,11 +434,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
             // Validates if the block is valid for sending it to the Credible Layer
             validateBlock(block);
             
-            Long iterationId = operationTracer.getIterationForHash(blockHash);
-            if (iterationId == null) {
-                LOG.warn("Iteration for hash {} not found", blockHash);
-            }
-            LOG.debug("Processing new block - Hash: {}, Number: {}, Iteration: {}", blockHash, blockNumber, iterationId);
+            LOG.debug("Processing new block - Hash: {}, Number: {}", blockHash, blockNumber);
             
             // Get transaction information from the actual block
             int transactionCount = transactions.size();
@@ -456,35 +447,23 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
             LOG.debug("Sending block env with {} transactions, last tx hash: {}",
                 transactionCount, lastTxHash);
 
-            // NOTE: maybe move to some converter
-            BlockEnv blockEnvData = new BlockEnv(
-                blockHeader.getNumber(),
-                blockHeader.getCoinbase().toHexString(),
-                blockHeader.getTimestamp(),
-                blockHeader.getGasLimit(),
-                blockHeader.getBaseFee().map(quantity -> quantity.getAsBigInteger().longValue()).orElse(1L), // 1 Gwei
-                blockHeader.getDifficulty().toString(),
-                blockHeader.getMixHash().toHexString(),
-                new BlobExcessGasAndPrice(0L, 1L)
-            );
-
-            SendBlockEnvRequest blockEnv = new SendBlockEnvRequest(
-                blockEnvData,
+            // NOTE: iterationId will be ovewritten once sent
+            CommitHead newHead = new CommitHead(
                 lastTxHash,
                 transactionCount,
-                iterationId
+                blockNumber,
+                0L
             );
 
-            this.strategy.sendBlockEnv(blockEnv);
+            this.strategy.setNewHead(blockHash, newHead);
             lastBlockSent = blockHash;
-            LOG.debug("Block Env sent, hash: {}, iteration: {}", blockHash, iterationId);
+            
+            LOG.debug("Block Env sent, hash: {}", blockHash);
             span.setAttribute("block_added.sidecar_success", true);
         }catch (Exception e) {
             LOG.error("Error handling sendBlockEnv {}", e.getMessage());
             span.setAttribute("block_added.sidecar_success", false);
         } finally {
-            lastBlockSent = blockHash;
-            operationTracer.clear();
             span.end();
         }
     }

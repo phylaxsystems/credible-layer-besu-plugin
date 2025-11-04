@@ -29,22 +29,23 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
       return strategy;
     }
   }
-  private final CredibleOperationTracer operationTracer;
+
   private final Config config;
   private final CredibleMetricsRegistry metricsRegistry;
+  private final Long iterationId;
 
   public CredibleTransactionSelector(
     final Config config,
-    final CredibleOperationTracer operationTracer,
+    final Long iterationId,
     final CredibleMetricsRegistry metricsRegistry) {
     this.config = config;
-    this.operationTracer = operationTracer;
+    this.iterationId = iterationId;
     this.metricsRegistry = metricsRegistry;
   }
 
   @Override
   public CredibleOperationTracer getOperationTracer() {
-    return operationTracer;
+    return new CredibleOperationTracer(this.iterationId, this.config.getStrategy());
   }
 
   @Override
@@ -148,5 +149,9 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
     } catch (Exception e) {
         LOG.error("Failed to send reorg request for transaction {}: {}", txHash, e.getMessage(), e);
     }
+  }
+
+  public Long getIterationId() {
+    return iterationId;
   }
 }

@@ -8,13 +8,16 @@ import net.phylax.credible.types.SidecarApiModels.*;
 import net.phylax.credible.utils.Result;
 
 public interface ISidecarStrategy {
+    void setNewHead(String blockHash, CommitHead newHead);
+    void endIteration(String blockHash, Long iterationId);
+
     /**
      * Handles sending the block env to the sidecar.
      * 
      * @param blockEnvRequest BlockEnvRequest instance
      * @return CompletableFuture that completes when the request is processed
      */
-    CompletableFuture<Void> sendBlockEnv(SendBlockEnvRequest blockEnvRequest);
+    CompletableFuture<Void> newIteration(NewIteration newIteration);
 
     /**
      * Send the transactions for processing to the sidecar and starts the long polling
