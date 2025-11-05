@@ -102,7 +102,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
     
     @Override
     public CompletableFuture<Void> newIteration(NewIteration iteration) {
-        var span = tracer.spanBuilder(CredibleLayerMethods.SEND_BLOCK_ENV).startSpan();
+        var span = tracer.spanBuilder(CredibleLayerMethods.NEW_ITERATION).startSpan();
         try(Scope scope = span.makeCurrent()) {
             // Send to all primary transports
             Context context = Context.current();

@@ -991,6 +991,7 @@ public class SidecarApiModels {
         public static final String SEND_BLOCK_ENV = "sendBlockEnv";
         public static final String SEND_REORG = "reorg";
         public static final String SEND_EVENTS = "sendEvents";
+        public static final String NEW_ITERATION = "newIteration";
 
         private CredibleLayerMethods() {} // Utility class
     }
