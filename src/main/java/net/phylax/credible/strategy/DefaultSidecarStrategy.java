@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
@@ -21,15 +22,19 @@ import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
 import net.phylax.credible.metrics.CredibleMetricsRegistry;
-import net.phylax.credible.tracer.CredibleOperationTracer;
 import net.phylax.credible.transport.ISidecarTransport;
 import net.phylax.credible.types.CredibleRejectionReason;
 import net.phylax.credible.types.SidecarApiModels.CredibleLayerMethods;
 import net.phylax.credible.types.SidecarApiModels.GetTransactionRequest;
 import net.phylax.credible.types.SidecarApiModels.GetTransactionResponse;
+import net.phylax.credible.types.SidecarApiModels.NewIteration;
+import net.phylax.credible.types.SidecarApiModels.NewIterationReqItem;
+import net.phylax.credible.types.SidecarApiModels.CommitHead;
+import net.phylax.credible.types.SidecarApiModels.CommitHeadReqItem;
 import net.phylax.credible.types.SidecarApiModels.ReorgRequest;
 import net.phylax.credible.types.SidecarApiModels.ReorgResponse;
-import net.phylax.credible.types.SidecarApiModels.SendBlockEnvRequest;
+import net.phylax.credible.types.SidecarApiModels.SendEventsRequest;
+import net.phylax.credible.types.SidecarApiModels.SendEventsRequestItem;
 import net.phylax.credible.types.SidecarApiModels.SendTransactionsRequest;
 import net.phylax.credible.types.SidecarApiModels.SendTransactionsResponse;
 import net.phylax.credible.types.SidecarApiModels.TxExecutionId;
@@ -42,11 +47,11 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
     private List<ISidecarTransport> primaryTransports = new ArrayList<>();
     private List<ISidecarTransport> activeTransports = new CopyOnWriteArrayList<>();
     private List<ISidecarTransport> fallbackTransports = new CopyOnWriteArrayList<>();
-    private CredibleOperationTracer operationTracer;
     // Future that holds the last block env sent to the sidecars
-    private volatile CompletableFuture<Void> lastBlockEnvSent = CompletableFuture.completedFuture(null);
+    private Optional<CommitHead> maybeNewHead = Optional.empty();
 
     private AtomicBoolean isActive = new AtomicBoolean(false);
+    private final Map<String, Long> blockHashToIterationId = new ConcurrentHashMap<>();
 
     private Tracer tracer;
 
@@ -83,7 +88,6 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
     public DefaultSidecarStrategy(
         List<ISidecarTransport> primaryTransports,
         List<ISidecarTransport> fallbackTransports,
-        CredibleOperationTracer operationTracer,
         int processingTimeout,
         final CredibleMetricsRegistry metricsRegistry,
         final Tracer tracer
@@ -91,23 +95,34 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         this.primaryTransports = primaryTransports;
         this.activeTransports = new CopyOnWriteArrayList<>();
         this.fallbackTransports = fallbackTransports;
-        this.operationTracer = operationTracer;
         this.processingTimeout = processingTimeout;
         this.metricsRegistry = metricsRegistry;
         this.tracer = tracer;
     }
     
     @Override
-    public CompletableFuture<Void> sendBlockEnv(SendBlockEnvRequest blockEnv) {
-        var span = tracer.spanBuilder(CredibleLayerMethods.SEND_BLOCK_ENV).startSpan();
+    public CompletableFuture<Void> newIteration(NewIteration iteration) {
+        var span = tracer.spanBuilder(CredibleLayerMethods.NEW_ITERATION).startSpan();
         try(Scope scope = span.makeCurrent()) {
             // Send to all primary transports
             Context context = Context.current();
+
+            var sendEvents = assembleNewIterationRequest(iteration);
+
             List<CompletableFuture<TransportResponse>> futures = primaryTransports.stream()
-                .map(transport -> sendBlockEnvToTransport(blockEnv, transport))
+                .map(transport -> sendIterationToTransport(sendEvents, transport))
                 .collect(Collectors.toList());
+
+            // If new head is not present, just send to the primary transports
+            if (maybeNewHead.isEmpty()) {
+                return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
+            }
+
+            // Reset new head since we're sending it
+            maybeNewHead = Optional.empty();
         
-            lastBlockEnvSent = CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+            // Else send the new head and recalculate active transports
+            return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
                 .whenComplete((voidResult, exception) -> {
                     try(Scope primaryTransportScope = context.makeCurrent()) {
                         long failedCount = futures.stream()
@@ -125,7 +140,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
 
                             // Send to fallback transports
                             List<CompletableFuture<TransportResponse>> fallbackFutures = fallbackTransports.stream()
-                                .map(transport -> sendBlockEnvToTransport(blockEnv, transport))
+                                .map(transport -> sendIterationToTransport(sendEvents, transport))
                                 .collect(Collectors.toList());
                                 
                             CompletableFuture.allOf(fallbackFutures.toArray(new CompletableFuture[0]))
@@ -144,8 +159,21 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                         }
                     }
             });
-            return lastBlockEnvSent;
         }
+    }
+
+    private SendEventsRequest assembleNewIterationRequest(NewIteration iteration) {
+        var sendEvents = new SendEventsRequest();
+
+        if (maybeNewHead.isPresent()) {
+            var newHead = new CommitHeadReqItem(maybeNewHead.get());
+            sendEvents.getEvents().addLast(newHead);
+        }
+
+        var newIteration = new NewIterationReqItem(iteration);
+        sendEvents.getEvents().addLast(newIteration);
+
+        return sendEvents;
     }
 
     private List<ISidecarTransport> extractSuccessfulTransports(List<CompletableFuture<TransportResponse>> futures) {
@@ -174,19 +202,19 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         }
     }
     
-    private CompletableFuture<TransportResponse> sendBlockEnvToTransport(SendBlockEnvRequest blockEnv, ISidecarTransport transport) {
+    private CompletableFuture<TransportResponse> sendIterationToTransport(SendEventsRequest events, ISidecarTransport transport) {
         long startTime = System.currentTimeMillis();
-        var span = tracer.spanBuilder("sendBlockEnvToTransport").startSpan();
+        var span = tracer.spanBuilder("sendIterationToTransport").startSpan();
         try(Scope scope = span.makeCurrent()) {
-            metricsRegistry.getSidecarRpcCounter().labels(CredibleLayerMethods.SEND_BLOCK_ENV).inc();
-            return transport.sendBlockEnv(blockEnv)
-                .thenApply(blockResult -> {
+            metricsRegistry.getSidecarRpcCounter().labels(CredibleLayerMethods.SEND_EVENTS).inc();
+            return transport.sendEvents(events)
+                .thenApply(sendEventsResponse -> {
                     long latency = System.currentTimeMillis() - startTime;
-                    span.setAttribute("result", blockResult.getStatus());
-                    return new TransportResponse(transport, "accepted".equals(blockResult.getStatus()), "Success", latency);
+                    span.setAttribute("result", sendEventsResponse.getStatus());
+                    return new TransportResponse(transport, "accepted".equals(sendEventsResponse.getStatus()), "Success", latency);
                 })
                 .exceptionally(ex -> {
-                    LOG.debug("SendBlockEnv error: {} - {}",
+                    LOG.debug("NewIteration error: {} - {}",
                         ex.getMessage(),
                         ex.getCause() != null ? ex.getCause().getMessage() : "");
                     span.setAttribute("failed", true);
@@ -204,16 +232,6 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         SendTransactionsRequest sendTxRequest) {
         var span = tracer.spanBuilder("dispatchTransactions").startSpan();
         try(Scope scope = span.makeCurrent()) {
-            // Check if the block env was sent
-            if (!lastBlockEnvSent.isDone()) {
-                try {
-                    // Wait for the block env to finish
-                    lastBlockEnvSent.get();
-                } catch (Exception e) {
-                    LOG.warn("Error waiting for block env update", e);
-                }
-            }
-
             if (activeTransports.isEmpty()) {
                 LOG.warn("Active sidecars empty");
                 span.setAttribute("failed", true);
@@ -438,5 +456,21 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
     @Override
     public boolean isActive() {
         return isActive.get();
+    }
+
+    @Override
+    public void setNewHead(String blockhash, CommitHead newHead) {
+        var iterationId = blockHashToIterationId.get(blockhash);
+        if (iterationId == null) {
+            LOG.warn("No iteration id found for blockhash {}", blockhash);
+        }
+        blockHashToIterationId.clear();
+        newHead.setSelectedIterationId(iterationId);
+        maybeNewHead = Optional.of(newHead);
+    }
+
+    @Override
+    public void endIteration(String blockhash, Long iterationId) {
+        blockHashToIterationId.putIfAbsent(blockhash, iterationId);
     }
 }

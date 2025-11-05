@@ -23,10 +23,9 @@ import net.phylax.credible.types.CredibleRejectionReason;
 import net.phylax.credible.types.SidecarApiModels.*;
 import net.phylax.credible.utils.Result;
 import net.phylax.credible.metrics.SimpleMockMetricsSystem;
-import net.phylax.credible.tracer.CredibleOperationTracer;
 
 public class DefaultStrategyTest {
-    SendBlockEnvRequest generateBlockEnv() {
+    NewIteration generateNewIteration() {
         // generate block env
         BlockEnv blockEnvData = new BlockEnv(
             1L,
@@ -38,12 +37,11 @@ public class DefaultStrategyTest {
             "0x123123123123123123123123123123",
             new BlobExcessGasAndPrice(1L, 1L)
         );
-        return new SendBlockEnvRequest(
-            blockEnvData,
-            "0x1110002220003330004000505060494959658484939485493845",
-            1,
-            null
-        );
+        return new NewIteration(1L, blockEnvData);
+    }
+
+    CommitHead generateNewCommitHead() {
+        return new CommitHead("0x0000000000000000000000000000000000000001", 1, 1L, 1L);
     }
 
     SendTransactionsRequest generateTransactionRequest(String hash) {
@@ -64,19 +62,18 @@ public class DefaultStrategyTest {
         var metrics = new CredibleMetricsRegistry(metricsSystem);
 
         var openTelemetry = OpenTelemetry.noop();
-
-        var operationTracer = new CredibleOperationTracer();
         
         var strategy =  new DefaultSidecarStrategy(
             primaryTransports == null ? new ArrayList<>() : primaryTransports,
             fallbackTransports == null ? new ArrayList<>() : fallbackTransports,
-            operationTracer,
             processingTimeout,
             metrics,
             openTelemetry.getTracer("default-strategy"));
 
-        var blockEnvRequest = generateBlockEnv();
-        assertDoesNotThrow(() -> strategy.sendBlockEnv(blockEnvRequest).join());
+        var newIteration = generateNewIteration();
+        var commitHead = generateNewCommitHead();
+        assertDoesNotThrow(() -> strategy.setNewHead("0x0000000000000000000000000000000000000001", commitHead));
+        assertDoesNotThrow(() -> strategy.newIteration(newIteration).join());
 
         return strategy;
     }
@@ -161,7 +158,7 @@ public class DefaultStrategyTest {
         var mockTransport2 = new MockTransport(500);
         var strategy = initStrategy(Arrays.asList(mockTransport, mockTransport2), null, 800, false);
 
-        strategy.sendBlockEnv(generateBlockEnv());
+        strategy.newIteration(generateNewIteration());
         var response = sendTransaction(strategy);
         assertNotNull(response.getSuccess().getResult());
 
@@ -170,7 +167,7 @@ public class DefaultStrategyTest {
         mockTransport.setThrowOnSendTx(false);
         mockTransport.setThrowOnGetTx(true);
 
-        strategy.sendBlockEnv(generateBlockEnv());
+        strategy.newIteration(generateNewIteration());
         response = sendTransaction(strategy);
         assertNotNull(response.getSuccess().getResult());
     }
@@ -192,7 +189,7 @@ public class DefaultStrategyTest {
             false
         );
 
-        strategy.sendBlockEnv(generateBlockEnv()).join();
+        strategy.newIteration(generateNewIteration()).join();
 
         var response = sendTransaction(strategy);
         assertNotNull(response.getSuccess().getResult());
@@ -200,7 +197,7 @@ public class DefaultStrategyTest {
         // First sidecar gets back online
         mockTransport.setThrowOnSendBlockEnv(false);
         
-        strategy.sendBlockEnv(generateBlockEnv()).join();
+        strategy.newIteration(generateNewIteration()).join();
         response = sendTransaction(strategy);
         
         assertNotNull(response.getSuccess().getResult());
@@ -224,7 +221,7 @@ public class DefaultStrategyTest {
             false
         );
 
-        strategy.sendBlockEnv(generateBlockEnv()).join();
+        strategy.newIteration(generateNewIteration()).join();
 
         Stopwatch stopwatch = Stopwatch.createStarted();
         var response = sendTransaction(strategy);
@@ -241,7 +238,7 @@ public class DefaultStrategyTest {
         // Set a timeout on the sendTransactions for the first one
         mockTransport.setSendTransactionsLatency(fastProcessingTime + 100);
 
-        strategy.sendBlockEnv(generateBlockEnv()).join();
+        strategy.newIteration(generateNewIteration()).join();
 
         stopwatch = Stopwatch.createStarted();
         response = sendTransaction(strategy);
@@ -270,7 +267,7 @@ public class DefaultStrategyTest {
             false
         );
 
-        strategy.sendBlockEnv(generateBlockEnv()).join();
+        strategy.newIteration(generateNewIteration()).join();
 
         var response = sendTransaction(strategy);
         assertNotNull(response.getSuccess().getResult());
@@ -314,7 +311,8 @@ public class DefaultStrategyTest {
         assertTrue(response.getFailure() == CredibleRejectionReason.NO_ACTIVE_TRANSPORT);
 
         // New block, activate again
-        strategy.sendBlockEnv(generateBlockEnv()).join();
+        strategy.setNewHead("0x0000000000000000000000000000000000000001", generateNewCommitHead());
+        strategy.newIteration(generateNewIteration()).join();
 
         response = sendTransaction(strategy);
         assertNotNull(response.getSuccess().getResult());
@@ -329,7 +327,7 @@ public class DefaultStrategyTest {
 
         var strategy = initStrategy(Arrays.asList(mockTransport), null, 800, false);
 
-        strategy.sendBlockEnv(generateBlockEnv());
+        strategy.newIteration(generateNewIteration());
         // It should return an empty list (same as when transports aren't active)
         var response = strategy.dispatchTransactions(generateTransactionRequest("0x1"));
         assertTrue(response.size() == 1);
@@ -350,7 +348,7 @@ public class DefaultStrategyTest {
 
         var strategy = initStrategy(Arrays.asList(mockTransport, mockTransport2), null, 800, false);
 
-        strategy.sendBlockEnv(generateBlockEnv());
+        strategy.newIteration(generateNewIteration());
         var response = sendTransaction(strategy);
         assertNotNull(response.getSuccess().getResult());
     }

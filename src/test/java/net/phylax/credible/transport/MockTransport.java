@@ -105,6 +105,17 @@ public class MockTransport implements ISidecarTransport {
         return CompletableFuture.completedFuture(new ReorgResponse(reorgSuccess, ""));
     }
 
+
+    @Override
+    public CompletableFuture<SendEventsResponse> sendEvents(SendEventsRequest events) {
+        return CompletableFuture.completedFuture(
+            new SendEventsResponse(
+            "accepted",
+            "Request successfully processed",
+            (long)events.getEvents().size()
+        ));
+    }
+
     public void setBlockEnvSuccess(boolean blockEnvSuccess) {
         this.blockEnvSuccess = blockEnvSuccess;
     }

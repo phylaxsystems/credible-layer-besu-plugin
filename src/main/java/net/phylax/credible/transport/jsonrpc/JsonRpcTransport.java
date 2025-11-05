@@ -32,6 +32,8 @@ import net.phylax.credible.types.SidecarApiModels.ReorgRequest;
 import net.phylax.credible.types.SidecarApiModels.ReorgResponse;
 import net.phylax.credible.types.SidecarApiModels.SendBlockEnvRequest;
 import net.phylax.credible.types.SidecarApiModels.SendBlockEnvResponse;
+import net.phylax.credible.types.SidecarApiModels.SendEventsRequest;
+import net.phylax.credible.types.SidecarApiModels.SendEventsResponse;
 import net.phylax.credible.types.SidecarApiModels.SendTransactionsRequest;
 import net.phylax.credible.types.SidecarApiModels.SendTransactionsResponse;
 import net.phylax.credible.types.SidecarApiModels.TxExecutionId;
@@ -559,6 +561,15 @@ public class JsonRpcTransport implements ISidecarTransport {
             CredibleLayerMethods.SEND_REORG,
             reorgRequest,
             ReorgResponse.class
+        );
+    }
+
+    @Override
+    public CompletableFuture<SendEventsResponse> sendEvents(SendEventsRequest events) {
+        return this.callAsync(
+            CredibleLayerMethods.SEND_EVENTS,
+            events,
+            SendEventsResponse.class
         );
     }
 }

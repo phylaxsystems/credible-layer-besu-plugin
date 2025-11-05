@@ -3,7 +3,8 @@ package net.phylax.credible.txselection;
 import org.hyperledger.besu.plugin.services.txselection.SelectorsStateManager;
 
 import net.phylax.credible.metrics.CredibleMetricsRegistry;
-import net.phylax.credible.tracer.CredibleOperationTracer;
+
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.hyperledger.besu.plugin.services.txselection.PluginTransactionSelector;
 import org.hyperledger.besu.plugin.services.txselection.PluginTransactionSelectorFactory;
@@ -11,19 +12,17 @@ import org.hyperledger.besu.plugin.services.txselection.PluginTransactionSelecto
 public class CredibleTransactionSelectorFactory implements PluginTransactionSelectorFactory {
     private final CredibleTransactionSelector.Config txSelectorConfig;
     private final CredibleMetricsRegistry metricsRegistry;
-    private final CredibleOperationTracer operationTracer;
+    private AtomicLong iterationId = new AtomicLong(0L);
 
     public CredibleTransactionSelectorFactory(
         final CredibleTransactionSelector.Config txSelectorConfig,
-        final CredibleOperationTracer operationTracer,
         final CredibleMetricsRegistry metricsRegistry) {
-            this.txSelectorConfig = txSelectorConfig;
-            this.operationTracer = operationTracer;
+        this.txSelectorConfig = txSelectorConfig;
         this.metricsRegistry = metricsRegistry;
     }
 
     @Override
     public PluginTransactionSelector create(final SelectorsStateManager selectorsStateManager) {
-        return new CredibleTransactionSelector(txSelectorConfig, operationTracer, metricsRegistry);
+        return new CredibleTransactionSelector(txSelectorConfig, iterationId.incrementAndGet(), metricsRegistry);
     }
 }
