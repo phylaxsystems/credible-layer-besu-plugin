@@ -41,7 +41,7 @@ The ISidecarTransport interface is defined in the `net.phylax.credible.transport
 
 The ISidecarTransport interface includes the following methods:
 
-- `sendBlockEnv(SendBlockEnvRequest blockEnv)` - Sends the block environment to the Credible Layer sidecar and returns a `CompletableFuture<SendBlockEnvResponse>`.
+- **DEPRECATED** `sendBlockEnv(SendBlockEnvRequest blockEnv)` - Sends the block environment to the Credible Layer sidecar and returns a `CompletableFuture<SendBlockEnvResponse>`.
 - `sendTransactions(SendTransactionsRequest transactions)` - Sends transaction data to the Credible Layer sidecar for evaluation and returns a `CompletableFuture<SendTransactionsResponse>`.
 - `getTransactions(GetTransactionsRequest transactions)` - Retrieves multiple transaction data from the Credible Layer sidecar based on the provided transaction request and returns a `CompletableFuture<GetTransactionsResponse>`.
 - `getTransaction(GetTransactionRequest transactions)` - Retrieves a single transaction data from the Credible Layer sidecar based on the provided transaction request and returns a `CompletableFuture<GetTransactionResponse>`.
