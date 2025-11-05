@@ -1,6 +1,5 @@
 package net.phylax.credible.transport.grpc;
 
-import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 

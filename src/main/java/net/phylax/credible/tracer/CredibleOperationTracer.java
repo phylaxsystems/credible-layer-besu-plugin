@@ -34,17 +34,11 @@ public class CredibleOperationTracer implements BlockAwareOperationTracer {
     }
 
     @Override
-    public void traceEndBlock(final BlockHeader blockHeader, final BlockBody blockBody) {
-        LOG.debug("traceEndBlock - Hash: {}, Number: {}, Iteration: {}", blockHeader.getBlockHash().toHexString(), blockHeader.getNumber(), currentIterationId.get());
-        this.strategy.endIteration(blockHeader.getBlockHash().toHexString(), this.currentIterationId.get());
-    }
-
-    @Override
     public void traceStartBlock(
         final WorldView worldView,
         final ProcessableBlockHeader processableBlockHeader,
         final Address miningBeneficiary) {
-        LOG.debug("traceStartBlock - Number: {}, Iteration: {}", processableBlockHeader.getNumber(), currentIterationId.get());
+        LOG.debug("traceStartBlock - number: {}, iteration: {}", processableBlockHeader.getNumber(), currentIterationId.get());
         BlockEnv blockEnv = new BlockEnv(
             processableBlockHeader.getNumber(),
             processableBlockHeader.getCoinbase().toHexString(),
@@ -57,11 +51,18 @@ public class CredibleOperationTracer implements BlockAwareOperationTracer {
         );
         NewIteration iteration = new NewIteration(currentIterationId.get(), blockEnv);
 
+        // traceStartBlock marks a new iteration of the block production process
         try {
             strategy.newIteration(iteration).join();
         } catch(Exception e) {
             LOG.error("Error sending new iteration, block number: {}, iteration: {}, reason: {}", processableBlockHeader.getNumber(), currentIterationId.get(), e);
         }
+    }
+
+    @Override
+    public void traceEndBlock(final BlockHeader blockHeader, final BlockBody blockBody) {
+        LOG.debug("traceEndBlock - hash: {}, number: {}, iteration: {}", blockHeader.getBlockHash().toHexString(), blockHeader.getNumber(), currentIterationId.get());
+        this.strategy.endIteration(blockHeader.getBlockHash().toHexString(), this.currentIterationId.get());
     }
 
     public long getCurrentIterationId() {
