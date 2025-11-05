@@ -23,11 +23,17 @@ Plugins are loaded by the Besu node at startup and registered in the plugin mana
 
 For more information on the BesuPlugin mechanism, refer to the [Besu Plugin API documentation](https://besu.hyperledger.org/public-networks/reference/plugin-api-interfaces).
 
+
+## Terminology
+
+- `Transaction selection` - the process inside of the block builder to include or exclude a transaction from the block that's currently built
+- `Commit Head` - the event of a block being added to the canonical chain
+- `Iteration` - in one block building process, Besu tries to build a block multiple times (if there's enough time for it); the repetitions of creating a block multiple times are called `iterations`
+- `Operation tracer` - a component of the Besu block builder that enables services to hook into specific points in the block/transaction processing/execution (block production started, transaction started, etc.)
+
 ## Communication with the Credible Layer
 
-The Credible Layer Besu Plugin communicates with the Credible Layer using JSON-RPC over HTTP. It sends transaction data to the Credible Layer for evaluation and receives the evaluation results back.
-
-The communication is handled by the `net.phylax.credible.transport.jsonrpc.JsonRpcTransport` class. The plugin sends JSON-RPC requests to the Credible Layer and receives JSON-RPC responses.
+The Credible Layer Besu Plugin communicates with the Credible Layer using either HTTP JSON-RPC or GRPC (configurable with the plugin args). It sends transaction data to the Credible Layer for evaluation and receives the evaluation results back.
 
 ## ISidecarTransport
 
@@ -35,9 +41,12 @@ The ISidecarTransport interface is defined in the `net.phylax.credible.transport
 
 The ISidecarTransport interface includes the following methods:
 
-- sendTransactions(SendTransactionsRequest transactions) - Sends transaction data to the Credible Layer sidecar for evaluation.
-- getTransactions(List txHashes) - Retrieves transaction data from the Credible Layer sidecar based on the provided transaction hashes.
-- sendBLockEnv(BlockEnv block) - Sends the processed BlockEnv to the sidecar
+- **DEPRECATED** `sendBlockEnv(SendBlockEnvRequest blockEnv)` - Sends the block environment to the Credible Layer sidecar and returns a `CompletableFuture<SendBlockEnvResponse>`.
+- `sendTransactions(SendTransactionsRequest transactions)` - Sends transaction data to the Credible Layer sidecar for evaluation and returns a `CompletableFuture<SendTransactionsResponse>`.
+- `getTransactions(GetTransactionsRequest transactions)` - Retrieves multiple transaction data from the Credible Layer sidecar based on the provided transaction request and returns a `CompletableFuture<GetTransactionsResponse>`.
+- `getTransaction(GetTransactionRequest transactions)` - Retrieves a single transaction data from the Credible Layer sidecar based on the provided transaction request and returns a `CompletableFuture<GetTransactionResponse>`.
+- `sendReorg(ReorgRequest reorgRequest)` - Sends a reorganization request to the Credible Layer sidecar and returns a `CompletableFuture<ReorgResponse>`.
+- `sendEvents(SendEventsRequest events)` - Sends events to the Credible Layer sidecar, which can be `commitHead`, `newIteration` or `sendTransactions` and returns a `CompletableFuture<SendEventsResponse>` (generic *send** event).
 
 ## ISidecarStrategy
 
@@ -45,10 +54,84 @@ The `ISidecarStrategy` interface is defined in the `net.phylax.credible.strategy
 
 The `ISidecarStrategy` interface includes the following methods:
 
-- `sendBlockEnv(SendBlockEnvRequest blockEnvRequest)`: Sends the block environment request to the Credible Layer sidecar and returns a `CompletableFuture` that completes when the request is processed
+- `setNewHead(String blockHash, CommitHead newHead)` - Sets a new head for a specific block hash, updating the selected iteration ID and storing it for the next iteration event.
 
-- `dispatchTransactions(SendTransactionsRequest sendTxRequest)`: Dispatches the provided transaction request to the Credible Layer sidecar and returns a list of `CompletableFuture` objects; this method is called in the `evaluateTransactionPreProcessing` stage and it returns awaitable futures from each of the sidecar endpoints
+- `endIteration(String blockHash, Long iterationId)` - Marks the end of an iteration for a specific block hash, storing the iteration ID for later use when committing the head.
 
-- `handleTransportResponses(List<CompletableFuture<GetTransactionsResponse>> futures)`: Handles the responses received from the Credible Layer sidecar (awaits for the result) and returns a list of `TransactionResult` objects; this method is called in the `evaluateTransactionPostProcessing` stage where it handles the logic of whether the transaction should be included or not
+- `newIteration(NewIteration newIteration)` - Sends a new iteration event to the Credible Layer sidecar and returns a `CompletableFuture<Void>` that completes when the request is processed. This method handles the block environment setup and implements fallback logic if primary transports fail. It also updates active transports based on successful responses.
 
-The `ISidecarStrategy` interface is implemented by the `net.phylax.credible.strategy.DefaultSidecarStrategy` class, which uses the `ISidecarTransport` interface to communicate with the Credible Layer sidecar and evaluate transactions. It implements a client-side load balancing mechanism for fallbacks
+- `dispatchTransactions(SendTransactionsRequest sendTxRequest)` - Dispatches transaction data to all active transports and returns a list of `CompletableFuture<GetTransactionResponse>` objects (one per transport). This method is called in the `evaluateTransactionPreProcessing` stage. It chains `sendTransactions` and `getTransaction` calls per transport, creating a non-blocking request pipeline. The futures are stored in a pending requests map for later retrieval.
+
+- `getTransactionResult(GetTransactionRequest transactionRequest)` - Retrieves the result of transaction processing from the Credible Layer sidecar. This method is called in the `evaluateTransactionPostProcessing` stage. It awaits the futures from `dispatchTransactions` with a configurable timeout and returns a `Result<GetTransactionResponse, CredibleRejectionReason>` containing either the first successful response or a rejection reason. Implements a "race to success" pattern where the first successful transport response is used.
+
+- `sendReorgRequest(ReorgRequest reorgRequest)` - Sends a reorganization request to all active transports and returns a list of `ReorgResponse` objects. This method waits for all `sendTransactions` futures to complete before sending the reorg request to ensure consistency.
+
+- `isActive()` - Returns a boolean indicating whether the strategy has any active transports available for communication.
+
+### DefaultSidecarStrategy Implementation
+
+The `ISidecarStrategy` interface is implemented by the `net.phylax.credible.strategy.DefaultSidecarStrategy` class, which uses the `ISidecarTransport` interface to communicate with the Credible Layer sidecar and evaluate transactions.
+
+Key features of the DefaultSidecarStrategy:
+
+- **Client-side Load Balancing**: Maintains separate lists of primary and fallback transports. If all primary transports fail during `newIteration`, it automatically switches to fallback transports.
+
+- **Active Transport Management**: Dynamically updates the list of active transports based on successful responses. Transports that fail are automatically removed from the active pool.
+
+- **Non-blocking Pipeline**: The `dispatchTransactions` method chains `sendTransactions` and `getTransaction` calls per transport without blocking, allowing parallel processing across multiple sidecars.
+
+- **Race to Success**: The `getTransactionResult` method uses an `anySuccessOf` pattern that completes as soon as the first transport returns a successful response, optimizing latency.
+
+- **Timeout Handling**: Implements configurable timeouts for transaction processing. If all transports timeout or fail, the strategy marks itself as inactive and rejects subsequent transactions until it recovers.
+
+- **Request Tracking**: Maintains internal maps to track pending transaction requests and `sendTransactions` futures, enabling proper coordination of reorg requests and result retrieval.
+
+## Flow chart
+
+```
+BLOCK PRODUCTION STARTS
+│
+├─ ITERATION 1
+│  │
+│  ├─ traceStartBlock
+│  │  └─ ISidecarStrategy.newIteration(NewIteration)
+│  │     └─ ISidecarTransport.sendEvents(commitHead + newIteration)
+│  │
+│  ├─ Transaction Selection Loop (for each tx in mempool)
+│  │  │
+│  │  ├─ evaluateTransactionPreProcessing
+│  │  │  └─ ISidecarStrategy.dispatchTransactions(SendTransactionsRequest)
+│  │  │     ├─ ISidecarTransport.sendTransactions() → per active transport
+│  │  │     └─ ISidecarTransport.getTransaction() → chained per transport
+│  │  │
+│  │  └─ evaluateTransactionPostProcessing
+│  │     └─ ISidecarStrategy.getTransactionResult(GetTransactionRequest)
+│  │        └─ Awaits futures with timeout, returns first success
+│  │           └─ Decision: Include tx in block or reject
+│  │
+│  └─ traceEndBlock
+│     └─ ISidecarStrategy.endIteration(blockHash, iterationId)
+│        └─ Stores blockHash → iterationId mapping
+│
+├─ ITERATION 2
+│  │
+│  ├─ traceStartBlock → newIteration
+│  ├─ Transaction Selection Loop → dispatchTransactions → getTransactionResult
+│  └─ traceEndBlock → endIteration
+│
+├─ ITERATION N
+│  │
+│  ├─ [Same flow repeats until time expires or block full]
+│  └─ ...
+│
+└─ BLOCK PRODUCTION ENDS
+
+onBlockAdded event
+│
+└─ ISidecarStrategy.setNewHead(blockHash, CommitHead)
+   ├─ Retrieves iterationId from blockHash mapping
+   ├─ Sets selectedIterationId in CommitHead
+   └─ Stored for next block's newIteration call
+
+NEXT BLOCK PRODUCTION STARTS (cycle repeats)
+```
