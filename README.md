@@ -15,7 +15,7 @@ The Credible Layer Besu Plugin is designed to integrate the Credible Layer into 
 
 The plugin uses the BesuPlugin mechanism to interact with the Besu node. It implements the [TransactionSelectionService](https://github.com/hyperledger/besu/blob/main/plugin-api/src/main/java/org/hyperledger/besu/plugin/services/TransactionSelectionService.java) interface, which provides methods for creating a plugin transaction selector, selecting pending transactions during block creation, and registering plugin transaction selector factories.
 
-The plugin communicates with the Credible Layer using JSON-RPC over HTTP. It sends transaction data to the Credible Layer for evaluation and receives the evaluation results back.
+The plugin implements two transports: HTTP JSON-RPC and GRPC. It sends transaction data to the Credible Layer for evaluation and receives the evaluation results back.
 
 For more information on the internals of the BesuPlugin mechanism and the TransactionSelectionService, refer to the [DEVELOPER.md](DEVELOPER.md) file.
 
