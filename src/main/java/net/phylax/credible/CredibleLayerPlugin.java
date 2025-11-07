@@ -9,6 +9,7 @@ import java.util.stream.Collectors;
 import org.hyperledger.besu.plugin.BesuPlugin;
 import org.hyperledger.besu.plugin.ServiceManager;
 import org.hyperledger.besu.plugin.data.AddedBlockContext;
+import org.hyperledger.besu.plugin.data.AddedBlockContext.EventType;
 import org.hyperledger.besu.plugin.services.BesuEvents;
 import org.hyperledger.besu.plugin.services.MetricsSystem;
 import org.hyperledger.besu.plugin.services.PicoCLIOptions;
@@ -413,6 +414,10 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         
     @Override
     public void onBlockAdded(final AddedBlockContext block) {
+        if (block.getEventType() != EventType.HEAD_ADVANCED) {
+            LOG.debug("Skipping onBlockAdded, event type: {}", block.getEventType());
+            return;
+        }
         var blockHeader = block.getBlockHeader();
         var blockBody = block.getBlockBody();
         var transactions = blockBody.getTransactions();
@@ -443,9 +448,6 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
             if (!transactions.isEmpty()) {
                 lastTxHash = transactions.get(transactions.size() - 1).getHash().toHexString();
             }
-            
-            LOG.debug("Sending block env with {} transactions, last tx hash: {}",
-                transactionCount, lastTxHash);
 
             // NOTE: iterationId will be ovewritten once sent
             CommitHead newHead = new CommitHead(

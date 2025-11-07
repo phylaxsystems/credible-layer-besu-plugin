@@ -8,7 +8,19 @@ import net.phylax.credible.types.SidecarApiModels.*;
 import net.phylax.credible.utils.Result;
 
 public interface ISidecarStrategy {
+    /**
+     * When a new head is detected, this method is called to set the new head inside the strategy.
+     * @param blockHash
+     * @param newHead
+     */
     void setNewHead(String blockHash, CommitHead newHead);
+
+    /**
+     * This method should be called when all transactions for an iteration are dispatched. It's marking
+     * the end of an iteration inside of the block building process.
+     * @param blockHash
+     * @param iterationId
+     */
     void endIteration(String blockHash, Long iterationId);
 
     /**

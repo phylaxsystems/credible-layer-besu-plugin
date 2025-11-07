@@ -34,7 +34,6 @@ import net.phylax.credible.types.SidecarApiModels.CommitHeadReqItem;
 import net.phylax.credible.types.SidecarApiModels.ReorgRequest;
 import net.phylax.credible.types.SidecarApiModels.ReorgResponse;
 import net.phylax.credible.types.SidecarApiModels.SendEventsRequest;
-import net.phylax.credible.types.SidecarApiModels.SendEventsRequestItem;
 import net.phylax.credible.types.SidecarApiModels.SendTransactionsRequest;
 import net.phylax.credible.types.SidecarApiModels.SendTransactionsResponse;
 import net.phylax.credible.types.SidecarApiModels.TxExecutionId;
@@ -115,7 +114,17 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
 
             // If new head is not present, just send to the primary transports
             if (maybeNewHead.isEmpty()) {
+                LOG.debug("Sending iteration {} for block number {}", iteration.getIterationId(), iteration.getBlockEnv().getNumber());
                 return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
+            }
+
+            {
+                var commitHead = maybeNewHead.get();
+                LOG.debug("Sending commit_head {} with {} transactions and iteration {} for block number {}",
+                    commitHead.getBlockNumber(),
+                    commitHead.getNTransactions(),
+                    iteration.getIterationId(),
+                    iteration.getBlockEnv().getNumber());
             }
 
             // Reset new head since we're sending it
