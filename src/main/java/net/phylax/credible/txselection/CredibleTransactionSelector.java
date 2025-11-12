@@ -51,7 +51,8 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
   @Override
   public TransactionSelectionResult evaluateTransactionPreProcessing(
       final TransactionEvaluationContext txContext) {
-    var timing = metricsRegistry.getPreProcessingTimer().labels().startTimer();
+    long startTime = System.nanoTime();
+    String status = "success";
     metricsRegistry.getTransactionCounter().labels().inc();
 
     var tx = txContext.getPendingTransaction().getTransaction();
@@ -72,10 +73,11 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
         LOG.debug("Started async transaction processing for {}", txHash);
     } catch (Exception e) {
         LOG.error("Error in transaction preprocessing for {}: {}", txHash, e.getMessage());
+        status = "error";
     } finally {
-        timing.stopTimer();
+        metricsRegistry.getPreProcessingDuration().labels(status).observe(getDurationSeconds(startTime));
     }
-    
+
     return TransactionSelectionResult.SELECTED;
   }
 
@@ -83,17 +85,18 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
   public TransactionSelectionResult evaluateTransactionPostProcessing(
       final TransactionEvaluationContext txContext,
       final TransactionProcessingResult transactionProcessingResult) {
-    var tx = txContext.getPendingTransaction().getTransaction();
-    String txHash = tx.getHash().toHexString();
-    long blockNumber = txContext.getPendingBlockHeader().getNumber();
-    long iterationId = getOperationTracer().getCurrentIterationId();
-
     if (!config.strategy.isActive()) {
       LOG.warn("No active transport available!");
       return TransactionSelectionResult.SELECTED;
     }
 
-    var timing = metricsRegistry.getPostProcessingTimer().labels().startTimer();
+    long startTime = System.nanoTime();
+    String status = "success";
+
+    var tx = txContext.getPendingTransaction().getTransaction();
+    String txHash = tx.getHash().toHexString();
+    long blockNumber = txContext.getPendingBlockHeader().getNumber();
+    long iterationId = getOperationTracer().getCurrentIterationId();
 
     try {
         LOG.debug("Awaiting result for, hash: {}, iteration: {}", txHash, iterationId);
@@ -104,25 +107,28 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
 
         if (!txResponseResult.isSuccess()) {
           LOG.warn("Credible Layer failed to process, tx: {}, iteration: {}, reason: {}", txHash, iterationId, txResponseResult.getFailure());
+          status = "error";
           return TransactionSelectionResult.SELECTED;
         }
 
         var txResult = txResponseResult.getSuccess().getResult();
 
-        var status = txResult.getStatus();
-        if (TransactionStatus.ASSERTION_FAILED.equals(status)) {
-              LOG.info("Transaction {} excluded due to status: {}", txHash, status);
+        var txStatus = txResult.getStatus();
+        if (TransactionStatus.ASSERTION_FAILED.equals(txStatus)) {
+              LOG.info("Transaction {} excluded due to status: {}", txHash, txStatus);
               metricsRegistry.getInvalidationCounter().labels().inc();
+              status = "rejected";
               return TransactionSelectionResult.invalid("TX rejected by Credible layer");
           } else {
-              LOG.debug("Transaction {} included with status: {}", txHash, status);
+              LOG.debug("Transaction {} included with status: {}", txHash, txStatus);
               return TransactionSelectionResult.SELECTED;
           }
     } catch (Exception e) {
         LOG.error("Error in transaction postprocessing for {}: {}", txHash, e.getMessage());
+        status = "error";
         return TransactionSelectionResult.SELECTED;
     } finally {
-        timing.stopTimer();
+        metricsRegistry.getPostProcessingDuration().labels(status).observe(getDurationSeconds(startTime));
     }
   }
 
@@ -152,5 +158,9 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
 
   public Long getIterationId() {
     return iterationId;
+  }
+
+  private double getDurationSeconds(long startTimeNanos) {
+    return (System.nanoTime() - startTimeNanos) / 1_000_000_000.0;
   }
 }
