@@ -13,6 +13,7 @@ import io.grpc.stub.StreamObserver;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.instrumentation.grpc.v1_6.GrpcTelemetry;
+import net.phylax.credible.metrics.CredibleMetricsRegistry;
 import net.phylax.credible.transport.ISidecarTransport;
 import net.phylax.credible.types.SidecarApiModels;
 import net.phylax.credible.types.SidecarApiModels.CredibleLayerMethods;
@@ -33,30 +34,45 @@ public class GrpcTransport implements ISidecarTransport {
     private final SidecarTransportGrpc.SidecarTransportStub asyncStub;
     private final long deadlineMillis;
     private final Tracer tracer;
+    private final CredibleMetricsRegistry metricsRegistry;
 
     /**
      * Create a new GrpcTransport with a pre-configured channel
      */
-    public GrpcTransport(ManagedChannel channel, long deadlineMillis, OpenTelemetry openTelemetry) {
+    public GrpcTransport(ManagedChannel channel, long deadlineMillis, OpenTelemetry openTelemetry, CredibleMetricsRegistry metricsRegistry) {
         this.channel = channel;
         this.asyncStub = SidecarTransportGrpc.newStub(channel);
         this.deadlineMillis = deadlineMillis;
         this.tracer = openTelemetry.getTracer("grpc-transport");
+        this.metricsRegistry = metricsRegistry;
+    }
+
+    /**
+     * Helper method to record request duration in histogram
+     */
+    private void recordRequestDuration(long startTimeNanos, String method, String status) {
+        if (metricsRegistry != null) {
+            double durationSeconds = (System.nanoTime() - startTimeNanos) / 1_000_000_000.0;
+            metricsRegistry.getTransportRequestDuration()
+                .labels(method, "grpc", status)
+                .observe(durationSeconds);
+        }
     }
 
     /**
      * Create a new GrpcTransport connecting to the specified host and port
      */
-    public GrpcTransport(String host, int port, long deadlineMillis, OpenTelemetry openTelemetry) {
+    public GrpcTransport(String host, int port, long deadlineMillis, OpenTelemetry openTelemetry, CredibleMetricsRegistry metricsRegistry) {
         this(ManagedChannelBuilder
             .forAddress(host, port)
             .useTransportSecurity()
-            .build(), deadlineMillis, openTelemetry);
+            .build(), deadlineMillis, openTelemetry, metricsRegistry);
     }
 
     @Override
     public CompletableFuture<SidecarApiModels.SendBlockEnvResponse> sendBlockEnv(SidecarApiModels.SendBlockEnvRequest blockEnv) {
         var span = tracer.spanBuilder(CredibleLayerMethods.SEND_BLOCK_ENV).startSpan();
+        long startTime = System.nanoTime();
         CompletableFuture<SidecarApiModels.SendBlockEnvResponse> future = new CompletableFuture<>();
 
         try {
@@ -81,18 +97,21 @@ public class GrpcTransport implements ISidecarTransport {
                         future.completeExceptionally(t);
                         span.setAttribute("failed", true);
                         span.end();
+                        recordRequestDuration(startTime, CredibleLayerMethods.SEND_BLOCK_ENV, "error");
                     }
 
                     @Override
                     public void onCompleted() {
                         LOG.trace("SendBlockEnv gRPC call completed");
                         span.end();
+                        recordRequestDuration(startTime, CredibleLayerMethods.SEND_BLOCK_ENV, "success");
                     }
                 });
         } catch (Exception e) {
             LOG.error("Error preparing SendBlockEnv request: {}", e.getMessage(), e);
             future.completeExceptionally(e);
             span.end();
+            recordRequestDuration(startTime, CredibleLayerMethods.SEND_BLOCK_ENV, "error");
         }
 
         return future;
@@ -101,6 +120,7 @@ public class GrpcTransport implements ISidecarTransport {
     @Override
     public CompletableFuture<SidecarApiModels.SendTransactionsResponse> sendTransactions(SidecarApiModels.SendTransactionsRequest transactions) {
         var span = tracer.spanBuilder(CredibleLayerMethods.SEND_TRANSACTIONS).startSpan();
+        long startTime = System.nanoTime();
         CompletableFuture<SidecarApiModels.SendTransactionsResponse> future = new CompletableFuture<>();
 
         try {
@@ -128,18 +148,21 @@ public class GrpcTransport implements ISidecarTransport {
                         future.completeExceptionally(t);
                         span.setAttribute("failed", true);
                         span.end();
+                        recordRequestDuration(startTime, CredibleLayerMethods.SEND_TRANSACTIONS, "error");
                     }
 
                     @Override
                     public void onCompleted() {
                         LOG.trace("SendTransactions gRPC call completed");
                         span.end();
+                        recordRequestDuration(startTime, CredibleLayerMethods.SEND_TRANSACTIONS, "success");
                     }
                 });
         } catch (Exception e) {
             LOG.error("Error preparing SendTransactions request: {}", e.getMessage(), e);
             future.completeExceptionally(e);
             span.end();
+            recordRequestDuration(startTime, CredibleLayerMethods.SEND_TRANSACTIONS, "error");
         }
 
         return future;
@@ -148,6 +171,7 @@ public class GrpcTransport implements ISidecarTransport {
     @Override
     public CompletableFuture<SidecarApiModels.GetTransactionsResponse> getTransactions(SidecarApiModels.GetTransactionsRequest txRequest) {
         var span = tracer.spanBuilder(CredibleLayerMethods.GET_TRANSACTIONS).startSpan();
+        long startTime = System.nanoTime();
         CompletableFuture<SidecarApiModels.GetTransactionsResponse> future = new CompletableFuture<>();
 
         try {
@@ -174,18 +198,21 @@ public class GrpcTransport implements ISidecarTransport {
                         future.completeExceptionally(t);
                         span.setAttribute("failed", true);
                         span.end();
+                        recordRequestDuration(startTime, CredibleLayerMethods.GET_TRANSACTIONS, "error");
                     }
 
                     @Override
                     public void onCompleted() {
                         LOG.trace("GetTransactions gRPC call completed");
                         span.end();
+                        recordRequestDuration(startTime, CredibleLayerMethods.GET_TRANSACTIONS, "success");
                     }
                 });
         } catch (Exception e) {
             LOG.error("Error preparing GetTransactions request: {}", e.getMessage(), e);
             future.completeExceptionally(e);
             span.end();
+            recordRequestDuration(startTime, CredibleLayerMethods.GET_TRANSACTIONS, "error");
         }
 
         return future;
@@ -194,6 +221,7 @@ public class GrpcTransport implements ISidecarTransport {
     @Override
     public CompletableFuture<SidecarApiModels.GetTransactionResponse> getTransaction(SidecarApiModels.GetTransactionRequest txRequest) {
         var span = tracer.spanBuilder(CredibleLayerMethods.GET_TRANSACTION).startSpan();
+        long startTime = System.nanoTime();
         CompletableFuture<SidecarApiModels.GetTransactionResponse> future = new CompletableFuture<>();
 
         try {
@@ -220,18 +248,21 @@ public class GrpcTransport implements ISidecarTransport {
                         future.completeExceptionally(t);
                         span.setAttribute("failed", true);
                         span.end();
+                        recordRequestDuration(startTime, CredibleLayerMethods.GET_TRANSACTION, "error");
                     }
 
                     @Override
                     public void onCompleted() {
                         LOG.trace("GetTransaction gRPC call completed");
                         span.end();
+                        recordRequestDuration(startTime, CredibleLayerMethods.GET_TRANSACTION, "success");
                     }
                 });
         } catch (Exception e) {
             LOG.error("Error preparing GetTransaction request: {}", e.getMessage(), e);
             future.completeExceptionally(e);
             span.end();
+            recordRequestDuration(startTime, CredibleLayerMethods.GET_TRANSACTION, "error");
         }
 
         return future;
@@ -240,6 +271,7 @@ public class GrpcTransport implements ISidecarTransport {
     @Override
     public CompletableFuture<SidecarApiModels.ReorgResponse> sendReorg(SidecarApiModels.ReorgRequest reorgRequest) {
         var span = tracer.spanBuilder(CredibleLayerMethods.SEND_REORG).startSpan();
+        long startTime = System.nanoTime();
         CompletableFuture<SidecarApiModels.ReorgResponse> future = new CompletableFuture<>();
 
         try {
@@ -268,18 +300,21 @@ public class GrpcTransport implements ISidecarTransport {
                         future.completeExceptionally(t);
                         span.setAttribute("failed", true);
                         span.end();
+                        recordRequestDuration(startTime, CredibleLayerMethods.SEND_REORG, "error");
                     }
 
                     @Override
                     public void onCompleted() {
                         LOG.trace("Reorg gRPC call completed");
                         span.end();
+                        recordRequestDuration(startTime, CredibleLayerMethods.SEND_REORG, "success");
                     }
                 });
         } catch (Exception e) {
             LOG.error("Error preparing Reorg request: {}", e.getMessage(), e);
             future.completeExceptionally(e);
             span.end();
+            recordRequestDuration(startTime, CredibleLayerMethods.SEND_REORG, "error");
         }
 
         return future;
@@ -320,6 +355,7 @@ public class GrpcTransport implements ISidecarTransport {
         private long deadlineMillis = 5000; // 5 seconds default
         private boolean useTls = false;
         private OpenTelemetry openTelemetry = OpenTelemetry.noop();
+        private CredibleMetricsRegistry metricsRegistry;
 
         public Builder host(String host) {
             this.host = host;
@@ -346,6 +382,11 @@ public class GrpcTransport implements ISidecarTransport {
             return this;
         }
 
+        public Builder metricsRegistry(CredibleMetricsRegistry metricsRegistry) {
+            this.metricsRegistry = metricsRegistry;
+            return this;
+        }
+
         public GrpcTransport build() {
             ManagedChannelBuilder<?> channelBuilder = ManagedChannelBuilder
                 .forAddress(host, port);
@@ -360,13 +401,14 @@ public class GrpcTransport implements ISidecarTransport {
             channelBuilder.intercept(grpcTelemetry.newClientInterceptor());
 
             ManagedChannel channel = channelBuilder.build();
-            return new GrpcTransport(channel, deadlineMillis, openTelemetry);
+            return new GrpcTransport(channel, deadlineMillis, openTelemetry, metricsRegistry);
         }
     }
 
     @Override
     public CompletableFuture<SendEventsResponse> sendEvents(SendEventsRequest events) {
         var span = tracer.spanBuilder(CredibleLayerMethods.SEND_EVENTS).startSpan();
+        long startTime = System.nanoTime();
         CompletableFuture<SendEventsResponse> future = new CompletableFuture<>();
 
         try {
@@ -391,18 +433,21 @@ public class GrpcTransport implements ISidecarTransport {
                         future.completeExceptionally(t);
                         span.setAttribute("failed", true);
                         span.end();
+                        recordRequestDuration(startTime, CredibleLayerMethods.SEND_EVENTS, "error");
                     }
 
                     @Override
                     public void onCompleted() {
                         LOG.trace("SendEvents gRPC call completed");
                         span.end();
+                        recordRequestDuration(startTime, CredibleLayerMethods.SEND_EVENTS, "success");
                     }
                 });
         } catch (Exception e) {
             LOG.error("Error preparing SendEvents request: {}", e.getMessage(), e);
             future.completeExceptionally(e);
             span.end();
+            recordRequestDuration(startTime, CredibleLayerMethods.SEND_EVENTS, "error");
         }
 
         return future;

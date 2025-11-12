@@ -83,8 +83,6 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
   public TransactionSelectionResult evaluateTransactionPostProcessing(
       final TransactionEvaluationContext txContext,
       final TransactionProcessingResult transactionProcessingResult) {
-    var timing = metricsRegistry.getPostProcessingTimer().labels().startTimer();
-
     var tx = txContext.getPendingTransaction().getTransaction();
     String txHash = tx.getHash().toHexString();
     long blockNumber = txContext.getPendingBlockHeader().getNumber();
@@ -94,6 +92,8 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
       LOG.warn("No active transport available!");
       return TransactionSelectionResult.SELECTED;
     }
+
+    var timing = metricsRegistry.getPostProcessingTimer().labels().startTimer();
 
     try {
         LOG.debug("Awaiting result for, hash: {}, iteration: {}", txHash, iterationId);

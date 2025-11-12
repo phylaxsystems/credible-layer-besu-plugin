@@ -14,6 +14,8 @@ import io.grpc.inprocess.InProcessServerBuilder;
 import io.grpc.stub.StreamObserver;
 import io.grpc.testing.GrpcCleanupRule;
 import io.opentelemetry.api.OpenTelemetry;
+import net.phylax.credible.metrics.CredibleMetricsRegistry;
+import net.phylax.credible.metrics.SimpleMockMetricsSystem;
 import net.phylax.credible.types.SidecarApiModels;
 import sidecar.transport.v1.Sidecar;
 import sidecar.transport.v1.SidecarTransportGrpc;
@@ -124,8 +126,10 @@ public class GrpcTransportTest {
                 .directExecutor()
                 .build());
 
+        var metrics = new CredibleMetricsRegistry(new SimpleMockMetricsSystem());
+        
         // Create the transport with the in-process channel
-        transport = new GrpcTransport(channel, 5000, OpenTelemetry.noop());
+        transport = new GrpcTransport(channel, 5000, OpenTelemetry.noop(), metrics);
     }
 
     @AfterEach

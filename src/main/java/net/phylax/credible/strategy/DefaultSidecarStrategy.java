@@ -354,16 +354,13 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
     }
 
     private Result<GetTransactionResponse, CredibleRejectionReason> handleTransactionFuture(List<CompletableFuture<GetTransactionResponse>> futures) {
-        long startTime = System.currentTimeMillis();
         var span = tracer.spanBuilder("handleTransactionFuture").startSpan();
 
         CompletableFuture<Result<GetTransactionResponse, CredibleRejectionReason>> anySuccess = anySuccessOf(futures)
             .orTimeout(processingTimeout, TimeUnit.MILLISECONDS)
             .thenApply(res -> Result.<GetTransactionResponse, CredibleRejectionReason>success(res))
             .exceptionally(ex -> {
-                long latency = System.currentTimeMillis() - startTime;
-                LOG.debug("Timeout or error getting transactions: exception {}, latency {}", 
-                    ex.getMessage(), latency);
+                LOG.debug("Timeout or error getting transactions: exception {}", ex.getMessage());
                 metricsRegistry.getTimeoutCounter().labels().inc();
                 isActive.set(false);
                 return Result.failure(CredibleRejectionReason.TIMEOUT);
