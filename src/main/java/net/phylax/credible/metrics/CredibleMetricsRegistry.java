@@ -5,6 +5,7 @@ import java.util.function.IntSupplier;
 
 import org.hyperledger.besu.plugin.services.MetricsSystem;
 import org.hyperledger.besu.plugin.services.metrics.Counter;
+import org.hyperledger.besu.plugin.services.metrics.Histogram;
 import org.hyperledger.besu.plugin.services.metrics.LabelledMetric;
 import org.hyperledger.besu.plugin.services.metrics.OperationTimer;
 
@@ -22,7 +23,10 @@ public class CredibleMetricsRegistry {
     private final LabelledMetric<Counter> invalidationCounter;
     private final LabelledMetric<Counter> reorgRequestCounter;
     private final LabelledMetric<Counter> sidecarRpcCounter;
-    
+
+    // Transport request duration histograms
+    private final LabelledMetric<Histogram> transportRequestDuration;
+
     private final AtomicBoolean activeTransportsGaugeRegistered = new AtomicBoolean(false);
 
     private final MetricsSystem metricsSystem;
@@ -84,6 +88,15 @@ public class CredibleMetricsRegistry {
             "sidecar_rpc_total",
             "Total RPC calls made to the Credible sidecar",
             "method");
+
+        // Transport request duration histogram with fine-grained buckets in seconds
+        // Buckets: 0.05ms, 0.1ms, 0.5ms, 1ms, 2ms, 5ms, 10ms, 20ms, 50ms, 100ms, 200ms, 500ms
+        transportRequestDuration = metricsSystem.createLabelledHistogram(
+            CredibleMetricsCategory.PLUGIN,
+            "transport_request_duration_seconds",
+            "Distribution of transport request durations in seconds",
+            new double[]{0.00005, 0.0001, 0.0005, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5},
+            "method", "transport_type", "status");
     }
     
     // Getters
@@ -121,6 +134,10 @@ public class CredibleMetricsRegistry {
 
     public LabelledMetric<Counter> getSidecarRpcCounter() {
         return sidecarRpcCounter;
+    }
+
+    public LabelledMetric<Histogram> getTransportRequestDuration() {
+        return transportRequestDuration;
     }
 
     public void registerActiveTransportsGauge(final IntSupplier supplier) {
