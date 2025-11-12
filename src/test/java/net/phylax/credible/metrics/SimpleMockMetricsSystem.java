@@ -78,11 +78,27 @@ public class SimpleMockMetricsSystem implements MetricsSystem {
     
     private static class MockOperationTimer implements OperationTimer {
         private int startCount = 0;
-        
+
         @Override
         public TimingContext startTimer() {
             startCount++;
             return () -> { return startCount; };
+        }
+    }
+
+    private static class MockLabelledHistogram implements LabelledMetric<Histogram> {
+        private final MockHistogram histogram = new MockHistogram();
+
+        @Override
+        public Histogram labels(String... labelValues) {
+            return histogram;
+        }
+    }
+
+    private static class MockHistogram implements Histogram {
+        @Override
+        public void observe(double amount) {
+            // No-op for testing
         }
     }
 
@@ -95,7 +111,7 @@ public class SimpleMockMetricsSystem implements MetricsSystem {
     @Override
     public LabelledMetric<Histogram> createLabelledHistogram(MetricCategory arg0, String arg1, String arg2,
             double[] arg3, String... arg4) {
-        throw new UnsupportedOperationException("Unimplemented method 'createLabelledHistogram'");
+        return new MockLabelledHistogram();
     }
 
     @Override

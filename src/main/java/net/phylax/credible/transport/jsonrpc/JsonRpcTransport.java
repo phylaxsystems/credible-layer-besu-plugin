@@ -53,6 +53,7 @@ import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
 import io.opentelemetry.instrumentation.okhttp.v3_0.OkHttpTelemetry;
+import net.phylax.credible.metrics.CredibleMetricsRegistry;
 
 /**
  * Sidecar JSON RPC client
@@ -187,20 +188,22 @@ public class JsonRpcTransport implements ISidecarTransport {
     
     // Main Client Implementation
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
-    
+
     private final Call.Factory httpClient;
     private final ObjectMapper objectMapper;
     private final String baseUrl;
     private final Tracer tracer;
+    private final CredibleMetricsRegistry metricsRegistry;
     
-    public JsonRpcTransport(String baseUrl, OpenTelemetry openTelemetry, Tracer tracer) {
-        this(baseUrl, createDefaultHttpClient(), openTelemetry, tracer);
+    public JsonRpcTransport(String baseUrl, OpenTelemetry openTelemetry, Tracer tracer, CredibleMetricsRegistry metricsRegistry) {
+        this(baseUrl, createDefaultHttpClient(), openTelemetry, tracer, metricsRegistry);
     }
-    
-    public JsonRpcTransport(String baseUrl, Call.Factory httpClient, OpenTelemetry openTelemetry, Tracer tracer) {
+
+    public JsonRpcTransport(String baseUrl, Call.Factory httpClient, OpenTelemetry openTelemetry, Tracer tracer, CredibleMetricsRegistry metricsRegistry) {
         this.baseUrl = baseUrl;
         this.httpClient = httpClient;
         this.tracer = tracer == null ? openTelemetry.getTracer("jsonrpc-transport") : tracer;
+        this.metricsRegistry = metricsRegistry;
         this.objectMapper = JsonMapper.builder()
             .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
             .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
@@ -208,6 +211,18 @@ public class JsonRpcTransport implements ISidecarTransport {
             .enable(MapperFeature.USE_STD_BEAN_NAMING)
             .constructorDetector(ConstructorDetector.DEFAULT)
             .build();
+    }
+
+    /**
+     * Helper method to record request duration in histogram
+     */
+    private void recordRequestDuration(long startTimeNanos, String method, String status) {
+        if (metricsRegistry != null) {
+            double durationSeconds = (System.nanoTime() - startTimeNanos) / 1_000_000_000.0;
+            metricsRegistry.getTransportRequestDuration()
+                .labels(method, "jsonrpc", status)
+                .observe(durationSeconds);
+        }
     }
     
     private static OkHttpClient createDefaultHttpClient() {
@@ -248,51 +263,55 @@ public class JsonRpcTransport implements ISidecarTransport {
     // Synchronous call returning raw response with TypeReference
     public <T> JsonRpcResponse<T> callForResponse(String method, Object params, TypeReference<T> resultType) throws JsonRpcException {
         Span span = tracer.spanBuilder("JsonRpcRequest").startSpan();
+        long startTime = System.nanoTime();
+        String status = "error";
 
         try {
             String requestId = UUID.randomUUID().toString();
             JsonRpcRequest request = new JsonRpcRequest(method, params, requestId);
-            
+
             String requestJson = objectMapper.writeValueAsString(request);
             LOG.trace("Request ID: {}, body: {}", requestId, requestJson);
 
             RequestBody body = RequestBody.create(requestJson, JSON);
-            
+
             try(Scope scope = span.makeCurrent()) {
                 Request httpRequest = new Request.Builder()
                     .url(baseUrl)
                     .post(body)
                     .addHeader("Content-Type", "application/json")
                     .build();
-            
+
                 try (Response response = httpClient.newCall(httpRequest).execute()) {
                     span.setAttribute("http.status_code", response.code());
 
                     if (!response.isSuccessful()) {
                         throw new JsonRpcException("HTTP error: " + response.code() + " " + response.message());
                     }
-                    
+
                     if (response.body() == null) {
                         throw new JsonRpcException("Empty response body");
                     }
-                    
+
                     String responseBody = response.body().string();
                     LOG.trace("Response ID: {}, body: {}", requestId, responseBody);
 
                     // Create JavaType from TypeReference for proper type handling
                     JavaType responseType = objectMapper.getTypeFactory()
-                        .constructParametricType(JsonRpcResponse.class, 
+                        .constructParametricType(JsonRpcResponse.class,
                                             objectMapper.getTypeFactory().constructType(resultType));
-                    
+
                     // Parse directly to the typed response
                     JsonRpcResponse<T> typedResponse = objectMapper.readValue(responseBody, responseType);
-                    
+
+                    status = typedResponse.hasError() ? "error" : "success";
                     return typedResponse;
                 }
             }
         } catch (IOException e) {
             throw new JsonRpcException("Network error", e);
         } finally {
+            recordRequestDuration(startTime, method, status);
             span.end();
         }
     }
@@ -300,15 +319,18 @@ public class JsonRpcTransport implements ISidecarTransport {
     // Overload for Class-based result type
     public <T> JsonRpcResponse<T> callForResponse(String method, Object params, Class<T> resultClass) throws JsonRpcException {
         Span span = tracer.spanBuilder("JsonRpcRequest").startSpan();
+        long startTime = System.nanoTime();
+        String status = "error";
+
         try {
             String requestId = UUID.randomUUID().toString();
             JsonRpcRequest request = new JsonRpcRequest(method, params, requestId);
-            
+
             String requestJson = objectMapper.writeValueAsString(request);
             LOG.trace("Request ID: {}, body: {}, url: {}", requestId, requestJson, baseUrl);
 
             RequestBody body = RequestBody.create(requestJson, JSON);
-            
+
             Request httpRequest = new Request.Builder()
                     .url(baseUrl)
                     .post(body)
@@ -322,27 +344,29 @@ public class JsonRpcTransport implements ISidecarTransport {
                     if (!response.isSuccessful()) {
                         throw new JsonRpcException("HTTP error: " + response.code() + " " + response.message());
                     }
-                    
+
                     if (response.body() == null) {
                         throw new JsonRpcException("Empty response body");
                     }
-                    
+
                     String responseBody = response.body().string();
                     LOG.trace("Response ID: {}, body: {}, url: {}", requestId, responseBody, baseUrl);
-                    
+
                     // Create JavaType for Class-based result type
                     JavaType responseType = objectMapper.getTypeFactory()
                         .constructParametricType(JsonRpcResponse.class, resultClass);
-                    
+
                     // Parse directly to the typed response
                     JsonRpcResponse<T> typedResponse = objectMapper.readValue(responseBody, responseType);
-                    
+
+                    status = typedResponse.hasError() ? "error" : "success";
                     return typedResponse;
                 }
             }
         } catch (IOException e) {
             throw new JsonRpcException("Network error", e);
         } finally {
+            recordRequestDuration(startTime, method, status);
             span.end();
         }
     }
@@ -453,27 +477,28 @@ public class JsonRpcTransport implements ISidecarTransport {
         private Authenticator authenticator;
         private OpenTelemetry openTelemetry;
         private Tracer tracer;
-        
+        private CredibleMetricsRegistry metricsRegistry;
+
         public Builder baseUrl(String baseUrl) {
             this.baseUrl = baseUrl;
             return this;
         }
-        
+
         public Builder connectTimeout(Duration timeout) {
             this.connectTimeout = timeout;
             return this;
         }
-        
+
         public Builder readTimeout(Duration timeout) {
             this.readTimeout = timeout;
             return this;
         }
-        
+
         public Builder writeTimeout(Duration timeout) {
             this.writeTimeout = timeout;
             return this;
         }
-        
+
         public Builder authenticator(Authenticator authenticator) {
             this.authenticator = authenticator;
             return this;
@@ -488,7 +513,12 @@ public class JsonRpcTransport implements ISidecarTransport {
             this.tracer = tracer;
             return this;
         }
-        
+
+        public Builder metricsRegistry(CredibleMetricsRegistry metricsRegistry) {
+            this.metricsRegistry = metricsRegistry;
+            return this;
+        }
+
         public JsonRpcTransport build() {
             if (baseUrl == null) {
                 throw new IllegalArgumentException("baseUrl is required");
@@ -498,23 +528,23 @@ public class JsonRpcTransport implements ISidecarTransport {
                 .connectTimeout(connectTimeout)
                 .readTimeout(readTimeout)
                 .writeTimeout(writeTimeout);
-            
+
             if (authenticator != null) {
                 clientBuilder.authenticator(authenticator);
             }
 
             if (openTelemetry == null) {
-                return new JsonRpcTransport(baseUrl, clientBuilder.build(), OpenTelemetry.noop(), tracer);
+                return new JsonRpcTransport(baseUrl, clientBuilder.build(), OpenTelemetry.noop(), tracer, metricsRegistry);
             }
-            
+
             // Return instrumented client
             OkHttpTelemetry okHttpTelemetry = OkHttpTelemetry.builder(openTelemetry)
                 .setCapturedRequestHeaders(List.of("content-type", "user-agent"))
                 .setCapturedResponseHeaders(List.of("content-type"))
                 .build();
-            
+
             var callFactory = okHttpTelemetry.newCallFactory(clientBuilder.build());
-            return new JsonRpcTransport(baseUrl, callFactory, openTelemetry, tracer);
+            return new JsonRpcTransport(baseUrl, callFactory, openTelemetry, tracer, metricsRegistry);
         }
     }
     
