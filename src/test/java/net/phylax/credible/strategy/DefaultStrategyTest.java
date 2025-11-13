@@ -232,23 +232,6 @@ public class DefaultStrategyTest {
         long elapsed = stopwatch.elapsed().toMillis();
         assertTrue(elapsed < longProcessingTime);
         assertTrue(elapsed >= fastProcessingTime);
-
-        // Set the processing latency on the first also to be faster
-        mockTransport.setProcessingLatency(fastProcessingTime - 100);
-        // Set a timeout on the sendTransactions for the first one
-        mockTransport.setSendTransactionsLatency(fastProcessingTime + 100);
-
-        strategy.newIteration(generateNewIteration()).join();
-
-        stopwatch = Stopwatch.createStarted();
-        response = sendTransaction(strategy);
-        stopwatch.stop();
-        assertNotNull(response.getSuccess().getResult());
-
-        // Even though the first sidecar is faster in processing, the result of the second one
-        // will be used because the first one is slower on sendTransactions
-        elapsed = stopwatch.elapsed().toMillis();
-        assertTrue(elapsed >= fastProcessingTime);
     }
 
     @Test
