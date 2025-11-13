@@ -254,10 +254,8 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
 
             Context context = Context.current();
 
-            // Calls sendTransactions and chain getTransactions per sidecar
-            // In this way we track the send->get request chain per transport without blocking
-            List<CompletableFuture<GetTransactionResponse>> futures = activeTransports.stream()
-            .map(transport -> {
+            // Call sendTransactions for all transports in a fire-and-forget manner
+            activeTransports.forEach(transport -> {
                 metricsRegistry.getSidecarRpcCounter().labels(CredibleLayerMethods.SEND_TRANSACTIONS).inc();
 
                 var sendTxSpan = tracer.spanBuilder(CredibleLayerMethods.SEND_TRANSACTIONS).startSpan();
@@ -289,37 +287,39 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                 } else {
                     sendTxFutures.put(txExecutionIds.get(0), new CopyOnWriteArrayList<>(Collections.singletonList(sendFuture)));
                 }
+            });
 
-                return sendFuture.thenCompose(sendResult -> {
-                        if (!isActive.get()) {
-                            LOG.debug("Transports aren't active!");
-                            return CompletableFuture.completedFuture(null);
-                        }
+            // Dispatch the getTransaction call per transport and store the futures
+            List<CompletableFuture<GetTransactionResponse>> futures = activeTransports.stream()
+                .map(transport -> {
+                    if (!isActive.get()) {
+                        LOG.debug("Transports aren't active!");
+                        return CompletableFuture.<GetTransactionResponse>completedFuture(null);
+                    }
 
-                        var timing = metricsRegistry.getPollingTimer().labels().startTimer();
-                        metricsRegistry.getSidecarRpcCounter().labels(CredibleLayerMethods.GET_TRANSACTION).inc();
+                    var timing = metricsRegistry.getPollingTimer().labels().startTimer();
+                    metricsRegistry.getSidecarRpcCounter().labels(CredibleLayerMethods.GET_TRANSACTION).inc();
 
-                        var getTxSpan = tracer.spanBuilder(CredibleLayerMethods.GET_TRANSACTION).startSpan();
-                        return transport.getTransaction(GetTransactionRequest.fromTxExecutionId(txExecutionIds.get(0)))
-                            .whenComplete((response, throwable) -> {
-                                try(Scope getScope = context.makeCurrent()) {
-                                    if (throwable != null) {
-                                        LOG.debug("GetTransaction error: {} - {}",
-                                            throwable.getMessage(),
-                                            throwable.getCause() != null ? throwable.getCause().getMessage() : "");
-                                        activeTransports.remove(transport);
-                                        getTxSpan.setAttribute("failed", true);
-                                        span.end();
-                                    }
-                                    timing.stopTimer();
-                                } finally {
-                                    getTxSpan.end();
+                    var getTxSpan = tracer.spanBuilder(CredibleLayerMethods.GET_TRANSACTION).startSpan();
+                    return transport.getTransaction(GetTransactionRequest.fromTxExecutionId(txExecutionIds.get(0)))
+                        .whenComplete((response, throwable) -> {
+                            try(Scope getScope = context.makeCurrent()) {
+                                if (throwable != null) {
+                                    LOG.debug("GetTransaction error: {} - {}",
+                                        throwable.getMessage(),
+                                        throwable.getCause() != null ? throwable.getCause().getMessage() : "");
+                                    activeTransports.remove(transport);
+                                    getTxSpan.setAttribute("failed", true);
                                     span.end();
                                 }
-                            });
-                    });
-            })
-            .collect(Collectors.toList());
+                                timing.stopTimer();
+                            } finally {
+                                getTxSpan.end();
+                                span.end();
+                            }
+                        });
+                })
+                .collect(Collectors.toList());
             
             // NOTE: making the assumption that it's only 1 transaction per request
             // which is implied with the TransactionSelectionPlugin
