@@ -348,6 +348,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
                     .readTimeout(Duration.ofMillis(config.getReadTimeout()))
                     .writeTimeout(Duration.ofMillis(config.getWriteTimeout()))
                     .openTelemetry(openTelemetry)
+                    .metricsRegistry(metricsRegistry)
                     .baseUrl(endpoint)
                     .build())
             .collect(Collectors.toList());
@@ -382,6 +383,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
                 return new GrpcTransport.Builder()
                     .host(host)
                     .port(port)
+                    .metricsRegistry(metricsRegistry)
                     .deadlineMillis(config.getReadTimeout())
                     .build();
             })
