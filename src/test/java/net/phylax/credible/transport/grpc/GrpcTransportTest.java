@@ -129,7 +129,7 @@ public class GrpcTransportTest {
         var metrics = new CredibleMetricsRegistry(new SimpleMockMetricsSystem());
         
         // Create the transport with the in-process channel
-        transport = new GrpcTransport(channel, 5000, OpenTelemetry.noop(), metrics);
+        transport = new GrpcTransport(channel, channel, 5000, OpenTelemetry.noop(), metrics);
     }
 
     @AfterEach
