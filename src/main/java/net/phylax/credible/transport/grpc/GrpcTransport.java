@@ -360,6 +360,7 @@ public class GrpcTransport implements ISidecarTransport {
         public GrpcTransport build() {
             ManagedChannelBuilder<?> channelBuilder = ManagedChannelBuilder
                 .forAddress(host, port)
+                .usePlaintext()
                 .keepAliveTime(30, TimeUnit.SECONDS)
                 .keepAliveTimeout(10, TimeUnit.SECONDS)
                 .keepAliveWithoutCalls(true)
