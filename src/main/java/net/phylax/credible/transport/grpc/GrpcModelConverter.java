@@ -18,22 +18,6 @@ public class GrpcModelConverter {
     // ==================== REQUEST CONVERSIONS (POJO → Protobuf) ====================
 
     /**
-     * Convert SendBlockEnvRequest POJO to BlockEnvEnvelope protobuf
-     */
-    public static Sidecar.BlockEnvEnvelope toProtoBlockEnvEnvelope(SidecarApiModels.SendBlockEnvRequest request) {
-        Sidecar.BlockEnvEnvelope.Builder builder = Sidecar.BlockEnvEnvelope.newBuilder()
-            .setBlockEnv(toProtoBlockEnv(request.getBlockEnv()))
-            .setNTransactions(request.getNTransactions())
-            .setSelectedIterationId(request.getSelectedIterationId());
-
-        if (request.getLastTxHash() != null && !request.getLastTxHash().isEmpty()) {
-            builder.setLastTxHash(request.getLastTxHash());
-        }
-
-        return builder.build();
-    }
-
-    /**
      * Convert BlockEnv POJO to BlockEnv protobuf
      */
     private static Sidecar.BlockEnv toProtoBlockEnv(SidecarApiModels.BlockEnv blockEnv) {

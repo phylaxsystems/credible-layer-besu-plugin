@@ -10,35 +10,21 @@ import net.phylax.credible.types.SidecarApiModels.*;
 
 public class MockTransport implements ISidecarTransport {
     private int processingLatency;
-    private boolean blockEnvSuccess = true;
     private String sendTxStatus = "accepted";
     private String getTxStatus = TransactionStatus.SUCCESS;
     private boolean reorgSuccess = true;
     private int sendTransactionsLatency = 0;
-    private int sendBlockEnvLatency = 0;
+    private int sendEventsLatency = 0;
 
     // Whether to return empty results on getTransactions
     private boolean emptyResults = false;
 
-    private boolean throwOnSendBlockEnv = false;
+    private boolean throwOnSendEvents = false;
     private boolean throwOnSendTx = false;
     private boolean throwOnGetTx = false;
-    
+
     public MockTransport(int processingLatency) {
         this.processingLatency = processingLatency;
-    }
-
-    @Override
-    public CompletableFuture<SendBlockEnvResponse> sendBlockEnv(SendBlockEnvRequest blockEnv) {
-        Executor delayedExecutor = CompletableFuture.delayedExecutor(
-            sendBlockEnvLatency, TimeUnit.MILLISECONDS);
-
-        return CompletableFuture.supplyAsync(() -> {
-            if (throwOnSendBlockEnv) {
-                throw new RuntimeException("SendBlockEnv failed");
-            }
-            return new SendBlockEnvResponse("accepted", 1L, "BlockEnv successfully accepted");
-        }, delayedExecutor);
     }
 
     @Override
@@ -108,17 +94,23 @@ public class MockTransport implements ISidecarTransport {
 
     @Override
     public CompletableFuture<SendEventsResponse> sendEvents(SendEventsRequest events) {
-        return CompletableFuture.completedFuture(
-            new SendEventsResponse(
+        Executor delayedExecutor = CompletableFuture.delayedExecutor(
+            processingLatency, TimeUnit.MILLISECONDS);
+
+        return CompletableFuture.supplyAsync(() -> {
+            if (throwOnSendEvents) {
+                throw new RuntimeException("GetTransactions failed");
+            }
+            return new SendEventsResponse(
             "accepted",
             "Request successfully processed",
-            (long)events.getEvents().size()
-        ));
+            (long)events.getEvents().size());
+        }, delayedExecutor);
     }
 
-    public void setBlockEnvSuccess(boolean blockEnvSuccess) {
-        this.blockEnvSuccess = blockEnvSuccess;
-    }
+    // public void setBlockEnvSuccess(boolean blockEnvSuccess) {
+    //     this.sendEve = blockEnvSuccess;
+    // }
 
     public void setSendTxStatus(String sendTxStatus) {
         this.sendTxStatus = sendTxStatus;
@@ -136,8 +128,8 @@ public class MockTransport implements ISidecarTransport {
         this.emptyResults = emptyResults;
     }
 
-    public void setThrowOnSendBlockEnv(boolean throwOnSendBlockEnv) {
-        this.throwOnSendBlockEnv = throwOnSendBlockEnv;
+    public void setThrowOnSendEvents(boolean throwOnSendEvents) {
+        this.throwOnSendEvents = throwOnSendEvents;
     }
 
     public void setThrowOnSendTx(boolean throwOnSendTx) {
@@ -156,7 +148,7 @@ public class MockTransport implements ISidecarTransport {
         this.sendTransactionsLatency = sendTransactionsLatency;
     }
 
-    public void setSendBlockEnvLatency(int sendBlockEnvLatency) {
-        this.sendBlockEnvLatency = sendBlockEnvLatency;
+    public void setSendEventsLatency(int sendEventsLatency) {
+        this.sendEventsLatency = sendEventsLatency;
     }
 }

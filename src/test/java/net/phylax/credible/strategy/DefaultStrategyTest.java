@@ -173,37 +173,6 @@ public class DefaultStrategyTest {
     }
 
     @Test
-    void shouldProcessFromFallback() {
-        // Primary sidecars throw on sendBlockEnv
-        var mockTransport = new MockTransport(100);
-        mockTransport.setThrowOnSendBlockEnv(true);
-        var mockTransport2 = new MockTransport(100);
-        mockTransport2.setThrowOnSendBlockEnv(true);
-
-        // Working fallback
-        var mockTransportFallback = new MockTransport(200);
-        var strategy = initStrategy(
-            Arrays.asList(mockTransport, mockTransport2),
-            Arrays.asList(mockTransportFallback),
-            500,
-            false
-        );
-
-        strategy.newIteration(generateNewIteration()).join();
-
-        var response = sendTransaction(strategy);
-        assertNotNull(response.getSuccess().getResult());
-
-        // First sidecar gets back online
-        mockTransport.setThrowOnSendBlockEnv(false);
-        
-        strategy.newIteration(generateNewIteration()).join();
-        response = sendTransaction(strategy);
-        
-        assertNotNull(response.getSuccess().getResult());
-    }
-
-    @Test
     void shouldProcessFromFasterSidecar() {
         int longProcessingTime = 1000;
         int fastProcessingTime = 400;
@@ -306,7 +275,7 @@ public class DefaultStrategyTest {
     void shouldProcessOnSlowBlockEnv() {
         // First transport throws on sendTransactions
         var mockTransport = new MockTransport(200);
-        mockTransport.setSendBlockEnvLatency(1000);
+        mockTransport.setSendEventsLatency(1000);
 
         var strategy = initStrategy(Arrays.asList(mockTransport), null, 800, false);
 
@@ -327,7 +296,7 @@ public class DefaultStrategyTest {
         var mockTransport = new MockTransport(200);
 
         var mockTransport2 = new MockTransport(200);
-        mockTransport.setSendBlockEnvLatency(1000);
+        mockTransport.setSendEventsLatency(1000);
 
         var strategy = initStrategy(Arrays.asList(mockTransport, mockTransport2), null, 800, false);
 

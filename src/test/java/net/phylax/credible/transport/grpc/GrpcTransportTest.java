@@ -35,27 +35,27 @@ public class GrpcTransportTest {
      */
     private static class TestSidecarService extends SidecarTransportGrpc.SidecarTransportImplBase {
         // Store last received requests for verification
-        public Sidecar.BlockEnvEnvelope lastBlockEnvRequest;
+        public Sidecar.SendEvents lastSendEventsRequest;
         public Sidecar.SendTransactionsRequest lastSendTransactionsRequest;
         public Sidecar.GetTransactionsRequest lastGetTransactionsRequest;
         public Sidecar.GetTransactionRequest lastGetTransactionRequest;
         public Sidecar.ReorgRequest lastReorgRequest;
 
         // Configurable responses
-        public boolean blockEnvAccepted = true;
-        public String blockEnvMessage = "Block accepted";
+        public boolean eventsAccepted = true;
+        public String eventsMessage = "Events accepted";
         public int transactionsAcceptedCount = 0;
         public List<Sidecar.TransactionResult> transactionResults = new ArrayList<>();
         public List<String> notFoundTxHashes = new ArrayList<>();
         public boolean reorgAccepted = true;
 
         @Override
-        public void sendBlockEnv(Sidecar.BlockEnvEnvelope request,
-                                StreamObserver<Sidecar.BasicAck> responseObserver) {
-            lastBlockEnvRequest = request;
+        public void sendEvents(Sidecar.SendEvents request,
+                              StreamObserver<Sidecar.BasicAck> responseObserver) {
+            lastSendEventsRequest = request;
             responseObserver.onNext(Sidecar.BasicAck.newBuilder()
-                .setAccepted(blockEnvAccepted)
-                .setMessage(blockEnvMessage)
+                .setAccepted(eventsAccepted)
+                .setMessage(eventsMessage)
                 .build());
             responseObserver.onCompleted();
         }
@@ -140,68 +140,71 @@ public class GrpcTransportTest {
     }
 
     @Test
-    public void testSendBlockEnv() throws Exception {
-        // Create a test block env request
-        SidecarApiModels.BlockEnv blockEnvData = new SidecarApiModels.BlockEnv(
-            12345L,                                      // number
-            "0x1234567890123456789012345678901234567890", // beneficiary
-            1234567890L,                                 // timestamp
-            30000000L,                                   // gasLimit
-            1000000000L,                                 // baseFee
-            "0",                                         // difficulty
-            "0x0000000000000000000000000000000000000000000000000000000000000000", // prevrandao
-            new SidecarApiModels.BlobExcessGasAndPrice(0L, 1L) // blobExcessGasAndPrice
+    public void testSendEventsWithCommitHead() throws Exception {
+        // Create a CommitHead event
+        SidecarApiModels.CommitHead commitHead = new SidecarApiModels.CommitHead(
+            "0xabcdef1234567890",  // lastTxHash
+            10,                     // nTransactions
+            12345L,                 // blockNumber
+            1L                      // selectedIterationId
         );
-        SidecarApiModels.SendBlockEnvRequest request = new SidecarApiModels.SendBlockEnvRequest(
-            blockEnvData,
-            "0xabcdef1234567890",
-            10,
-            200000L
-        );
+
+        SidecarApiModels.CommitHeadReqItem commitHeadItem =
+            new SidecarApiModels.CommitHeadReqItem(commitHead);
+
+        List<SidecarApiModels.SendEventsRequestItem> events = new ArrayList<>();
+        events.add(commitHeadItem);
+
+        SidecarApiModels.SendEventsRequest request = new SidecarApiModels.SendEventsRequest(events);
 
         // Send the request
-        CompletableFuture<SidecarApiModels.SendBlockEnvResponse> future = transport.sendBlockEnv(request);
-        SidecarApiModels.SendBlockEnvResponse response = future.get();
+        CompletableFuture<SidecarApiModels.SendEventsResponse> future = transport.sendEvents(request);
+        SidecarApiModels.SendEventsResponse response = future.get();
 
         // Verify the response
-        assertTrue(response.getSuccess());
         assertEquals("accepted", response.getStatus());
-        assertEquals("Block accepted", response.getMessage());
+        assertEquals("Events accepted", response.getMessage());
 
         // Verify the request was received correctly
-        assertNotNull(testService.lastBlockEnvRequest);
-        assertEquals(12345L, testService.lastBlockEnvRequest.getBlockEnv().getNumber());
-        assertEquals("0x1234567890123456789012345678901234567890",
-                    testService.lastBlockEnvRequest.getBlockEnv().getBeneficiary());
-        assertEquals(10, testService.lastBlockEnvRequest.getNTransactions());
-        assertEquals("0xabcdef1234567890", testService.lastBlockEnvRequest.getLastTxHash());
-        assertTrue(testService.lastBlockEnvRequest.getBlockEnv().hasBlobExcessGasAndPrice());
-        assertEquals(0L, testService.lastBlockEnvRequest.getBlockEnv().getBlobExcessGasAndPrice().getExcessBlobGas());
-        assertEquals("1", testService.lastBlockEnvRequest.getBlockEnv().getBlobExcessGasAndPrice().getBlobGasprice());
+        assertNotNull(testService.lastSendEventsRequest);
+        assertEquals(1, testService.lastSendEventsRequest.getEventsCount());
+
+        Sidecar.SendEvents.Event event = testService.lastSendEventsRequest.getEvents(0);
+        assertTrue(event.hasCommitHead());
+
+        Sidecar.CommitHead receivedCommitHead = event.getCommitHead();
+        assertEquals("0xabcdef1234567890", receivedCommitHead.getLastTxHash());
+        assertEquals(10, receivedCommitHead.getNTransactions());
+        assertEquals(12345L, receivedCommitHead.getBlockNumber());
+        assertEquals(1L, receivedCommitHead.getSelectedIterationId());
     }
 
     @Test
-    public void testSendBlockEnvRejected() throws Exception {
+    public void testSendEventsRejected() throws Exception {
         // Configure service to reject
-        testService.blockEnvAccepted = false;
-        testService.blockEnvMessage = "Block rejected due to invalid data";
+        testService.eventsAccepted = false;
+        testService.eventsMessage = "Events rejected due to invalid data";
 
-        SidecarApiModels.BlockEnv blockEnvData = new SidecarApiModels.BlockEnv(
-            12345L, "0x1234567890123456789012345678901234567890",
-            1234567890L, 30000000L, 1000000000L, "0",
-            "0x0000000000000000000000000000000000000000000000000000000000000000",
-            new SidecarApiModels.BlobExcessGasAndPrice(0L, 1L)
-        );
-        SidecarApiModels.SendBlockEnvRequest request = new SidecarApiModels.SendBlockEnvRequest(
-            blockEnvData, "0x1234567890abcdef1234567890abcdef", 0, 1L
+        SidecarApiModels.CommitHead commitHead = new SidecarApiModels.CommitHead(
+            "0x1234567890abcdef1234567890abcdef",
+            0,
+            12345L,
+            1L
         );
 
-        CompletableFuture<SidecarApiModels.SendBlockEnvResponse> future = transport.sendBlockEnv(request);
-        SidecarApiModels.SendBlockEnvResponse response = future.get();
+        SidecarApiModels.CommitHeadReqItem commitHeadItem =
+            new SidecarApiModels.CommitHeadReqItem(commitHead);
 
-        assertFalse(response.getSuccess());
+        List<SidecarApiModels.SendEventsRequestItem> events = new ArrayList<>();
+        events.add(commitHeadItem);
+
+        SidecarApiModels.SendEventsRequest request = new SidecarApiModels.SendEventsRequest(events);
+
+        CompletableFuture<SidecarApiModels.SendEventsResponse> future = transport.sendEvents(request);
+        SidecarApiModels.SendEventsResponse response = future.get();
+
         assertEquals("failed", response.getStatus());
-        assertEquals("Block rejected due to invalid data", response.getMessage());
+        assertEquals("Events rejected due to invalid data", response.getMessage());
     }
 
     @Test
@@ -389,35 +392,33 @@ public class GrpcTransportTest {
 
     @Test
     public void testModelConversionsAreReversible() throws Exception {
-        // Test that converting POJO → Proto → POJO maintains data integrity
-        SidecarApiModels.BlockEnv blockEnvData = new SidecarApiModels.BlockEnv(
-            99999L, "0xabcd", 9876543210L, 15000000L, 2000000000L, "12345",
-            "0x1111111111111111111111111111111111111111111111111111111111111111",
-            new SidecarApiModels.BlobExcessGasAndPrice(100L, 50L)
-        );
-        SidecarApiModels.SendBlockEnvRequest originalRequest = new SidecarApiModels.SendBlockEnvRequest(
-            blockEnvData, "0xlasttx", 5, 1L
+        // Test that converting POJO → Proto → POJO maintains data integrity for SendEvents
+        SidecarApiModels.CommitHead commitHead = new SidecarApiModels.CommitHead(
+            "0xlasttx", 5, 99999L, 1L
         );
 
-        // Convert to proto
-        Sidecar.BlockEnvEnvelope protoRequest =
-            GrpcModelConverter.toProtoBlockEnvEnvelope(originalRequest);
+        SidecarApiModels.CommitHeadReqItem commitHeadItem =
+            new SidecarApiModels.CommitHeadReqItem(commitHead);
 
-        // Verify proto has correct values
-        assertEquals(99999L, protoRequest.getBlockEnv().getNumber());
-        assertEquals("0xabcd", protoRequest.getBlockEnv().getBeneficiary());
-        assertEquals(5, protoRequest.getNTransactions());
-        assertEquals("0xlasttx", protoRequest.getLastTxHash());
+        List<SidecarApiModels.SendEventsRequestItem> events = new ArrayList<>();
+        events.add(commitHeadItem);
+
+        SidecarApiModels.SendEventsRequest originalRequest = new SidecarApiModels.SendEventsRequest(events);
 
         // Send through transport and verify round-trip works
-        testService.blockEnvAccepted = true;
-        CompletableFuture<SidecarApiModels.SendBlockEnvResponse> future =
-            transport.sendBlockEnv(originalRequest);
-        SidecarApiModels.SendBlockEnvResponse response = future.get();
+        testService.eventsAccepted = true;
+        CompletableFuture<SidecarApiModels.SendEventsResponse> future =
+            transport.sendEvents(originalRequest);
+        SidecarApiModels.SendEventsResponse response = future.get();
 
-        assertTrue(response.getSuccess());
-        assertNotNull(testService.lastBlockEnvRequest);
-        assertEquals(originalRequest.getBlockEnv().getNumber(),
-                    testService.lastBlockEnvRequest.getBlockEnv().getNumber());
+        assertEquals("accepted", response.getStatus());
+        assertNotNull(testService.lastSendEventsRequest);
+        assertEquals(1, testService.lastSendEventsRequest.getEventsCount());
+
+        Sidecar.SendEvents.Event receivedEvent = testService.lastSendEventsRequest.getEvents(0);
+        assertTrue(receivedEvent.hasCommitHead());
+        assertEquals(commitHead.getLastTxHash(), receivedEvent.getCommitHead().getLastTxHash());
+        assertEquals(commitHead.getNTransactions().intValue(), receivedEvent.getCommitHead().getNTransactions());
+        assertEquals(commitHead.getBlockNumber().longValue(), receivedEvent.getCommitHead().getBlockNumber());
     }
 }

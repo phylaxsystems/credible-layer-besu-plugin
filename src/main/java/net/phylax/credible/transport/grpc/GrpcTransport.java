@@ -123,45 +123,6 @@ public class GrpcTransport implements ISidecarTransport {
     }
 
     @Override
-    public CompletableFuture<SidecarApiModels.SendBlockEnvResponse> sendBlockEnv(SidecarApiModels.SendBlockEnvRequest blockEnv) {
-        CompletableFuture<SidecarApiModels.SendBlockEnvResponse> future = new CompletableFuture<>();
-
-        try {
-            // Convert POJO to Protobuf
-            Sidecar.BlockEnvEnvelope request = GrpcModelConverter.toProtoBlockEnvEnvelope(blockEnv);
-
-            LOG.trace("Sending BlockEnv via gRPC: number={}", blockEnv.getBlockEnv().getNumber());
-
-            // Make async gRPC call with deadline using round-robin channel
-            getStub()
-                .withDeadlineAfter(deadlineMillis, TimeUnit.MILLISECONDS)
-                .sendBlockEnv(request, new StreamObserver<Sidecar.BasicAck>() {
-                    @Override
-                    public void onNext(Sidecar.BasicAck response) {
-                        LOG.trace("Received BlockEnv response: accepted={}", response.getAccepted());
-                        future.complete(GrpcModelConverter.fromProtoBasicAckToBlockEnvResponse(response));
-                    }
-
-                    @Override
-                    public void onError(Throwable t) {
-                        LOG.error("SendBlockEnv gRPC error: {}", getErrorMessage(t), t);
-                        future.completeExceptionally(t);
-                    }
-
-                    @Override
-                    public void onCompleted() {
-                        LOG.trace("SendBlockEnv gRPC call completed");
-                    }
-                });
-        } catch (Exception e) {
-            LOG.error("Error preparing SendBlockEnv request: {}", e.getMessage(), e);
-            future.completeExceptionally(e);
-        }
-
-        return future;
-    }
-
-    @Override
     public CompletableFuture<SidecarApiModels.SendTransactionsResponse> sendTransactions(SidecarApiModels.SendTransactionsRequest transactions) {
         CompletableFuture<SidecarApiModels.SendTransactionsResponse> future = new CompletableFuture<>();
 

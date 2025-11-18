@@ -2,18 +2,6 @@ syntax = "proto3";
 
 package sidecar.transport.v1;
 
-// Envelope for sending block environment to the sidecar.
-// The block environment is transmitted using native protobuf typing to
-// avoid JSON-in-protobuf payloads.
-message BlockEnvEnvelope {
-  BlockEnv block_env = 1;
-  // Optional last tx hash and transaction count to mirror HTTP schema.
-  // When n_transactions > 0, last_tx_hash must be provided and non-empty.
-  string last_tx_hash = 2; // empty string means absent
-  uint64 n_transactions = 3;
-  optional uint64 selected_iteration_id = 4;
-}
-
 message BlockEnv {
   uint64 number = 1;                     // block number
   string beneficiary = 2;                // 20-byte address as hex string
@@ -72,6 +60,7 @@ message TransactionEnv {
 message Transaction {
   TxExecutionId tx_execution_id = 1; // TX execution ID
   TransactionEnv tx_env = 2;         // transaction env
+  optional string prev_tx_hash = 3; 
 }
 
 message SendTransactionsRequest {
@@ -119,12 +108,13 @@ message TxExecutionId {
   uint64 block_number = 1; // Block number
   uint64 iteration_id = 2; // Iteration Id
   string tx_hash = 3;      // 0x-prefixed hash string
+  uint64 index = 4;
 }
 
 message CommitHead {
   string last_tx_hash = 1; // empty string means absent
   uint64 n_transactions = 2; // n transactions included in the iteration
-  uint64 block_number = 3; // Block number of the iteration we're commiting
+  uint64 block_number = 3; // Block number of the iteration we're committing
   optional uint64 selected_iteration_id = 4; // selected iteration id
 }
 
@@ -148,8 +138,6 @@ message SendEvents {
 }
 
 service SidecarTransport {
-  // Deprecated: prefer CommitHead/NewIteration/SendEvents
-  rpc SendBlockEnv(BlockEnvEnvelope) returns (BasicAck);
   rpc SendEvents(sidecar.transport.v1.SendEvents) returns (BasicAck);
   rpc SendTransactions(SendTransactionsRequest) returns (SendTransactionsResponse);
   rpc Reorg(ReorgRequest) returns (BasicAck);
