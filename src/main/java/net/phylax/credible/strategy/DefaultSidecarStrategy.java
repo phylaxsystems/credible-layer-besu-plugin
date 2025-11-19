@@ -96,7 +96,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         this.metricsRegistry = metricsRegistry;
         this.tracer = tracer;
 
-        this.pendingTxRequests = new ConcurrentHashMap<TxExecutionId, List<CompletableFuture<GetTransactionResponse>>>(300);
+        this.pendingTxRequests = new ConcurrentHashMap<TxExecutionId, List<CompletableFuture<GetTransactionResponse>>>();
         this.sendTxFutures = new ConcurrentHashMap<TxExecutionId, List<CompletableFuture<SendTransactionsResponse>>>(300);
     }
     
