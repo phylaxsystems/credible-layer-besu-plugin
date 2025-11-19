@@ -41,6 +41,10 @@ import net.phylax.credible.utils.CredibleLogger;
 import net.phylax.credible.utils.Result;
 
 public class DefaultSidecarStrategy implements ISidecarStrategy {
+    // Preallocations for the internal map
+    // In order to avoid frequent relocations of the internal map, we assume it to have a fixed size
+    // Current value is choosen based on maximum transactions in a block for Linea
+    private static final int PENDING_TX_ALLOC_SIZE = 300;
     private static final Logger LOG = CredibleLogger.getLogger(DefaultSidecarStrategy.class);
 
     private List<ISidecarTransport> primaryTransports;
@@ -97,7 +101,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         this.tracer = tracer;
 
         this.pendingTxRequests = new ConcurrentHashMap<TxExecutionId, List<CompletableFuture<GetTransactionResponse>>>();
-        this.sendTxFutures = new ConcurrentHashMap<TxExecutionId, List<CompletableFuture<SendTransactionsResponse>>>(300);
+        this.sendTxFutures = new ConcurrentHashMap<TxExecutionId, List<CompletableFuture<SendTransactionsResponse>>>(PENDING_TX_ALLOC_SIZE);
     }
     
     @Override
