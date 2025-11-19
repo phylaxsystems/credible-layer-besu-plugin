@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.hyperledger.besu.datatypes.Address;
 import org.hyperledger.besu.datatypes.CodeDelegation;
 import org.hyperledger.besu.datatypes.Transaction;
 import org.hyperledger.besu.datatypes.TransactionType;
@@ -12,6 +13,11 @@ import org.hyperledger.besu.datatypes.VersionedHash;
 import net.phylax.credible.types.SidecarApiModels.TxEnv;
 
 public class TransactionConverter {
+    private static final ThreadLocal<StringBuilder> STRING_BUILDER = 
+        ThreadLocal.withInitial(() -> new StringBuilder(128));
+
+    private static final List<SidecarApiModels.AccessListEntry> EMPTY_LIST = new ArrayList<>();
+
     /**
      * Convert Besu Transaction to TxEnv
      */
@@ -21,7 +27,7 @@ public class TransactionConverter {
         txEnv.setTxType(convertType(transaction.getType()));
 
         // Caller (sender address)
-        txEnv.setCaller(transaction.getSender().toHexString());
+        txEnv.setCaller(addressToString(transaction.getSender()));
         
         // Gas limit
         txEnv.setGasLimit(transaction.getGasLimit());
@@ -57,7 +63,7 @@ public class TransactionConverter {
         // Transaction destination
         if (transaction.getTo().isPresent()) {
             // Contract call
-            txEnv.setKind(transaction.getTo().get().toHexString());
+            txEnv.setKind(addressToString(transaction.getTo().get()));
         } else {
             // Contract creation - kind should be empty/0x (taken from spec)
             txEnv.setKind("0x");
@@ -85,10 +91,17 @@ public class TransactionConverter {
             List<SidecarApiModels.AccessListEntry> accessList = convertAccessList(transaction.getAccessList().get());
             txEnv.setAccessList(accessList);
         } else {
-            txEnv.setAccessList(new ArrayList<>()); // Empty access list
+            txEnv.setAccessList(EMPTY_LIST); // Empty access list
         }
         
         return txEnv;
+    }
+
+    private static String addressToString(Address address) {
+        StringBuilder sb = STRING_BUILDER.get();
+        sb.setLength(0);
+        sb.append(address.toHexString());
+        return sb.toString();
     }
 
     private static boolean supportsEip1559(TransactionType type) {

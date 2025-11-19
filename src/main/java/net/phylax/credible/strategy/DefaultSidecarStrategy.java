@@ -41,11 +41,15 @@ import net.phylax.credible.utils.CredibleLogger;
 import net.phylax.credible.utils.Result;
 
 public class DefaultSidecarStrategy implements ISidecarStrategy {
+    // Preallocations for the internal map
+    // In order to avoid frequent relocations of the internal map, we assume it to have a fixed size
+    // Current value is choosen based on maximum transactions in a block for Linea
+    private static final int PENDING_TX_ALLOC_SIZE = 300;
     private static final Logger LOG = CredibleLogger.getLogger(DefaultSidecarStrategy.class);
 
-    private List<ISidecarTransport> primaryTransports = new ArrayList<>();
-    private List<ISidecarTransport> activeTransports = new CopyOnWriteArrayList<>();
-    private List<ISidecarTransport> fallbackTransports = new CopyOnWriteArrayList<>();
+    private List<ISidecarTransport> primaryTransports;
+    private List<ISidecarTransport> activeTransports;
+    private List<ISidecarTransport> fallbackTransports;
     // Future that holds the last block env sent to the sidecars
     private Optional<CommitHead> maybeNewHead = Optional.empty();
 
@@ -55,12 +59,10 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
     private Tracer tracer;
 
     // Maps a transaction hash to a list of futures for each transport
-    private final Map<TxExecutionId, List<CompletableFuture<GetTransactionResponse>>> pendingTxRequests = 
-        new ConcurrentHashMap<>();
+    private final Map<TxExecutionId, List<CompletableFuture<GetTransactionResponse>>> pendingTxRequests;
 
     // Stores all sendTransactions futures per TxExecutionId 
-    private final Map<TxExecutionId, List<CompletableFuture<SendTransactionsResponse>>> sendTxFutures = 
-        new ConcurrentHashMap<>();
+    private final Map<TxExecutionId, List<CompletableFuture<SendTransactionsResponse>>> sendTxFutures;
 
     private int processingTimeout;
     private final CredibleMetricsRegistry metricsRegistry;
@@ -97,6 +99,9 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         this.processingTimeout = processingTimeout;
         this.metricsRegistry = metricsRegistry;
         this.tracer = tracer;
+
+        this.pendingTxRequests = new ConcurrentHashMap<TxExecutionId, List<CompletableFuture<GetTransactionResponse>>>();
+        this.sendTxFutures = new ConcurrentHashMap<TxExecutionId, List<CompletableFuture<SendTransactionsResponse>>>(PENDING_TX_ALLOC_SIZE);
     }
     
     @Override
@@ -331,31 +336,21 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
     
     @Override
     public Result<GetTransactionResponse, CredibleRejectionReason> getTransactionResult(GetTransactionRequest transactionRequest) {
-        var span = tracer.spanBuilder(CredibleLayerMethods.GET_TRANSACTIONS).startSpan();
-        span.setAttribute("active", isActive.get());
-        try(Scope scope = span.makeCurrent()) {
-            // Short circuit if the strategy isn't active
-            if (!isActive.get()) {
-                return Result.failure(CredibleRejectionReason.NO_ACTIVE_TRANSPORT);
-            }
-
-            TxExecutionId txExecId = transactionRequest.toTxExecutionId();
-            List<CompletableFuture<GetTransactionResponse>> futures = pendingTxRequests.remove(txExecId);
-            if (futures == null || futures.isEmpty()) {
-                LOG.debug("No pending request found for transaction {}", txExecId);
-                span.setAttribute("failed", true);
-                return Result.failure(CredibleRejectionReason.NO_RESULT);
-            }
-            var txResponseResult = handleTransactionFuture(futures);
-            return txResponseResult;
-        } finally {
-            span.end();
+        if (!isActive.get()) {
+            return Result.failure(CredibleRejectionReason.NO_ACTIVE_TRANSPORT);
         }
+
+        TxExecutionId txExecId = transactionRequest.toTxExecutionId();
+        List<CompletableFuture<GetTransactionResponse>> futures = pendingTxRequests.remove(txExecId);
+        if (futures == null || futures.isEmpty()) {
+            LOG.debug("No pending request found for transaction {}", txExecId);
+            return Result.failure(CredibleRejectionReason.NO_RESULT);
+        }
+        var txResponseResult = handleTransactionFuture(futures);
+        return txResponseResult;
     }
 
     private Result<GetTransactionResponse, CredibleRejectionReason> handleTransactionFuture(List<CompletableFuture<GetTransactionResponse>> futures) {
-        var span = tracer.spanBuilder("handleTransactionFuture").startSpan();
-
         CompletableFuture<Result<GetTransactionResponse, CredibleRejectionReason>> anySuccess = anySuccessOf(futures)
             .orTimeout(processingTimeout, TimeUnit.MILLISECONDS)
             .thenApply(res -> Result.<GetTransactionResponse, CredibleRejectionReason>success(res))
@@ -371,10 +366,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         } catch (InterruptedException | ExecutionException e) {
             LOG.debug("Exception waiting for sidecar responses: {}", e.getMessage());
             metricsRegistry.getErrorCounter().labels().inc();
-            span.setAttribute("failed", true);
             return Result.failure(CredibleRejectionReason.ERROR);
-        } finally {
-            span.end();
         }
     }
 
@@ -392,9 +384,6 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
 
         CompletableFuture<GetTransactionResponse> result = new CompletableFuture<GetTransactionResponse>();
         AtomicInteger failureCount = new AtomicInteger(0);
-        AtomicReference<List<Throwable>> exceptions = new AtomicReference<>(
-            new CopyOnWriteArrayList<>()
-        );
 
         for (CompletableFuture<GetTransactionResponse> future : futures) {
             future.whenComplete((value, ex) -> {
@@ -402,15 +391,12 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                     result.complete(value);
                 } else {
                     LOG.debug("Transport getTransactions failed: {}", ex.getMessage());
-                    exceptions.get().add(ex);
                     
                     // If all futures have failed, complete exceptionally
                     if (failureCount.incrementAndGet() == futures.size()) {
-                        LOG.debug("All transports completed exceptionally: {}", exceptions.get());
+                        LOG.debug("All transports completed exceptionally");
                         CompletionException allFailed = new CompletionException(
-                            "All transports failed",
-                            // TODO: aggregate exceptions
-                            exceptions.get().get(0)
+                            "All transports failed", ex
                         );
                         result.completeExceptionally(allFailed);
                     }

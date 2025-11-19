@@ -11,6 +11,9 @@ import sidecar.transport.v1.Sidecar;
  * Converter between Java POJOs (SidecarApiModels) and Protobuf messages
  */
 public class GrpcModelConverter {
+    private static final ThreadLocal<Sidecar.TransactionEnv.Builder> BUILDER_POOL = 
+        ThreadLocal.withInitial(() -> Sidecar.TransactionEnv.newBuilder());
+
 
     // ==================== REQUEST CONVERSIONS (POJO → Protobuf) ====================
 
@@ -116,7 +119,7 @@ public class GrpcModelConverter {
             return Sidecar.TransactionEnv.getDefaultInstance();
         }
 
-        Sidecar.TransactionEnv.Builder builder = Sidecar.TransactionEnv.newBuilder()
+        Sidecar.TransactionEnv.Builder builder = BUILDER_POOL.get()
             .setTxType(Byte.toUnsignedInt(pojo.getTxType()))
             .setCaller(pojo.getCaller())
             .setGasLimit(pojo.getGasLimit())
