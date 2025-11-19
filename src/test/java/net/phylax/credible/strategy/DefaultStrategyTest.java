@@ -47,8 +47,8 @@ public class DefaultStrategyTest {
     SendTransactionsRequest generateTransactionRequest(String hash) {
         // generate transaction request
         var transactions = new ArrayList<TransactionExecutionPayload>();
-        TxExecutionId txExecutionId = new TxExecutionId(0L, 1L, hash);
-        transactions.add(new TransactionExecutionPayload(txExecutionId, new TxEnv()));
+        TxExecutionId txExecutionId = new TxExecutionId(0L, 1L, hash, 0L);
+        transactions.add(new TransactionExecutionPayload(txExecutionId, new TxEnv(), "0x1234567890"));
         return new SendTransactionsRequest(transactions);
     }
 

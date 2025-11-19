@@ -92,6 +92,7 @@ public class GrpcModelConverter {
             .setBlockNumber(pojo.getBlockNumber())
             .setIterationId(pojo.getIterationId())
             .setTxHash(pojo.getTxHash())
+            .setIndex(pojo.getIndex())
             .build();
     }
 
@@ -374,7 +375,8 @@ public class GrpcModelConverter {
         return new SidecarApiModels.TxExecutionId(
             proto.getBlockNumber(),
             proto.getIterationId(),
-            proto.getTxHash()
+            proto.getTxHash(),
+            proto.getIndex()
         );
     }
 }

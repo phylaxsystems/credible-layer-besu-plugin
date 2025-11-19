@@ -240,10 +240,10 @@ public class GrpcTransportTest {
         txEnv.setAuthorizationList(List.of(authorizationListEntry));
 
         SidecarApiModels.TxExecutionId txExecutionId = new SidecarApiModels.TxExecutionId(
-            12345L, 1L, "0xtxhash1"
+            12345L, 1L, "0xtxhash1", 0L
         );
         transactions.add(new SidecarApiModels.TransactionExecutionPayload(
-            txExecutionId, txEnv
+            txExecutionId, txEnv, "0x123456789"
         ));
 
         SidecarApiModels.SendTransactionsRequest request =
@@ -308,8 +308,8 @@ public class GrpcTransportTest {
         // Create request with TxExecutionId
         SidecarApiModels.GetTransactionsRequest txReq = new SidecarApiModels.GetTransactionsRequest();
         txReq.setTxExecutionIds(List.of(
-            new SidecarApiModels.TxExecutionId(1000L, 1L, "0xtxhash1"),
-            new SidecarApiModels.TxExecutionId(1000L, 1L, "0xtxhash2")
+            new SidecarApiModels.TxExecutionId(1000L, 1L, "0xtxhash1", 0L),
+            new SidecarApiModels.TxExecutionId(1000L, 1L, "0xtxhash2", 1L)
         ));
 
         // Send the request

@@ -1,6 +1,8 @@
 package net.phylax.credible.txselection;
 
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 
 import org.hyperledger.besu.plugin.data.TransactionProcessingResult;
 import org.hyperledger.besu.plugin.data.TransactionSelectionResult;
@@ -33,8 +35,8 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
   private final Config config;
   private final CredibleMetricsRegistry metricsRegistry;
   private final Long iterationId;
-  private String transactionHash = null;
-  private SendTransactionsRequest sendRequest = new SendTransactionsRequest();
+  private String transactionHash;
+  private List<TxExecutionId> transactions = new ArrayList<>();
 
   public CredibleTransactionSelector(
     final Config config,
@@ -66,8 +68,9 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
         TxEnv txEnv = TransactionConverter.convertToTxEnv(tx);
         LOG.debug("Sending transaction for processing, hash: {}, iteration: {}", transactionHash, iterationId);
 
-        TxExecutionId txExecutionId = new TxExecutionId(blockNumber, iterationId, transactionHash);
-        sendRequest.setTransactions(Collections.singletonList(new TransactionExecutionPayload(txExecutionId, txEnv)));
+        TxExecutionId txExecutionId = new TxExecutionId(blockNumber, iterationId, transactionHash, transactions.size());
+        SendTransactionsRequest sendRequest = new SendTransactionsRequest();
+        sendRequest.setTransactions(Collections.singletonList(new TransactionExecutionPayload(txExecutionId, txEnv, getLastTxHash())));
 
         config.strategy.dispatchTransactions(sendRequest);
 
@@ -141,6 +144,10 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
     String reason = transactionSelectionResult.toString();
     long blockNumber = evaluationContext.getPendingBlockHeader().getNumber();
 
+    if (txHash.equals(getLastTxHash())) {
+      transactions.remove(transactions.size() - 1);
+    }
+
     try {
         LOG.debug("Sending reorg request for transaction {} due to: {}", txHash, reason);
 
@@ -160,5 +167,16 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
 
   private double getDurationSeconds(long startTimeNanos) {
     return (System.nanoTime() - startTimeNanos) / 1_000_000_000.0;
+  }
+
+  /**
+   * Returns the hash of the last transaction, i.e. the previously processed one. 
+   * If this is the first invocation (no transactions were processed yet), return null.
+   */
+  private String getLastTxHash() {
+    if (transactions.isEmpty())
+      return null;
+
+    return transactions.get(transactions.size() - 1).getTxHash();
   }
 }

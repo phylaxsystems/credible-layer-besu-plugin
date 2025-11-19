@@ -544,7 +544,7 @@ public class SidecarApiModels {
         }
 
         public TxExecutionId toTxExecutionId() {
-            return new TxExecutionId(blockNumber, iterationId, txHash);
+            return new TxExecutionId(blockNumber, iterationId, txHash, 0);
         }
     }
 
@@ -803,17 +803,22 @@ public class SidecarApiModels {
         @JsonProperty("tx_hash")
         private String txHash;
 
+        @JsonProperty
+        private long index;
+
         public TxExecutionId() {}
 
         @JsonCreator
         public TxExecutionId(
             @JsonProperty("block_number") Long blockNumber,
             @JsonProperty("iteration_id") Long iterationId,
-            @JsonProperty("tx_hash") String txHash
+            @JsonProperty("tx_hash") String txHash,
+            @JsonProperty("index") long index
         ) {
             this.blockNumber = blockNumber;
             this.iterationId = iterationId;
             this.txHash = txHash;
+            this.index = index;
         }
 
         public Long getBlockNumber() { return blockNumber; }
@@ -824,6 +829,9 @@ public class SidecarApiModels {
 
         public String getTxHash() { return txHash; }
         public void setTxHash(String txHash) { this.txHash = txHash; }
+
+        public long getIndex() { return index; }
+        public void setIndex(long index) { this.index = index; }
 
         @Override
         public String toString() {
@@ -893,7 +901,7 @@ public class SidecarApiModels {
         }
 
         public TxExecutionId toTxExecutionId() {
-            return new TxExecutionId(blockNumber, iterationId, txHash);
+            return new TxExecutionId(blockNumber, iterationId, txHash, 0);
         }
     }
 
@@ -949,13 +957,18 @@ public class SidecarApiModels {
         @JsonProperty("tx_env")
         private TxEnv txEnv;
 
+        @JsonProperty("prev_tx_hash")
+        private String prevTxHash;
+
         @JsonCreator
         public TransactionExecutionPayload(
             @JsonProperty("tx_execution_id") TxExecutionId txExecutionId,
-            @JsonProperty("tx_env") TxEnv txEnv
+            @JsonProperty("tx_env") TxEnv txEnv,
+            @JsonProperty("prev_tx_hash") String prevTxHash
         ) {
             this.txExecutionId = txExecutionId;
             this.txEnv = txEnv;
+            this.prevTxHash = prevTxHash;
         }
 
         public TxExecutionId getTxExecutionId() { return txExecutionId; }
@@ -963,6 +976,9 @@ public class SidecarApiModels {
 
         public TxEnv getTxEnv() { return txEnv; }
         public void setTxEnv(TxEnv txEnv) { this.txEnv = txEnv; }
+
+        public String getPrevTxHash() { return prevTxHash; }
+        public void setPrevTxHash(String prevTxHash) { this.prevTxHash = prevTxHash; }
     }
 
     // ==================== ENUMS & CONSTANTS ====================
