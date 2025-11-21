@@ -74,10 +74,15 @@ public class GrpcModelConverter {
      * Convert TransactionExecutionPayload POJO to Transaction protobuf
      */
     private static Sidecar.Transaction toProtoTransaction(SidecarApiModels.TransactionExecutionPayload pojo) {
-        return Sidecar.Transaction.newBuilder()
+        var builder = Sidecar.Transaction.newBuilder()
             .setTxExecutionId(toProtoTxExecutionId(pojo.getTxExecutionId()))
-            .setTxEnv(toProtoTransactionEnv(pojo.getTxEnv()))
-            .build();
+            .setTxEnv(toProtoTransactionEnv(pojo.getTxEnv()));
+        
+        if (pojo.getPrevTxHash() != null) {
+            builder.setPrevTxHash(pojo.getPrevTxHash());
+        }
+
+        return builder.build();
     }
 
     /**
@@ -194,7 +199,8 @@ public class GrpcModelConverter {
         var txExecId = Sidecar.TxExecutionId.newBuilder()
             .setBlockNumber(request.getBlockNumber())
             .setIterationId(request.getIterationId())
-            .setTxHash(request.getTxHash());
+            .setTxHash(request.getTxHash())
+            .setIndex(request.getIndex());
         return Sidecar.GetTransactionRequest.newBuilder()
             .setTxExecutionId(txExecId)
             .build();
@@ -208,7 +214,8 @@ public class GrpcModelConverter {
         Sidecar.TxExecutionId.Builder txExecIdBuilder = Sidecar.TxExecutionId.newBuilder()
             .setBlockNumber(request.getBlockNumber())
             .setIterationId(request.getIterationId())
-            .setTxHash(request.getTxHash());
+            .setTxHash(request.getTxHash())
+            .setIndex(request.getIndex());
 
         return Sidecar.ReorgRequest.newBuilder()
             .setTxExecutionId(txExecIdBuilder.build())
