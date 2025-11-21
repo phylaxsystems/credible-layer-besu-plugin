@@ -55,7 +55,7 @@ public class CredibleTransactionSelectorTest {
             var postResult = selector.evaluateTransactionPostProcessing(evaluationContext, null);
             assertEquals(postResult, TransactionSelectionResult.SELECTED);
 
-            operationTracer.traceEndBlock(new MockBlockHeader(Long.valueOf(i)), null);
+            operationTracer.traceEndBlock(new MockBlockHeader(Long.valueOf(i)), new MockBlockBody(1));
         }
     }
 }
