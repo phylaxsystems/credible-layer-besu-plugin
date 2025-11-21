@@ -100,7 +100,7 @@ public class DefaultStrategyTest {
         var hash = "0x1" + new Random().nextInt(Integer.MAX_VALUE);
 
         strategy.dispatchTransactions(generateTransactionRequest(hash));
-        GetTransactionRequest txRequest = new GetTransactionRequest(0L, 1L, hash);
+        GetTransactionRequest txRequest = new GetTransactionRequest(0L, 1L, hash, 0);
         var response = strategy.getTransactionResult(txRequest);
         return response;
     }
@@ -112,19 +112,19 @@ public class DefaultStrategyTest {
 
         String hash1 = "0x1";
         assertDoesNotThrow(() -> strategy.dispatchTransactions(generateTransactionRequest(hash1)));
-        GetTransactionRequest txReq1 = new GetTransactionRequest(0L, 1L, hash1);
+        GetTransactionRequest txReq1 = new GetTransactionRequest(0L, 1L, hash1, 0);
         var response = strategy.getTransactionResult(txReq1);
         assertNotNull(response.getSuccess().getResult());
 
         String hash2 = "0x2";
         assertDoesNotThrow(() -> strategy.dispatchTransactions(generateTransactionRequest(hash2)));
-        GetTransactionRequest txReq2 = new GetTransactionRequest(0L, 1L, hash2);
+        GetTransactionRequest txReq2 = new GetTransactionRequest(0L, 1L, hash2, 0);
         response = strategy.getTransactionResult(txReq2);
         assertNotNull(response.getSuccess().getResult());
 
         String hash3 = "0x3";
         assertDoesNotThrow(() -> strategy.dispatchTransactions(generateTransactionRequest(hash3)));
-        GetTransactionRequest txReq3 = new GetTransactionRequest(0L, 1L, hash3);
+        GetTransactionRequest txReq3 = new GetTransactionRequest(0L, 1L, hash3, 0);
         response = strategy.getTransactionResult(txReq3);
         assertNotNull(response.getSuccess().getResult());
     }
@@ -285,7 +285,7 @@ public class DefaultStrategyTest {
         assertTrue(response.size() == 1);
 
         // GetTransactions should reject
-        GetTransactionRequest txReq = new GetTransactionRequest(0L, 1L, "0x1");
+        GetTransactionRequest txReq = new GetTransactionRequest(0L, 1L, "0x1", 0);
         var result = strategy.getTransactionResult(txReq);
         assertNotNull(result.getSuccess().getResult());
     }

@@ -53,7 +53,7 @@ public class CredibleOperationTracer implements BlockAwareOperationTracer {
 
         // traceStartBlock marks a new iteration of the block production process
         try {
-            strategy.newIteration(iteration).join();
+            strategy.newIteration(iteration);
         } catch(Exception e) {
             LOG.error("Error sending new iteration, block number: {}, iteration: {}, reason: {}", processableBlockHeader.getNumber(), currentIterationId.get(), e);
         }
@@ -61,7 +61,11 @@ public class CredibleOperationTracer implements BlockAwareOperationTracer {
 
     @Override
     public void traceEndBlock(final BlockHeader blockHeader, final BlockBody blockBody) {
-        LOG.debug("traceEndBlock - hash: {}, number: {}, iteration: {}", blockHeader.getBlockHash().toHexString(), blockHeader.getNumber(), currentIterationId.get());
+        LOG.debug("traceEndBlock - hash: {}, number: {}, iteration: {}, tx_count: {}",
+            blockHeader.getBlockHash().toHexString(),
+            blockHeader.getNumber(),
+            currentIterationId.get(),
+            blockBody.getTransactions().size());
         this.strategy.endIteration(blockHeader.getBlockHash().toHexString(), this.currentIterationId.get());
     }
 

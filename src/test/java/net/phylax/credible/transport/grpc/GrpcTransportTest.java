@@ -350,7 +350,7 @@ public class GrpcTransportTest {
         );
 
         // Create request with TxExecutionId
-        SidecarApiModels.GetTransactionRequest txReq = new SidecarApiModels.GetTransactionRequest(1000L, 1L, "0xtxhash1");
+        SidecarApiModels.GetTransactionRequest txReq = new SidecarApiModels.GetTransactionRequest(1000L, 1L, "0xtxhash1", 0);
 
         // Send the request
         CompletableFuture<SidecarApiModels.GetTransactionResponse> future =
@@ -373,7 +373,7 @@ public class GrpcTransportTest {
     public void testSendReorg() throws Exception {
         // Create reorg request with TxExecutionId
         SidecarApiModels.ReorgRequest request =
-            new SidecarApiModels.ReorgRequest(12345L, 1L, "0xremovedtxhash");
+            new SidecarApiModels.ReorgRequest(12345L, 1L, "0xremovedtxhash", 0);
 
         // Send the request
         CompletableFuture<SidecarApiModels.ReorgResponse> future = transport.sendReorg(request);
