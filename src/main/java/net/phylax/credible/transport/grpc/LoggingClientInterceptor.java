@@ -32,12 +32,10 @@ public class LoggingClientInterceptor implements ClientInterceptor {
      * Helper method to record request duration in histogram
      */
     private void recordRequestDuration(long startTimeNanos, String method, String status) {
-        if (metricsRegistry != null) {
-            double durationSeconds = (System.nanoTime() - startTimeNanos) / 1_000_000_000.0;
-            metricsRegistry.getTransportRequestDuration()
-                .labels(method, "grpc", status)
-                .observe(durationSeconds);
-        }
+        double durationSeconds = (System.nanoTime() - startTimeNanos) / 1_000_000_000.0;
+        metricsRegistry.getTransportRequestDuration()
+            .labels(method, "grpc", status)
+            .observe(durationSeconds);
     }
 
     @Override
@@ -59,22 +57,6 @@ public class LoggingClientInterceptor implements ClientInterceptor {
 
                 super.start(new ForwardingClientCallListener.SimpleForwardingClientCallListener<RespT>(responseListener) {
                     @Override
-                    public void onHeaders(Metadata headers) {
-                        long headersTime = System.nanoTime();
-                        long elapsedUs = (headersTime - startTimeNanos) / 1_000;
-                        LOG.debug("[gRPC-HEADERS] {} - headers received after {}us", methodName, elapsedUs);
-                        super.onHeaders(headers);
-                    }
-
-                    @Override
-                    public void onMessage(RespT message) {
-                        long messageTime = System.nanoTime();
-                        long elapsedUs = (messageTime - startTimeNanos) / 1_000;
-                        LOG.debug("[gRPC-MESSAGE] {} - message received after {}us", methodName, elapsedUs);
-                        super.onMessage(message);
-                    }
-
-                    @Override
                     public void onClose(io.grpc.Status status, Metadata trailers) {
                         long closeTime = System.nanoTime();
                         long elapsedUs = (closeTime - startTimeNanos) / 1_000;
@@ -91,22 +73,6 @@ public class LoggingClientInterceptor implements ClientInterceptor {
                         super.onClose(status, trailers);
                     }
                 }, headers);
-            }
-
-            @Override
-            public void sendMessage(ReqT message) {
-                long sendTime = System.nanoTime();
-                long elapsedUs = (sendTime - startTimeNanos) / 1_000;
-                LOG.debug("[gRPC-SEND] {} - sending message after {}us from start", methodName, elapsedUs);
-                super.sendMessage(message);
-            }
-
-            @Override
-            public void halfClose() {
-                long halfCloseTime = System.nanoTime();
-                long elapsedUs = (halfCloseTime - startTimeNanos) / 1_000;
-                LOG.debug("[gRPC-HALF-CLOSE] {} - half-close after {}us", methodName, elapsedUs);
-                super.halfClose();
             }
         };
     }

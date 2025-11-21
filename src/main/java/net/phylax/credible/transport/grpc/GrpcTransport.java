@@ -1,7 +1,11 @@
 package net.phylax.credible.transport.grpc;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.slf4j.Logger;
 
@@ -9,10 +13,10 @@ import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
+import io.grpc.okhttp.OkHttpChannelBuilder;
 import io.grpc.stub.StreamObserver;
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.trace.Tracer;
-import io.opentelemetry.instrumentation.grpc.v1_6.GrpcTelemetry;
 import net.phylax.credible.metrics.CredibleMetricsRegistry;
 import net.phylax.credible.transport.ISidecarTransport;
 import net.phylax.credible.types.SidecarApiModels;
@@ -23,31 +27,54 @@ import net.phylax.credible.utils.CredibleLogger;
 import sidecar.transport.v1.Sidecar;
 import sidecar.transport.v1.SidecarTransportGrpc;
 
+
 /**
  * gRPC implementation of ISidecarTransport
  * Communicates with the Credible Layer sidecar via gRPC protocol
+ *
+ * Supports channel pooling with round-robin selection for load distribution
  */
 public class GrpcTransport implements ISidecarTransport {
     private static final Logger LOG = CredibleLogger.getLogger(GrpcTransport.class);
 
-    private final ManagedChannel channel;
-    private final ManagedChannel pollingChannel;
-    private final SidecarTransportGrpc.SidecarTransportStub asyncStub;
-    private final SidecarTransportGrpc.SidecarTransportStub asyncPollingStub;
+    // Channel pool fields (immutable after construction)
+    private final List<ManagedChannel> channelPool;
+    private final List<ManagedChannel> pollingChannelPool;
+    private final AtomicInteger channelIndex;
+    private final AtomicInteger pollingChannelIndex;
+
     private final long deadlineMillis;
     private final Tracer tracer;
-
+    private final CredibleMetricsRegistry metricsRegistry;
 
     /**
-     * Create a new GrpcTransport with a pre-configured channel
+     * Create a new GrpcTransport with pre-configured channel pools
      */
-    public GrpcTransport(ManagedChannel channel, ManagedChannel pollingChannel,long deadlineMillis, OpenTelemetry openTelemetry, CredibleMetricsRegistry metricsRegistry) {
-        this.channel = channel;
-        this.pollingChannel = pollingChannel;
-        this.asyncStub = SidecarTransportGrpc.newStub(channel);
-        this.asyncPollingStub = SidecarTransportGrpc.newStub(pollingChannel);
+    public GrpcTransport(List<ManagedChannel> channelPool, List<ManagedChannel> pollingChannelPool, long deadlineMillis, OpenTelemetry openTelemetry, CredibleMetricsRegistry metricsRegistry) {
+        if (channelPool == null || channelPool.isEmpty()) {
+            throw new IllegalArgumentException("Channel pool cannot be null or empty");
+        }
+        if (pollingChannelPool == null || pollingChannelPool.isEmpty()) {
+            throw new IllegalArgumentException("Polling channel pool cannot be null or empty");
+        }
+
+        this.channelPool = Collections.unmodifiableList(new ArrayList<>(channelPool));
+        this.pollingChannelPool = Collections.unmodifiableList(new ArrayList<>(pollingChannelPool));
+        this.channelIndex = new AtomicInteger(0);
+        this.pollingChannelIndex = new AtomicInteger(0);
         this.deadlineMillis = deadlineMillis;
         this.tracer = openTelemetry.getTracer("grpc-transport");
+        this.metricsRegistry = metricsRegistry;
+
+        LOG.info("GrpcTransport initialized with {} write channels and {} polling channels",
+            channelPool.size(), pollingChannelPool.size());
+    }
+
+    /**
+     * Create a new GrpcTransport with a single channel (backward compatibility)
+     */
+    public GrpcTransport(ManagedChannel channel, ManagedChannel pollingChannel, long deadlineMillis, OpenTelemetry openTelemetry, CredibleMetricsRegistry metricsRegistry) {
+        this(Collections.singletonList(channel), Collections.singletonList(pollingChannel), deadlineMillis, openTelemetry, metricsRegistry);
     }
 
     /**
@@ -65,9 +92,38 @@ public class GrpcTransport implements ISidecarTransport {
             deadlineMillis, openTelemetry, metricsRegistry);
     }
 
+    /**
+     * Get the next channel from the pool using round-robin selection
+     */
+    private ManagedChannel getNextChannel() {
+        int index = channelIndex.getAndUpdate(i -> (i + 1) % channelPool.size());
+        return channelPool.get(index);
+    }
+
+    /**
+     * Get the next polling channel from the pool using round-robin selection
+     */
+    private ManagedChannel getNextPollingChannel() {
+        int index = pollingChannelIndex.getAndUpdate(i -> (i + 1) % pollingChannelPool.size());
+        return pollingChannelPool.get(index);
+    }
+
+    /**
+     * Create a new stub from a round-robin selected channel
+     */
+    private SidecarTransportGrpc.SidecarTransportStub getStub() {
+        return SidecarTransportGrpc.newStub(getNextChannel());
+    }
+
+    /**
+     * Create a new polling stub from a round-robin selected channel
+     */
+    private SidecarTransportGrpc.SidecarTransportStub getPollingStub() {
+        return SidecarTransportGrpc.newStub(getNextPollingChannel());
+    }
+
     @Override
     public CompletableFuture<SidecarApiModels.SendBlockEnvResponse> sendBlockEnv(SidecarApiModels.SendBlockEnvRequest blockEnv) {
-        var span = tracer.spanBuilder(CredibleLayerMethods.SEND_BLOCK_ENV).startSpan();
         CompletableFuture<SidecarApiModels.SendBlockEnvResponse> future = new CompletableFuture<>();
 
         try {
@@ -76,8 +132,8 @@ public class GrpcTransport implements ISidecarTransport {
 
             LOG.trace("Sending BlockEnv via gRPC: number={}", blockEnv.getBlockEnv().getNumber());
 
-            // Make async gRPC call with deadline
-            asyncStub
+            // Make async gRPC call with deadline using round-robin channel
+            getStub()
                 .withDeadlineAfter(deadlineMillis, TimeUnit.MILLISECONDS)
                 .sendBlockEnv(request, new StreamObserver<Sidecar.BasicAck>() {
                     @Override
@@ -90,20 +146,16 @@ public class GrpcTransport implements ISidecarTransport {
                     public void onError(Throwable t) {
                         LOG.error("SendBlockEnv gRPC error: {}", getErrorMessage(t), t);
                         future.completeExceptionally(t);
-                        span.setAttribute("failed", true);
-                        span.end();
                     }
 
                     @Override
                     public void onCompleted() {
                         LOG.trace("SendBlockEnv gRPC call completed");
-                        span.end();
                     }
                 });
         } catch (Exception e) {
             LOG.error("Error preparing SendBlockEnv request: {}", e.getMessage(), e);
             future.completeExceptionally(e);
-            span.end();
         }
 
         return future;
@@ -111,46 +163,36 @@ public class GrpcTransport implements ISidecarTransport {
 
     @Override
     public CompletableFuture<SidecarApiModels.SendTransactionsResponse> sendTransactions(SidecarApiModels.SendTransactionsRequest transactions) {
-        var span = tracer.spanBuilder(CredibleLayerMethods.SEND_TRANSACTIONS).startSpan();
         CompletableFuture<SidecarApiModels.SendTransactionsResponse> future = new CompletableFuture<>();
 
         try {
-            // Convert POJO to Protobuf
             Sidecar.SendTransactionsRequest request =
                 GrpcModelConverter.toProtoSendTransactionsRequest(transactions);
 
-            LOG.trace("Sending {} transactions via gRPC", transactions.getTransactions().size());
-
-            // Make async gRPC call with deadline
-            asyncStub
+            // Make async gRPC call with deadline using round-robin channel
+            getStub()
                 .withDeadlineAfter(deadlineMillis, TimeUnit.MILLISECONDS)
                 .sendTransactions(request, new StreamObserver<Sidecar.SendTransactionsResponse>() {
                     @Override
                     public void onNext(Sidecar.SendTransactionsResponse response) {
-                        LOG.trace("Received SendTransactions response: acceptedCount={}, requestCount={}",
-                            response.getAcceptedCount(), response.getRequestCount());
-                        future.complete(GrpcModelConverter.fromProtoSendTransactionsResponse(response));
-                        span.setAttribute("accepted_count", response.getAcceptedCount());
+                        SidecarApiModels.SendTransactionsResponse result = GrpcModelConverter.fromProtoSendTransactionsResponse(response);
+                        future.complete(result);
                     }
 
                     @Override
                     public void onError(Throwable t) {
                         LOG.error("SendTransactions gRPC error: {}", getErrorMessage(t), t);
                         future.completeExceptionally(t);
-                        span.setAttribute("failed", true);
-                        span.end();
                     }
 
                     @Override
                     public void onCompleted() {
                         LOG.trace("SendTransactions gRPC call completed");
-                        span.end();
                     }
                 });
         } catch (Exception e) {
             LOG.error("Error preparing SendTransactions request: {}", e.getMessage(), e);
             future.completeExceptionally(e);
-            span.end();
         }
 
         return future;
@@ -168,8 +210,8 @@ public class GrpcTransport implements ISidecarTransport {
 
             LOG.trace("Getting {} transactions via gRPC", txRequest.getTxExecutionIds().size());
 
-            // Make async gRPC call with deadline
-            asyncStub
+            // Make async gRPC call with deadline using round-robin channel
+            getStub()
                 .withDeadlineAfter(deadlineMillis, TimeUnit.MILLISECONDS)
                 .getTransactions(request, new StreamObserver<Sidecar.GetTransactionsResponse>() {
                     @Override
@@ -204,45 +246,36 @@ public class GrpcTransport implements ISidecarTransport {
 
     @Override
     public CompletableFuture<SidecarApiModels.GetTransactionResponse> getTransaction(SidecarApiModels.GetTransactionRequest txRequest) {
-        var span = tracer.spanBuilder(CredibleLayerMethods.GET_TRANSACTION).startSpan();
         CompletableFuture<SidecarApiModels.GetTransactionResponse> future = new CompletableFuture<>();
 
         try {
-            // Convert to Protobuf
             Sidecar.GetTransactionRequest request =
                 GrpcModelConverter.toProtoGetTransactionRequest(txRequest);
 
-            LOG.trace("Getting transaction via gRPC: {}", request);
-
-            // Make async gRPC call with deadline
-            asyncPollingStub
+            // Make async gRPC call with deadline using round-robin polling channel
+            getPollingStub()
                 .withDeadlineAfter(deadlineMillis, TimeUnit.MILLISECONDS)
                 .getTransaction(request, new StreamObserver<Sidecar.GetTransactionResponse>() {
                     @Override
                     public void onNext(Sidecar.GetTransactionResponse response) {
-                        LOG.trace("Received GetTransaction response: {} results",
-                            response.getResult());
-                        future.complete(GrpcModelConverter.fromProtoGetTransactionResponse(response));
+                        SidecarApiModels.GetTransactionResponse result = GrpcModelConverter.fromProtoGetTransactionResponse(response);
+                        future.complete(result);
                     }
 
                     @Override
                     public void onError(Throwable t) {
                         LOG.error("GetTransaction gRPC error: {}", getErrorMessage(t), t);
                         future.completeExceptionally(t);
-                        span.setAttribute("failed", true);
-                        span.end();
                     }
 
                     @Override
                     public void onCompleted() {
                         LOG.trace("GetTransaction gRPC call completed");
-                        span.end();
                     }
                 });
         } catch (Exception e) {
             LOG.error("Error preparing GetTransaction request: {}", e.getMessage(), e);
             future.completeExceptionally(e);
-            span.end();
         }
 
         return future;
@@ -250,7 +283,6 @@ public class GrpcTransport implements ISidecarTransport {
 
     @Override
     public CompletableFuture<SidecarApiModels.ReorgResponse> sendReorg(SidecarApiModels.ReorgRequest reorgRequest) {
-        var span = tracer.spanBuilder(CredibleLayerMethods.SEND_REORG).startSpan();
         CompletableFuture<SidecarApiModels.ReorgResponse> future = new CompletableFuture<>();
 
         try {
@@ -263,13 +295,12 @@ public class GrpcTransport implements ISidecarTransport {
                 reorgRequest.getIterationId(),
                 reorgRequest.getTxHash());
 
-            // Make async gRPC call with deadline
-            asyncStub
+            // Make async gRPC call with deadline using round-robin channel
+            getStub()
                 .withDeadlineAfter(deadlineMillis, TimeUnit.MILLISECONDS)
                 .reorg(request, new StreamObserver<Sidecar.BasicAck>() {
                     @Override
                     public void onNext(Sidecar.BasicAck response) {
-                        LOG.trace("Received Reorg response: accepted={}", response.getAccepted());
                         future.complete(GrpcModelConverter.fromProtoBasicAckToReorgResponse(response));
                     }
 
@@ -277,35 +308,51 @@ public class GrpcTransport implements ISidecarTransport {
                     public void onError(Throwable t) {
                         LOG.error("Reorg gRPC error: {}", getErrorMessage(t), t);
                         future.completeExceptionally(t);
-                        span.setAttribute("failed", true);
-                        span.end();
                     }
 
                     @Override
                     public void onCompleted() {
                         LOG.trace("Reorg gRPC call completed");
-                        span.end();
                     }
                 });
         } catch (Exception e) {
             LOG.error("Error preparing Reorg request: {}", e.getMessage(), e);
             future.completeExceptionally(e);
-            span.end();
         }
 
         return future;
     }
 
     /**
-     * Shutdown the gRPC channel gracefully
+     * Shutdown all gRPC channels gracefully
      */
     public void close() {
         try {
-            LOG.info("Shutting down gRPC channel");
-            channel.shutdown().awaitTermination(5, TimeUnit.SECONDS);
+            LOG.info("Shutting down {} gRPC channels", channelPool.size() + pollingChannelPool.size());
+
+            // Shutdown all channels in the pool
+            for (ManagedChannel channel : channelPool) {
+                channel.shutdown();
+            }
+            for (ManagedChannel channel : pollingChannelPool) {
+                channel.shutdown();
+            }
+
+            // Wait for termination
+            for (ManagedChannel channel : channelPool) {
+                channel.awaitTermination(5, TimeUnit.SECONDS);
+            }
+            for (ManagedChannel channel : pollingChannelPool) {
+                channel.awaitTermination(5, TimeUnit.SECONDS);
+            }
         } catch (InterruptedException e) {
-            LOG.warn("Interrupted while shutting down gRPC channel", e);
-            channel.shutdownNow();
+            LOG.warn("Interrupted while shutting down gRPC channels", e);
+            for (ManagedChannel channel : channelPool) {
+                channel.shutdownNow();
+            }
+            for (ManagedChannel channel : pollingChannelPool) {
+                channel.shutdownNow();
+            }
             Thread.currentThread().interrupt();
         }
     }
@@ -331,6 +378,8 @@ public class GrpcTransport implements ISidecarTransport {
         private long deadlineMillis = 5000; // 5 seconds default
         private OpenTelemetry openTelemetry = OpenTelemetry.noop();
         private CredibleMetricsRegistry metricsRegistry;
+        private int channelPoolSize = 5; // Default: single channel (backward compatible)
+        private int pollingChannelPoolSize = 5; // Default: single channel (backward compatible)
 
         public Builder host(String host) {
             this.host = host;
@@ -357,62 +406,97 @@ public class GrpcTransport implements ISidecarTransport {
             return this;
         }
 
+        /**
+         * Set the number of channels in the write operations pool
+         * Default is 1 (single channel, backward compatible)
+         */
+        public Builder channelPoolSize(int poolSize) {
+            if (poolSize < 1) {
+                throw new IllegalArgumentException("Channel pool size must be at least 1");
+            }
+            this.channelPoolSize = poolSize;
+            return this;
+        }
+
+        /**
+         * Set the number of channels in the polling operations pool
+         * Default is 1 (single channel, backward compatible)
+         */
+        public Builder pollingChannelPoolSize(int poolSize) {
+            if (poolSize < 1) {
+                throw new IllegalArgumentException("Polling channel pool size must be at least 1");
+            }
+            this.pollingChannelPoolSize = poolSize;
+            return this;
+        }
+
         public GrpcTransport build() {
-            ManagedChannelBuilder<?> channelBuilder = ManagedChannelBuilder
+            // Create channel pools
+            List<ManagedChannel> channelPool = new ArrayList<>(channelPoolSize);
+            List<ManagedChannel> pollingChannelPool = new ArrayList<>(pollingChannelPoolSize);
+
+            // Build write channels
+            for (int i = 0; i < channelPoolSize; i++) {
+                channelPool.add(createChannel());
+            }
+
+            // Build polling channels
+            for (int i = 0; i < pollingChannelPoolSize; i++) {
+                pollingChannelPool.add(createChannel());
+            }
+
+            return new GrpcTransport(channelPool, pollingChannelPool, deadlineMillis, openTelemetry, metricsRegistry);
+        }
+
+        private ManagedChannel createChannel() {
+            OkHttpChannelBuilder channelBuilder = OkHttpChannelBuilder
                 .forAddress(host, port)
                 .usePlaintext()
                 .keepAliveTime(30, TimeUnit.SECONDS)
                 .keepAliveTimeout(10, TimeUnit.SECONDS)
                 .keepAliveWithoutCalls(true)
-                .idleTimeout(1, TimeUnit.MINUTES)
+                // OkHttp-specific: Flow control window
+                .flowControlWindow(16 * 1024 * 1024) // 1MB
+                // Set max message size
+                .maxInboundMetadataSize(8192)
+                .maxInboundMessageSize(1 * 1024 * 1024) // 1MB max message
                 .intercept(new LoggingClientInterceptor(metricsRegistry));
 
-            GrpcTelemetry grpcTelemetry = GrpcTelemetry.create(openTelemetry);
-            channelBuilder.intercept(grpcTelemetry.newClientInterceptor());
-
-            return new GrpcTransport(channelBuilder.build(), channelBuilder.build(), deadlineMillis, openTelemetry, metricsRegistry);
+            return channelBuilder.build();
         }
     }
 
     @Override
     public CompletableFuture<SendEventsResponse> sendEvents(SendEventsRequest events) {
-        var span = tracer.spanBuilder(CredibleLayerMethods.SEND_EVENTS).startSpan();
         CompletableFuture<SendEventsResponse> future = new CompletableFuture<>();
 
         try {
-            // Convert POJO to Protobuf
             Sidecar.SendEvents request = GrpcModelConverter.toProtoSendEvents(events);
 
-            LOG.trace("Sending {} events via gRPC", events.getEvents().size());
-
-            // Make async gRPC call with deadline
-            asyncStub
+            // Make async gRPC call with deadline using round-robin channel
+            getStub()
                 .withDeadlineAfter(deadlineMillis, TimeUnit.MILLISECONDS)
                 .sendEvents(request, new StreamObserver<Sidecar.BasicAck>() {
                     @Override
                     public void onNext(Sidecar.BasicAck response) {
-                        LOG.trace("Received SendEvents response: accepted={}", response.getAccepted());
-                        future.complete(GrpcModelConverter.fromProtoBasicAckToSendEventsResponse(response));
+                        SendEventsResponse result = GrpcModelConverter.fromProtoBasicAckToSendEventsResponse(response);
+                        future.complete(result);
                     }
 
                     @Override
                     public void onError(Throwable t) {
                         LOG.error("SendEvents gRPC error: {}", getErrorMessage(t), t);
                         future.completeExceptionally(t);
-                        span.setAttribute("failed", true);
-                        span.end();
                     }
 
                     @Override
                     public void onCompleted() {
                         LOG.trace("SendEvents gRPC call completed");
-                        span.end();
                     }
                 });
         } catch (Exception e) {
             LOG.error("Error preparing SendEvents request: {}", e.getMessage(), e);
             future.completeExceptionally(e);
-            span.end();
         }
 
         return future;

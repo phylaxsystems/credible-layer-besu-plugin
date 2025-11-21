@@ -218,27 +218,21 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
     
     private CompletableFuture<TransportResponse> sendIterationToTransport(SendEventsRequest events, ISidecarTransport transport) {
         long startTime = System.currentTimeMillis();
-        var span = tracer.spanBuilder("sendIterationToTransport").startSpan();
-        try(Scope scope = span.makeCurrent()) {
-            metricsRegistry.getSidecarRpcCounter().labels(CredibleLayerMethods.SEND_EVENTS).inc();
-            return transport.sendEvents(events)
-                .thenApply(sendEventsResponse -> {
-                    long latency = System.currentTimeMillis() - startTime;
-                    span.setAttribute("result", sendEventsResponse.getStatus());
-                    return new TransportResponse(transport, "accepted".equals(sendEventsResponse.getStatus()), "Success", latency);
-                })
-                .exceptionally(ex -> {
-                    LOG.debug("NewIteration error: {} - {}",
-                        ex.getMessage(),
-                        ex.getCause() != null ? ex.getCause().getMessage() : "");
-                    span.setAttribute("failed", true);
-                    metricsRegistry.getErrorCounter().labels().inc();
-                    activeTransports.remove(transport);
-                    long latency = System.currentTimeMillis() - startTime;
-                    return new TransportResponse(transport, false, ex.getMessage(), latency);
-                })
-                .whenComplete((res, throwable) -> span.end());
-        }
+        metricsRegistry.getSidecarRpcCounter().labels(CredibleLayerMethods.SEND_EVENTS).inc();
+        return transport.sendEvents(events)
+            .thenApply(sendEventsResponse -> {
+                long latency = System.currentTimeMillis() - startTime;
+                return new TransportResponse(transport, "accepted".equals(sendEventsResponse.getStatus()), "Success", latency);
+            })
+            .exceptionally(ex -> {
+                LOG.debug("NewIteration error: {} - {}",
+                    ex.getMessage(),
+                    ex.getCause() != null ? ex.getCause().getMessage() : "");
+                metricsRegistry.getErrorCounter().labels().inc();
+                activeTransports.remove(transport);
+                long latency = System.currentTimeMillis() - startTime;
+                return new TransportResponse(transport, false, ex.getMessage(), latency);
+            });
     }
     
     @Override
