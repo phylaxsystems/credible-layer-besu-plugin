@@ -125,7 +125,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
             maybeNewHead = Optional.empty();
         
             // Else send the new head and recalculate active transports
-            return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
                 .whenComplete((voidResult, exception) -> {
                     try(Scope primaryTransportScope = context.makeCurrent()) {
                         long failedCount = futures.stream()
@@ -161,7 +161,8 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                             span.end();
                         }
                     }
-            });
+            }).join();
+            return CompletableFuture.completedFuture(null);
         }
     }
 

@@ -80,7 +80,7 @@ public class MockTransport implements ISidecarTransport {
 
         return CompletableFuture.supplyAsync(() -> {
             if (throwOnGetTx) {
-                throw new RuntimeException("GetTransactions failed");
+                throw new RuntimeException("GetTransaction failed");
             }
             return new GetTransactionResponse(result);
         }, delayedExecutor);
@@ -99,7 +99,7 @@ public class MockTransport implements ISidecarTransport {
 
         return CompletableFuture.supplyAsync(() -> {
             if (throwOnSendEvents) {
-                throw new RuntimeException("GetTransactions failed");
+                throw new RuntimeException("SendEvents failed");
             }
             return new SendEventsResponse(
             "accepted",
@@ -107,10 +107,6 @@ public class MockTransport implements ISidecarTransport {
             (long)events.getEvents().size());
         }, delayedExecutor);
     }
-
-    // public void setBlockEnvSuccess(boolean blockEnvSuccess) {
-    //     this.sendEve = blockEnvSuccess;
-    // }
 
     public void setSendTxStatus(String sendTxStatus) {
         this.sendTxStatus = sendTxStatus;
