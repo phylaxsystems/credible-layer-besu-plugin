@@ -13,6 +13,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.slf4j.Logger;
 
@@ -97,69 +98,69 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
     public CompletableFuture<Void> newIteration(NewIteration iteration) {
         var span = tracer.spanBuilder(CredibleLayerMethods.NEW_ITERATION).startSpan();
         try(Scope scope = span.makeCurrent()) {
-            // Send to all primary transports
             Context context = Context.current();
 
+            Optional<CommitHead> commitHead = maybeNewHead;
             var sendEvents = assembleNewIterationRequest(iteration);
+            maybeNewHead = Optional.empty();
 
-            List<CompletableFuture<TransportResponse>> futures = primaryTransports.stream()
+            List<CompletableFuture<TransportResponse>> primaryFutures = primaryTransports.stream()
                 .map(transport -> sendIterationToTransport(sendEvents, transport))
                 .collect(Collectors.toList());
 
-            // If new head is not present, just send to the primary transports
-            if (maybeNewHead.isEmpty()) {
-                LOG.debug("Sending iteration {} for block number {}", iteration.getIterationId(), iteration.getBlockEnv().getNumber());
-                return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
-            }
+            List<CompletableFuture<TransportResponse>> fallbackFutures = fallbackTransports.stream()
+                .map(transport -> sendIterationToTransport(sendEvents, transport))
+                .collect(Collectors.toList());
 
-            {
-                var commitHead = maybeNewHead.get();
+            commitHead.ifPresent(head -> {
                 LOG.debug("Sending commit_head {} with {} transactions and iteration {} for block number {}",
-                    commitHead.getBlockNumber(),
-                    commitHead.getNTransactions(),
+                    head.getBlockNumber(),
+                    head.getNTransactions(),
                     iteration.getIterationId(),
                     iteration.getBlockEnv().getNumber());
-            }
+            });
 
-            // Reset new head since we're sending it
-            maybeNewHead = Optional.empty();
+            LOG.debug("Sending iteration {} for block number {} to {} primaries and {} fallbacks",
+                iteration.getIterationId(),
+                iteration.getBlockEnv().getNumber(),
+                primaryFutures.size(),
+                fallbackFutures.size());
+
+            CompletableFuture<Void> combinedFutures = CompletableFuture.allOf(
+                Stream.concat(primaryFutures.stream(), fallbackFutures.stream()).toArray(CompletableFuture[]::new));
+
+            if (commitHead.isEmpty()) {
+                combinedFutures.whenComplete((ignored, throwable) -> span.end()).join();
+                return CompletableFuture.completedFuture(null);
+            }
         
             // Else send the new head and recalculate active transports
-            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+            combinedFutures
                 .whenComplete((voidResult, exception) -> {
                     try(Scope primaryTransportScope = context.makeCurrent()) {
-                        long failedCount = futures.stream()
-                        .filter(f -> !f.isCompletedExceptionally())
-                        .map(CompletableFuture::join)
-                        .filter(res -> !res.isSuccess())
-                        .count();
+                        List<ISidecarTransport> successfulPrimaries = extractSuccessfulTransports(primaryFutures);
+                        List<ISidecarTransport> successfulFallbacks = extractSuccessfulTransports(fallbackFutures);
 
-                        LOG.debug("Checking sidecars: failed: {}, total: {}", failedCount, futures.size());
-                        
-                        // Check if all active transports failed
-                        if (failedCount == futures.size() && !futures.isEmpty()) {
-                            LOG.warn("SendBlockEnv to active sidecars failed, trying fallbacks");
-                            span.setAttribute("active_transport_target", "fallback");
-
-                            // Send to fallback transports
-                            List<CompletableFuture<TransportResponse>> fallbackFutures = fallbackTransports.stream()
-                                .map(transport -> sendIterationToTransport(sendEvents, transport))
-                                .collect(Collectors.toList());
-                                
-                            CompletableFuture.allOf(fallbackFutures.toArray(new CompletableFuture[0]))
-                                .thenAccept(ignored -> {
-                                    try(Scope fallbackTransportScope = context.makeCurrent()) {
-                                        updateActiveTransports(extractSuccessfulTransports(fallbackFutures));
-                                    } finally {
-                                        span.end();
-                                    }
-                                });
-                        } else {
-                            // Clear pending requests (since it's the start of the new block)
-                            updateActiveTransports(extractSuccessfulTransports(futures));
+                        if (!successfulPrimaries.isEmpty()) {
+                            updateActiveTransports(successfulPrimaries);
                             span.setAttribute("active_transport_target", "primary");
-                            span.end();
+                        } else if (!successfulFallbacks.isEmpty()) {
+                            if (!primaryFutures.isEmpty()) {
+                                LOG.warn("Sending CommitHead to primary sidecars failed, using fallbacks");
+                            }
+                            updateActiveTransports(successfulFallbacks);
+                            span.setAttribute("active_transport_target", "fallback");
+                        } else {
+                            LOG.warn("Sending CommitHead failed for all sidecars");
+                            isActive.set(false);
+                            activeTransports.clear();
+                            pendingTxRequests.clear();
+                            sendTxFutures.clear();
+                            span.setAttribute("active_transport_target", "none");
                         }
+                    }
+                    finally {
+                        span.end();
                     }
             }).join();
             return CompletableFuture.completedFuture(null);
