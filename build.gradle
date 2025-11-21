@@ -123,9 +123,9 @@ dependencies {
     implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jdk8:2.18.2'
 
     // gRPC and Protobuf
-    implementation 'io.grpc:grpc-netty-shaded:1.75.0'
+    implementation 'io.grpc:grpc-okhttp:1.77.0'
     implementation 'io.grpc:grpc-protobuf:1.75.0'
-    implementation 'io.grpc:grpc-stub:1.75.0'
+    implementation 'io.grpc:grpc-stub:1.77.0'
     implementation 'com.google.protobuf:protobuf-java:4.32.1'
     compileOnly 'javax.annotation:javax.annotation-api:1.3.2'
     
