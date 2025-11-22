@@ -151,7 +151,7 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
 
     // If we didnt process the tx, nothing to do
     if (!txHash.equals(getLastTxHash())) {
-      LOG.debug("Skipping reorg for {}, reason: {}", txHash, reason);
+      LOG.debug("Last tx hash mismatch. Skipping reorg for {}, reason: {}", txHash, reason);
       return;
     }
 
