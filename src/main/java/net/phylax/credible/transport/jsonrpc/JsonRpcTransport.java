@@ -547,15 +547,6 @@ public class JsonRpcTransport implements ISidecarTransport {
             return new JsonRpcTransport(baseUrl, callFactory, openTelemetry, tracer, metricsRegistry);
         }
     }
-    
-    @Override
-    public CompletableFuture<SendBlockEnvResponse> sendBlockEnv(SendBlockEnvRequest blockEnv) {
-        return this.callAsync(
-            CredibleLayerMethods.SEND_BLOCK_ENV, 
-            blockEnv,
-            SendBlockEnvResponse.class
-        );
-    }
 
     @Override
     public CompletableFuture<SendTransactionsResponse> sendTransactions(SendTransactionsRequest transactions) {
