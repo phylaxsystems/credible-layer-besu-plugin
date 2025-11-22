@@ -149,11 +149,14 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
     String reason = transactionSelectionResult.toString();
     long blockNumber = evaluationContext.getPendingBlockHeader().getNumber();
 
-    if (txHash.equals(getLastTxHash())) {
-      transactions.remove(transactions.size() - 1);
+    // If we didnt process the tx, nothing to do
+    if (!txHash.equals(getLastTxHash())) {
+      LOG.debug("Skipping reorg for {}, reason: {}", txHash, reason);
+      return;
     }
 
-    long index = transactions.size() - 1;
+    transactions.remove(transactions.size() - 1);
+    long index = transactions.size();
 
     try {
         LOG.debug("Sending reorg request for transaction {} due to: {}", txHash, reason);
@@ -177,6 +180,10 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
 
   public Long getIterationId() {
     return iterationId;
+  }
+
+  public long getCurrentIndex() {
+    return transactions.size();
   }
 
   private double getDurationSeconds(long startTimeNanos) {

@@ -23,6 +23,9 @@ public class MockTransport implements ISidecarTransport {
     private boolean throwOnSendTx = false;
     private boolean throwOnGetTx = false;
 
+    // List of tx hashes that return assertion_failed
+    private List<String> failingTransactions = new ArrayList<>();
+
     public MockTransport(int processingLatency) {
         this.processingLatency = processingLatency;
     }
@@ -70,19 +73,17 @@ public class MockTransport implements ISidecarTransport {
         Executor delayedExecutor = CompletableFuture.delayedExecutor(
             processingLatency, TimeUnit.MILLISECONDS);
 
-        final TransactionResult result;
-
-        if (!emptyResults) {
-            result = new TransactionResult(req.toTxExecutionId(), getTxStatus, 21000L, "");
-        } else {
-            result = null;
+        final TransactionResult result = new TransactionResult(req.toTxExecutionId(), getTxStatus, 21000L, "");
+        
+        if (failingTransactions.contains(result.getTxExecutionId().getTxHash())) {
+            result.setStatus(TransactionStatus.ASSERTION_FAILED);
         }
 
         return CompletableFuture.supplyAsync(() -> {
             if (throwOnGetTx) {
                 throw new RuntimeException("GetTransaction failed");
             }
-            return new GetTransactionResponse(result);
+            return new GetTransactionResponse(emptyResults ? null : result);
         }, delayedExecutor);
     }
 
@@ -146,5 +147,9 @@ public class MockTransport implements ISidecarTransport {
 
     public void setSendEventsLatency(int sendEventsLatency) {
         this.sendEventsLatency = sendEventsLatency;
+    }
+
+    public void addFailingTx(String failingTx) {
+        failingTransactions.add(failingTx);
     }
 }
