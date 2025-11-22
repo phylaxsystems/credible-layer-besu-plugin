@@ -156,7 +156,8 @@ public class ModelSerializationTest {
         TxExecutionId txExecutionId = new TxExecutionId(
             12346L,
             7L,
-            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+            "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+            0L
         );
 
         // Create TxEnv
@@ -185,7 +186,7 @@ public class ModelSerializationTest {
         );
 
         // Create TransactionExecutionPayload
-        TransactionExecutionPayload payload = new TransactionExecutionPayload(txExecutionId, txEnv);
+        TransactionExecutionPayload payload = new TransactionExecutionPayload(txExecutionId, txEnv, "0x123456789");
 
         // Create TransactionReqItem
         TransactionReqItem item = new TransactionReqItem(payload);
@@ -283,7 +284,7 @@ public class ModelSerializationTest {
         NewIteration newIteration = new NewIteration(7L, blockEnv);
         NewIterationReqItem newIterationItem = new NewIterationReqItem(newIteration);
 
-        TxExecutionId txExecutionId = new TxExecutionId(12346L, 7L, "0x1234567890abcdef");
+        TxExecutionId txExecutionId = new TxExecutionId(12346L, 7L, "0x1234567890abcdef", 0L);
         TxEnv txEnv = new TxEnv(
             "0x742d35Cc6634C0532925a3b844B9c7e07e3E23eF",
             21000L,
@@ -300,7 +301,7 @@ public class ModelSerializationTest {
             new ArrayList<>(),
             new ArrayList<>()
         );
-        TransactionExecutionPayload payload = new TransactionExecutionPayload(txExecutionId, txEnv);
+        TransactionExecutionPayload payload = new TransactionExecutionPayload(txExecutionId, txEnv, "0x123456789");
         TransactionReqItem transactionItem = new TransactionReqItem(payload);
 
         // Create SendEventsRequest with all three items
@@ -472,7 +473,7 @@ public class ModelSerializationTest {
     @Test
     void testRoundTripSerializationTransactionReqItem() throws Exception {
         // Create original object
-        TxExecutionId txExecutionId = new TxExecutionId(12346L, 7L, "0x1234567890abcdef");
+        TxExecutionId txExecutionId = new TxExecutionId(12346L, 7L, "0x1234567890abcdef", 0L);
         TxEnv txEnv = new TxEnv(
             "0x742d35Cc6634C0532925a3b844B9c7e07e3E23eF",
             21000L,
@@ -489,7 +490,7 @@ public class ModelSerializationTest {
             new ArrayList<>(),
             new ArrayList<>()
         );
-        TransactionExecutionPayload payload = new TransactionExecutionPayload(txExecutionId, txEnv);
+        TransactionExecutionPayload payload = new TransactionExecutionPayload(txExecutionId, txEnv, "0x123456789");
         TransactionReqItem original = new TransactionReqItem(payload);
 
         // Serialize and deserialize

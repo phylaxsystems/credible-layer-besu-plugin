@@ -58,7 +58,7 @@ public interface ISidecarStrategy {
      * @param txExecId TxExecutionId containing the block number, iteration ID and transaction hash to reorg
      * @return List of ReorgResponses, one from each instance of the transport
      */
-    List<ReorgResponse> sendReorgRequest(ReorgRequest reorgRequest);
+    CompletableFuture<List<ReorgResponse>> sendReorgRequest(ReorgRequest reorgRequest);
 
     /**
      * Determines if the strategy is active or not, i.e. are the sidecars available and responding.

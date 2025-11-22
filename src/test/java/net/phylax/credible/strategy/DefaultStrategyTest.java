@@ -47,8 +47,8 @@ public class DefaultStrategyTest {
     SendTransactionsRequest generateTransactionRequest(String hash) {
         // generate transaction request
         var transactions = new ArrayList<TransactionExecutionPayload>();
-        TxExecutionId txExecutionId = new TxExecutionId(0L, 1L, hash);
-        transactions.add(new TransactionExecutionPayload(txExecutionId, new TxEnv()));
+        TxExecutionId txExecutionId = new TxExecutionId(0L, 1L, hash, 0L);
+        transactions.add(new TransactionExecutionPayload(txExecutionId, new TxEnv(), "0x1234567890"));
         return new SendTransactionsRequest(transactions);
     }
 
@@ -100,7 +100,7 @@ public class DefaultStrategyTest {
         var hash = "0x1" + new Random().nextInt(Integer.MAX_VALUE);
 
         strategy.dispatchTransactions(generateTransactionRequest(hash));
-        GetTransactionRequest txRequest = new GetTransactionRequest(0L, 1L, hash);
+        GetTransactionRequest txRequest = new GetTransactionRequest(0L, 1L, hash, 0);
         var response = strategy.getTransactionResult(txRequest);
         return response;
     }
@@ -112,19 +112,19 @@ public class DefaultStrategyTest {
 
         String hash1 = "0x1";
         assertDoesNotThrow(() -> strategy.dispatchTransactions(generateTransactionRequest(hash1)));
-        GetTransactionRequest txReq1 = new GetTransactionRequest(0L, 1L, hash1);
+        GetTransactionRequest txReq1 = new GetTransactionRequest(0L, 1L, hash1, 0);
         var response = strategy.getTransactionResult(txReq1);
         assertNotNull(response.getSuccess().getResult());
 
         String hash2 = "0x2";
         assertDoesNotThrow(() -> strategy.dispatchTransactions(generateTransactionRequest(hash2)));
-        GetTransactionRequest txReq2 = new GetTransactionRequest(0L, 1L, hash2);
+        GetTransactionRequest txReq2 = new GetTransactionRequest(0L, 1L, hash2, 0);
         response = strategy.getTransactionResult(txReq2);
         assertNotNull(response.getSuccess().getResult());
 
         String hash3 = "0x3";
         assertDoesNotThrow(() -> strategy.dispatchTransactions(generateTransactionRequest(hash3)));
-        GetTransactionRequest txReq3 = new GetTransactionRequest(0L, 1L, hash3);
+        GetTransactionRequest txReq3 = new GetTransactionRequest(0L, 1L, hash3, 0);
         response = strategy.getTransactionResult(txReq3);
         assertNotNull(response.getSuccess().getResult());
     }
@@ -169,37 +169,6 @@ public class DefaultStrategyTest {
 
         strategy.newIteration(generateNewIteration());
         response = sendTransaction(strategy);
-        assertNotNull(response.getSuccess().getResult());
-    }
-
-    @Test
-    void shouldProcessFromFallback() {
-        // Primary sidecars throw on sendBlockEnv
-        var mockTransport = new MockTransport(100);
-        mockTransport.setThrowOnSendBlockEnv(true);
-        var mockTransport2 = new MockTransport(100);
-        mockTransport2.setThrowOnSendBlockEnv(true);
-
-        // Working fallback
-        var mockTransportFallback = new MockTransport(200);
-        var strategy = initStrategy(
-            Arrays.asList(mockTransport, mockTransport2),
-            Arrays.asList(mockTransportFallback),
-            500,
-            false
-        );
-
-        strategy.newIteration(generateNewIteration()).join();
-
-        var response = sendTransaction(strategy);
-        assertNotNull(response.getSuccess().getResult());
-
-        // First sidecar gets back online
-        mockTransport.setThrowOnSendBlockEnv(false);
-        
-        strategy.newIteration(generateNewIteration()).join();
-        response = sendTransaction(strategy);
-        
         assertNotNull(response.getSuccess().getResult());
     }
 
@@ -306,7 +275,7 @@ public class DefaultStrategyTest {
     void shouldProcessOnSlowBlockEnv() {
         // First transport throws on sendTransactions
         var mockTransport = new MockTransport(200);
-        mockTransport.setSendBlockEnvLatency(1000);
+        mockTransport.setSendEventsLatency(1000);
 
         var strategy = initStrategy(Arrays.asList(mockTransport), null, 800, false);
 
@@ -316,7 +285,7 @@ public class DefaultStrategyTest {
         assertTrue(response.size() == 1);
 
         // GetTransactions should reject
-        GetTransactionRequest txReq = new GetTransactionRequest(0L, 1L, "0x1");
+        GetTransactionRequest txReq = new GetTransactionRequest(0L, 1L, "0x1", 0);
         var result = strategy.getTransactionResult(txReq);
         assertNotNull(result.getSuccess().getResult());
     }
@@ -327,7 +296,7 @@ public class DefaultStrategyTest {
         var mockTransport = new MockTransport(200);
 
         var mockTransport2 = new MockTransport(200);
-        mockTransport.setSendBlockEnvLatency(1000);
+        mockTransport.setSendEventsLatency(1000);
 
         var strategy = initStrategy(Arrays.asList(mockTransport, mockTransport2), null, 800, false);
 

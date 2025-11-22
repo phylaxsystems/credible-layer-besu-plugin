@@ -10,35 +10,24 @@ import net.phylax.credible.types.SidecarApiModels.*;
 
 public class MockTransport implements ISidecarTransport {
     private int processingLatency;
-    private boolean blockEnvSuccess = true;
     private String sendTxStatus = "accepted";
     private String getTxStatus = TransactionStatus.SUCCESS;
     private boolean reorgSuccess = true;
     private int sendTransactionsLatency = 0;
-    private int sendBlockEnvLatency = 0;
+    private int sendEventsLatency = 0;
 
     // Whether to return empty results on getTransactions
     private boolean emptyResults = false;
 
-    private boolean throwOnSendBlockEnv = false;
+    private boolean throwOnSendEvents = false;
     private boolean throwOnSendTx = false;
     private boolean throwOnGetTx = false;
-    
+
+    // List of tx hashes that return assertion_failed
+    private List<String> failingTransactions = new ArrayList<>();
+
     public MockTransport(int processingLatency) {
         this.processingLatency = processingLatency;
-    }
-
-    @Override
-    public CompletableFuture<SendBlockEnvResponse> sendBlockEnv(SendBlockEnvRequest blockEnv) {
-        Executor delayedExecutor = CompletableFuture.delayedExecutor(
-            sendBlockEnvLatency, TimeUnit.MILLISECONDS);
-
-        return CompletableFuture.supplyAsync(() -> {
-            if (throwOnSendBlockEnv) {
-                throw new RuntimeException("SendBlockEnv failed");
-            }
-            return new SendBlockEnvResponse("accepted", 1L, "BlockEnv successfully accepted");
-        }, delayedExecutor);
     }
 
     @Override
@@ -84,19 +73,17 @@ public class MockTransport implements ISidecarTransport {
         Executor delayedExecutor = CompletableFuture.delayedExecutor(
             processingLatency, TimeUnit.MILLISECONDS);
 
-        final TransactionResult result;
-
-        if (!emptyResults) {
-            result = new TransactionResult(req.toTxExecutionId(), getTxStatus, 21000L, "");
-        } else {
-            result = null;
+        final TransactionResult result = new TransactionResult(req.toTxExecutionId(), getTxStatus, 21000L, "");
+        
+        if (failingTransactions.contains(result.getTxExecutionId().getTxHash())) {
+            result.setStatus(TransactionStatus.ASSERTION_FAILED);
         }
 
         return CompletableFuture.supplyAsync(() -> {
             if (throwOnGetTx) {
-                throw new RuntimeException("GetTransactions failed");
+                throw new RuntimeException("GetTransaction failed");
             }
-            return new GetTransactionResponse(result);
+            return new GetTransactionResponse(emptyResults ? null : result);
         }, delayedExecutor);
     }
 
@@ -108,16 +95,18 @@ public class MockTransport implements ISidecarTransport {
 
     @Override
     public CompletableFuture<SendEventsResponse> sendEvents(SendEventsRequest events) {
-        return CompletableFuture.completedFuture(
-            new SendEventsResponse(
+        Executor delayedExecutor = CompletableFuture.delayedExecutor(
+            processingLatency, TimeUnit.MILLISECONDS);
+
+        return CompletableFuture.supplyAsync(() -> {
+            if (throwOnSendEvents) {
+                throw new RuntimeException("SendEvents failed");
+            }
+            return new SendEventsResponse(
             "accepted",
             "Request successfully processed",
-            (long)events.getEvents().size()
-        ));
-    }
-
-    public void setBlockEnvSuccess(boolean blockEnvSuccess) {
-        this.blockEnvSuccess = blockEnvSuccess;
+            (long)events.getEvents().size());
+        }, delayedExecutor);
     }
 
     public void setSendTxStatus(String sendTxStatus) {
@@ -136,8 +125,8 @@ public class MockTransport implements ISidecarTransport {
         this.emptyResults = emptyResults;
     }
 
-    public void setThrowOnSendBlockEnv(boolean throwOnSendBlockEnv) {
-        this.throwOnSendBlockEnv = throwOnSendBlockEnv;
+    public void setThrowOnSendEvents(boolean throwOnSendEvents) {
+        this.throwOnSendEvents = throwOnSendEvents;
     }
 
     public void setThrowOnSendTx(boolean throwOnSendTx) {
@@ -156,7 +145,11 @@ public class MockTransport implements ISidecarTransport {
         this.sendTransactionsLatency = sendTransactionsLatency;
     }
 
-    public void setSendBlockEnvLatency(int sendBlockEnvLatency) {
-        this.sendBlockEnvLatency = sendBlockEnvLatency;
+    public void setSendEventsLatency(int sendEventsLatency) {
+        this.sendEventsLatency = sendEventsLatency;
+    }
+
+    public void addFailingTx(String failingTx) {
+        failingTransactions.add(failingTx);
     }
 }

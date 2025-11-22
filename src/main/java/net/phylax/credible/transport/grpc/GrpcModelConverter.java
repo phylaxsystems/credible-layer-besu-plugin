@@ -18,22 +18,6 @@ public class GrpcModelConverter {
     // ==================== REQUEST CONVERSIONS (POJO → Protobuf) ====================
 
     /**
-     * Convert SendBlockEnvRequest POJO to BlockEnvEnvelope protobuf
-     */
-    public static Sidecar.BlockEnvEnvelope toProtoBlockEnvEnvelope(SidecarApiModels.SendBlockEnvRequest request) {
-        Sidecar.BlockEnvEnvelope.Builder builder = Sidecar.BlockEnvEnvelope.newBuilder()
-            .setBlockEnv(toProtoBlockEnv(request.getBlockEnv()))
-            .setNTransactions(request.getNTransactions())
-            .setSelectedIterationId(request.getSelectedIterationId());
-
-        if (request.getLastTxHash() != null && !request.getLastTxHash().isEmpty()) {
-            builder.setLastTxHash(request.getLastTxHash());
-        }
-
-        return builder.build();
-    }
-
-    /**
      * Convert BlockEnv POJO to BlockEnv protobuf
      */
     private static Sidecar.BlockEnv toProtoBlockEnv(SidecarApiModels.BlockEnv blockEnv) {
@@ -90,10 +74,15 @@ public class GrpcModelConverter {
      * Convert TransactionExecutionPayload POJO to Transaction protobuf
      */
     private static Sidecar.Transaction toProtoTransaction(SidecarApiModels.TransactionExecutionPayload pojo) {
-        return Sidecar.Transaction.newBuilder()
+        var builder = Sidecar.Transaction.newBuilder()
             .setTxExecutionId(toProtoTxExecutionId(pojo.getTxExecutionId()))
-            .setTxEnv(toProtoTransactionEnv(pojo.getTxEnv()))
-            .build();
+            .setTxEnv(toProtoTransactionEnv(pojo.getTxEnv()));
+        
+        if (pojo.getPrevTxHash() != null) {
+            builder.setPrevTxHash(pojo.getPrevTxHash());
+        }
+
+        return builder.build();
     }
 
     /**
@@ -108,6 +97,7 @@ public class GrpcModelConverter {
             .setBlockNumber(pojo.getBlockNumber())
             .setIterationId(pojo.getIterationId())
             .setTxHash(pojo.getTxHash())
+            .setIndex(pojo.getIndex())
             .build();
     }
 
@@ -209,7 +199,8 @@ public class GrpcModelConverter {
         var txExecId = Sidecar.TxExecutionId.newBuilder()
             .setBlockNumber(request.getBlockNumber())
             .setIterationId(request.getIterationId())
-            .setTxHash(request.getTxHash());
+            .setTxHash(request.getTxHash())
+            .setIndex(request.getIndex());
         return Sidecar.GetTransactionRequest.newBuilder()
             .setTxExecutionId(txExecId)
             .build();
@@ -223,7 +214,8 @@ public class GrpcModelConverter {
         Sidecar.TxExecutionId.Builder txExecIdBuilder = Sidecar.TxExecutionId.newBuilder()
             .setBlockNumber(request.getBlockNumber())
             .setIterationId(request.getIterationId())
-            .setTxHash(request.getTxHash());
+            .setTxHash(request.getTxHash())
+            .setIndex(request.getIndex());
 
         return Sidecar.ReorgRequest.newBuilder()
             .setTxExecutionId(txExecIdBuilder.build())
@@ -390,7 +382,8 @@ public class GrpcModelConverter {
         return new SidecarApiModels.TxExecutionId(
             proto.getBlockNumber(),
             proto.getIterationId(),
-            proto.getTxHash()
+            proto.getTxHash(),
+            proto.getIndex()
         );
     }
 }
