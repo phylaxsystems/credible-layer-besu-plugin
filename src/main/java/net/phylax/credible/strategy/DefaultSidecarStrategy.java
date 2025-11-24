@@ -155,7 +155,6 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                             isActive.set(false);
                             activeTransports.clear();
                             pendingTxRequests.clear();
-                            sendTxFutures.clear();
                             span.setAttribute("active_transport_target", "none");
                         }
                     }
