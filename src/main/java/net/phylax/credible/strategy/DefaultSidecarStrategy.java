@@ -40,6 +40,7 @@ import net.phylax.credible.utils.Result;
 
 public class DefaultSidecarStrategy implements ISidecarStrategy {
     private static final Logger LOG = CredibleLogger.getLogger(DefaultSidecarStrategy.class);
+    private static final int MAX_RETRIES = 2;
 
     private List<ISidecarTransport> primaryTransports;
     private List<ISidecarTransport> activeTransports;
@@ -278,6 +279,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                     metricsRegistry.getSidecarRpcCounter().labels(CredibleLayerMethods.GET_TRANSACTION).inc();
 
                     var getTxSpan = tracer.spanBuilder(CredibleLayerMethods.GET_TRANSACTION).startSpan();
+                    long beforeCall = System.currentTimeMillis();
                     return transport.getTransaction(GetTransactionRequest.fromTxExecutionId(txExecutionIds.get(0)))
                         .whenComplete((response, throwable) -> {
                             try(Scope getScope = context.makeCurrent()) {
@@ -289,6 +291,8 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                                     getTxSpan.setAttribute("failed", true);
                                     span.end();
                                 }
+                                long rtt = System.currentTimeMillis() - beforeCall;
+                                LOG.debug("getTransaction RTT: {}ms", rtt);
                                 timing.stopTimer();
                             } finally {
                                 getTxSpan.end();
@@ -318,26 +322,56 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
             LOG.debug("No pending request found for transaction {}", txExecId);
             return Result.failure(CredibleRejectionReason.NO_RESULT);
         }
-        var txResponseResult = handleTransactionFuture(futures);
-        return txResponseResult;
+        return handleTransactionFutureWithRetry(futures, transactionRequest, 0);
     }
 
-    private Result<GetTransactionResponse, CredibleRejectionReason> handleTransactionFuture(List<CompletableFuture<GetTransactionResponse>> futures) {
+    private Result<GetTransactionResponse, CredibleRejectionReason> handleTransactionFutureWithRetry(
+            List<CompletableFuture<GetTransactionResponse>> futures,
+            GetTransactionRequest transactionRequest,
+            int attempt) {
         CompletableFuture<Result<GetTransactionResponse, CredibleRejectionReason>> anySuccess = anySuccessOf(futures)
             .orTimeout(processingTimeout, TimeUnit.MILLISECONDS)
             .thenApply(res -> Result.<GetTransactionResponse, CredibleRejectionReason>success(res))
             .exceptionally(ex -> {
-                LOG.debug("Timeout or error getting transactions: exception {}", ex.getMessage());
+                LOG.debug("Timeout or error getting transactions (attempt {}): exception {}", attempt + 1, ex.getMessage());
                 metricsRegistry.getTimeoutCounter().labels().inc();
-                isActive.set(false);
                 return Result.failure(CredibleRejectionReason.TIMEOUT);
             });
 
         try {
-            return anySuccess.get();
+            Result<GetTransactionResponse, CredibleRejectionReason> result = anySuccess.get();
+
+            // Retry on timeout if we haven't exceeded max retries
+            if (!result.isSuccess() && result.getFailure() == CredibleRejectionReason.TIMEOUT && attempt < MAX_RETRIES) {
+                LOG.info("Retrying getTransaction for {} (attempt {}/{})",
+                    transactionRequest.toTxExecutionId(), attempt + 1, MAX_RETRIES);
+
+                if (activeTransports.isEmpty()) {
+                    LOG.debug("No active transports available for retry");
+                    isActive.set(false);
+                    return result;
+                }
+
+                List<CompletableFuture<GetTransactionResponse>> retryFutures = activeTransports.stream()
+                    .map(transport -> {
+                        metricsRegistry.getSidecarRpcCounter().labels(CredibleLayerMethods.GET_TRANSACTION).inc();
+                        return transport.getTransaction(transactionRequest);
+                    })
+                    .collect(Collectors.toList());
+
+                return handleTransactionFutureWithRetry(retryFutures, transactionRequest, attempt + 1);
+            }
+
+            // If final failure (either non-timeout or max retries exceeded), mark inactive
+            if (!result.isSuccess()) {
+                isActive.set(false);
+            }
+
+            return result;
         } catch (InterruptedException | ExecutionException e) {
-            LOG.debug("Exception waiting for sidecar responses: {}, cause: {}", e.getMessage(), e.getCause().getMessage());
+            LOG.debug("Exception waiting for sidecar responses: {}, cause: {}", e.getMessage(), e.getCause() != null ? e.getCause().getMessage() : "null");
             metricsRegistry.getErrorCounter().labels().inc();
+            isActive.set(false);
             return Result.failure(CredibleRejectionReason.ERROR);
         }
     }

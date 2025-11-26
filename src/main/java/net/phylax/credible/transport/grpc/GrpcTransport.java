@@ -1,11 +1,7 @@
 package net.phylax.credible.transport.grpc;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import org.slf4j.Logger;
 
@@ -38,10 +34,8 @@ public class GrpcTransport implements ISidecarTransport {
     private static final Logger LOG = CredibleLogger.getLogger(GrpcTransport.class);
 
     // Channel pool fields (immutable after construction)
-    private final List<ManagedChannel> channelPool;
-    private final List<ManagedChannel> pollingChannelPool;
-    private final AtomicInteger channelIndex;
-    private final AtomicInteger pollingChannelIndex;
+    private final ManagedChannel channel;
+    private final SidecarTransportGrpc.SidecarTransportStub stub;
 
     private final long deadlineMillis;
     private final Tracer tracer;
@@ -50,31 +44,19 @@ public class GrpcTransport implements ISidecarTransport {
     /**
      * Create a new GrpcTransport with pre-configured channel pools
      */
-    public GrpcTransport(List<ManagedChannel> channelPool, List<ManagedChannel> pollingChannelPool, long deadlineMillis, OpenTelemetry openTelemetry, CredibleMetricsRegistry metricsRegistry) {
-        if (channelPool == null || channelPool.isEmpty()) {
-            throw new IllegalArgumentException("Channel pool cannot be null or empty");
-        }
-        if (pollingChannelPool == null || pollingChannelPool.isEmpty()) {
-            throw new IllegalArgumentException("Polling channel pool cannot be null or empty");
-        }
-
-        this.channelPool = Collections.unmodifiableList(new ArrayList<>(channelPool));
-        this.pollingChannelPool = Collections.unmodifiableList(new ArrayList<>(pollingChannelPool));
-        this.channelIndex = new AtomicInteger(0);
-        this.pollingChannelIndex = new AtomicInteger(0);
+    public GrpcTransport(ManagedChannel channel, long deadlineMillis, OpenTelemetry openTelemetry, CredibleMetricsRegistry metricsRegistry) {
+        this.channel = channel;
+        this.stub = SidecarTransportGrpc.newStub(channel);
         this.deadlineMillis = deadlineMillis;
         this.tracer = openTelemetry.getTracer("grpc-transport");
         this.metricsRegistry = metricsRegistry;
-
-        LOG.info("GrpcTransport initialized with {} write channels and {} polling channels",
-            channelPool.size(), pollingChannelPool.size());
     }
 
     /**
      * Create a new GrpcTransport with a single channel (backward compatibility)
      */
     public GrpcTransport(ManagedChannel channel, ManagedChannel pollingChannel, long deadlineMillis, OpenTelemetry openTelemetry, CredibleMetricsRegistry metricsRegistry) {
-        this(Collections.singletonList(channel), Collections.singletonList(pollingChannel), deadlineMillis, openTelemetry, metricsRegistry);
+        this(channel, deadlineMillis, openTelemetry, metricsRegistry);
     }
 
     /**
@@ -92,34 +74,12 @@ public class GrpcTransport implements ISidecarTransport {
             deadlineMillis, openTelemetry, metricsRegistry);
     }
 
-    /**
-     * Get the next channel from the pool using round-robin selection
-     */
-    private ManagedChannel getNextChannel() {
-        int index = channelIndex.getAndUpdate(i -> (i + 1) % channelPool.size());
-        return channelPool.get(index);
-    }
-
-    /**
-     * Get the next polling channel from the pool using round-robin selection
-     */
-    private ManagedChannel getNextPollingChannel() {
-        int index = pollingChannelIndex.getAndUpdate(i -> (i + 1) % pollingChannelPool.size());
-        return pollingChannelPool.get(index);
-    }
 
     /**
      * Create a new stub from a round-robin selected channel
      */
     private SidecarTransportGrpc.SidecarTransportStub getStub() {
-        return SidecarTransportGrpc.newStub(getNextChannel());
-    }
-
-    /**
-     * Create a new polling stub from a round-robin selected channel
-     */
-    private SidecarTransportGrpc.SidecarTransportStub getPollingStub() {
-        return SidecarTransportGrpc.newStub(getNextPollingChannel());
+        return stub;
     }
 
     @Override
@@ -214,7 +174,7 @@ public class GrpcTransport implements ISidecarTransport {
                 GrpcModelConverter.toProtoGetTransactionRequest(txRequest);
 
             // Make async gRPC call with deadline using round-robin polling channel
-            getPollingStub()
+            getStub()
                 .withDeadlineAfter(deadlineMillis, TimeUnit.MILLISECONDS)
                 .getTransaction(request, new StreamObserver<Sidecar.GetTransactionResponse>() {
                     @Override
@@ -289,32 +249,11 @@ public class GrpcTransport implements ISidecarTransport {
      */
     public void close() {
         try {
-            LOG.info("Shutting down {} gRPC channels", channelPool.size() + pollingChannelPool.size());
-
-            // Shutdown all channels in the pool
-            for (ManagedChannel channel : channelPool) {
-                channel.shutdown();
-            }
-            for (ManagedChannel channel : pollingChannelPool) {
-                channel.shutdown();
-            }
-
-            // Wait for termination
-            for (ManagedChannel channel : channelPool) {
-                channel.awaitTermination(5, TimeUnit.SECONDS);
-            }
-            for (ManagedChannel channel : pollingChannelPool) {
-                channel.awaitTermination(5, TimeUnit.SECONDS);
-            }
-        } catch (InterruptedException e) {
+            LOG.info("Shutting down gRPC channels");
+            channel.shutdown();
+        } catch (Exception e) {
             LOG.warn("Interrupted while shutting down gRPC channels", e);
-            for (ManagedChannel channel : channelPool) {
-                channel.shutdownNow();
-            }
-            for (ManagedChannel channel : pollingChannelPool) {
-                channel.shutdownNow();
-            }
-            Thread.currentThread().interrupt();
+            channel.shutdown();
         }
     }
 
@@ -339,9 +278,8 @@ public class GrpcTransport implements ISidecarTransport {
         private long deadlineMillis = 5000; // 5 seconds default
         private OpenTelemetry openTelemetry = OpenTelemetry.noop();
         private CredibleMetricsRegistry metricsRegistry;
-        private int channelPoolSize = 5; // Default: single channel (backward compatible)
-        private int pollingChannelPoolSize = 5; // Default: single channel (backward compatible)
-
+        private int channelPoolSize = 1; // Default: single channel (backward compatible)
+        
         public Builder host(String host) {
             this.host = host;
             return this;
@@ -379,34 +317,8 @@ public class GrpcTransport implements ISidecarTransport {
             return this;
         }
 
-        /**
-         * Set the number of channels in the polling operations pool
-         * Default is 1 (single channel, backward compatible)
-         */
-        public Builder pollingChannelPoolSize(int poolSize) {
-            if (poolSize < 1) {
-                throw new IllegalArgumentException("Polling channel pool size must be at least 1");
-            }
-            this.pollingChannelPoolSize = poolSize;
-            return this;
-        }
-
         public GrpcTransport build() {
-            // Create channel pools
-            List<ManagedChannel> channelPool = new ArrayList<>(channelPoolSize);
-            List<ManagedChannel> pollingChannelPool = new ArrayList<>(pollingChannelPoolSize);
-
-            // Build write channels
-            for (int i = 0; i < channelPoolSize; i++) {
-                channelPool.add(createChannel());
-            }
-
-            // Build polling channels
-            for (int i = 0; i < pollingChannelPoolSize; i++) {
-                pollingChannelPool.add(createChannel());
-            }
-
-            return new GrpcTransport(channelPool, pollingChannelPool, deadlineMillis, openTelemetry, metricsRegistry);
+            return new GrpcTransport(createChannel(), deadlineMillis, openTelemetry, metricsRegistry);
         }
 
         private ManagedChannel createChannel() {
