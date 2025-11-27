@@ -321,18 +321,18 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
             LOG.debug("No pending request found for transaction {}", txExecId);
             return Result.failure(CredibleRejectionReason.NO_RESULT);
         }
-        return handleTransactionFuture(futures, transactionRequest);
+        return handleTransactionFuture(futures);
     }
 
     private Result<GetTransactionResponse, CredibleRejectionReason> handleTransactionFuture(
-            List<CompletableFuture<GetTransactionResponse>> futures,
-            GetTransactionRequest transactionRequest) {
+            List<CompletableFuture<GetTransactionResponse>> futures) {
         CompletableFuture<Result<GetTransactionResponse, CredibleRejectionReason>> anySuccess = anySuccessOf(futures)
             .orTimeout(processingTimeout, TimeUnit.MILLISECONDS)
             .thenApply(res -> Result.<GetTransactionResponse, CredibleRejectionReason>success(res))
             .exceptionally(ex -> {
                 LOG.debug("Timeout or error getting transactions: exception {}", ex.getMessage());
                 metricsRegistry.getTimeoutCounter().labels().inc();
+                isActive.set(false);
                 return Result.failure(CredibleRejectionReason.TIMEOUT);
             });
 
