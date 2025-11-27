@@ -278,6 +278,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                     metricsRegistry.getSidecarRpcCounter().labels(CredibleLayerMethods.GET_TRANSACTION).inc();
 
                     var getTxSpan = tracer.spanBuilder(CredibleLayerMethods.GET_TRANSACTION).startSpan();
+                    long beforeCall = System.nanoTime();
                     return transport.getTransaction(GetTransactionRequest.fromTxExecutionId(txExecutionIds.get(0)))
                         .whenComplete((response, throwable) -> {
                             try(Scope getScope = context.makeCurrent()) {
@@ -289,6 +290,8 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                                     getTxSpan.setAttribute("failed", true);
                                     span.end();
                                 }
+                                long rtt = System.nanoTime() - beforeCall;
+                                LOG.debug("getTransaction RTT: {}us", rtt / 1000.0);
                                 timing.stopTimer();
                             } finally {
                                 getTxSpan.end();
@@ -318,11 +321,11 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
             LOG.debug("No pending request found for transaction {}", txExecId);
             return Result.failure(CredibleRejectionReason.NO_RESULT);
         }
-        var txResponseResult = handleTransactionFuture(futures);
-        return txResponseResult;
+        return handleTransactionFuture(futures);
     }
 
-    private Result<GetTransactionResponse, CredibleRejectionReason> handleTransactionFuture(List<CompletableFuture<GetTransactionResponse>> futures) {
+    private Result<GetTransactionResponse, CredibleRejectionReason> handleTransactionFuture(
+            List<CompletableFuture<GetTransactionResponse>> futures) {
         CompletableFuture<Result<GetTransactionResponse, CredibleRejectionReason>> anySuccess = anySuccessOf(futures)
             .orTimeout(processingTimeout, TimeUnit.MILLISECONDS)
             .thenApply(res -> Result.<GetTransactionResponse, CredibleRejectionReason>success(res))
@@ -336,7 +339,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         try {
             return anySuccess.get();
         } catch (InterruptedException | ExecutionException e) {
-            LOG.debug("Exception waiting for sidecar responses: {}, cause: {}", e.getMessage(), e.getCause().getMessage());
+            LOG.debug("Exception waiting for sidecar responses: {}, cause: {}", e.getMessage(), e.getCause() != null ? e.getCause().getMessage() : "null");
             metricsRegistry.getErrorCounter().labels().inc();
             return Result.failure(CredibleRejectionReason.ERROR);
         }
