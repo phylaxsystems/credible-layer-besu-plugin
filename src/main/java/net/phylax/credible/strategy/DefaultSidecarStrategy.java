@@ -1,5 +1,6 @@
 package net.phylax.credible.strategy;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -83,9 +84,10 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         final CredibleMetricsRegistry metricsRegistry,
         final Tracer tracer
     ) {
-        this.primaryTransports = primaryTransports;
+        // If transports aren't specified, the strategy shouldn't break
+        this.primaryTransports = primaryTransports == null ? new ArrayList<>() : primaryTransports;
+        this.fallbackTransports = fallbackTransports == null ? new ArrayList<>() : fallbackTransports;
         this.activeTransports = new CopyOnWriteArrayList<>();
-        this.fallbackTransports = fallbackTransports;
         this.processingTimeout = processingTimeout;
         this.metricsRegistry = metricsRegistry;
         this.tracer = tracer;
