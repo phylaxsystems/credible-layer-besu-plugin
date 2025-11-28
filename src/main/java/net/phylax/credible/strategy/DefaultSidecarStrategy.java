@@ -324,7 +324,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         }
 
         TxExecutionId txExecId = transactionRequest.toTxExecutionId();
-        CompletableFuture<GetTransactionResponse> future = pendingTxRequests.remove(txExecId);
+        CompletableFuture<GetTransactionResponse> future = pendingTxRequests.get(txExecId);
         if (future == null) {
             LOG.debug("No pending request found for transaction {}", txExecId);
             return Result.failure(CredibleRejectionReason.NO_RESULT);
@@ -353,6 +353,8 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
             metricsRegistry.getErrorCounter().labels().inc();
             Thread.currentThread().interrupt();
             return Result.failure(CredibleRejectionReason.ERROR);
+        } finally {
+            pendingTxRequests.remove(txExecId);
         }
     }
 
