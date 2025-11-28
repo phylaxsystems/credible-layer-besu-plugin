@@ -5,13 +5,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -34,6 +32,7 @@ import net.phylax.credible.types.SidecarApiModels.ReorgRequest;
 import net.phylax.credible.types.SidecarApiModels.ReorgResponse;
 import net.phylax.credible.types.SidecarApiModels.SendEventsRequest;
 import net.phylax.credible.types.SidecarApiModels.SendTransactionsRequest;
+import net.phylax.credible.types.SidecarApiModels.TransactionResult;
 import net.phylax.credible.types.SidecarApiModels.TxExecutionId;
 import net.phylax.credible.utils.CredibleLogger;
 import net.phylax.credible.utils.Result;
@@ -52,8 +51,8 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
 
     private Tracer tracer;
 
-    // Maps a transaction hash to a list of futures for each transport
-    private final Map<TxExecutionId, List<CompletableFuture<GetTransactionResponse>>> pendingTxRequests;
+    // Maps a TxExecutionId to a future that will be completed when the result arrives via stream
+    private final Map<TxExecutionId, CompletableFuture<GetTransactionResponse>> pendingTxRequests;
 
     private int processingTimeout;
     private final CredibleMetricsRegistry metricsRegistry;
@@ -91,7 +90,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         this.metricsRegistry = metricsRegistry;
         this.tracer = tracer;
 
-        this.pendingTxRequests = new ConcurrentHashMap<TxExecutionId, List<CompletableFuture<GetTransactionResponse>>>();
+        this.pendingTxRequests = new ConcurrentHashMap<>();
     }
     
     @Override
@@ -200,8 +199,37 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
             activeTransports.addAll(successfulTransports);
             metricsRegistry.registerActiveTransportsGauge(successfulTransports::size);
             LOG.debug("Updated active sidecars - count {}", successfulTransports.size());
+
+            // Subscribe to results stream for each transport
+            for (ISidecarTransport transport : successfulTransports) {
+                transport.subscribeResults(
+                    this::onTransactionResult,
+                    error -> {
+                        LOG.error("Results subscription error: {}", error.getMessage());
+                        activeTransports.remove(transport);
+                    }
+                );
+            }
         } finally {
             span.end();
+        }
+    }
+
+    /**
+     * Handle incoming transaction result from the SubscribeResults stream.
+     * Matches the result to a pending request and completes its future.
+     */
+    private void onTransactionResult(TransactionResult result) {
+        TxExecutionId txExecId = result.getTxExecutionId();
+        CompletableFuture<GetTransactionResponse> future = pendingTxRequests.get(txExecId);
+
+        if (future != null) {
+            LOG.debug("Received result for pending tx: hash={}, status={}",
+                txExecId.getTxHash(), result.getStatus());
+            future.complete(new GetTransactionResponse(result));
+        } else {
+            LOG.trace("Received result for unknown/already-completed tx: hash={}",
+                txExecId.getTxHash());
         }
     }
     
@@ -242,70 +270,50 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
 
             Context context = Context.current();
 
-            // Dispatch sendTransactions and getTransaction call per transport and store the futures
-            List<CompletableFuture<GetTransactionResponse>> futures = activeTransports.stream()
-                .map(transport -> {
-                    metricsRegistry.getSidecarRpcCounter().labels(CredibleLayerMethods.SEND_TRANSACTIONS).inc();
-                    var sendTxSpan = tracer.spanBuilder(CredibleLayerMethods.SEND_TRANSACTIONS).startSpan();
-                    transport.sendTransactions(sendTxRequest)
-                        .whenComplete((result, ex) -> {
-                            try(Scope sendScope = context.makeCurrent()) {
-                                if (ex != null) {
-                                    LOG.debug("SendTransactions error: {} - {}",
-                                        ex.getMessage(),
-                                        ex.getCause() != null ? ex.getCause().getMessage() : "");
-                                    metricsRegistry.getErrorCounter().labels().inc();
-                                    activeTransports.remove(transport);
-                                    sendTxSpan.setAttribute("failed", true);
-                                    span.end();
-                                } else {
-                                    LOG.debug("SendTransactions response: count - {}, message - {}",
-                                        result.getRequestCount(),
-                                        result.getMessage());
-                                    sendTxSpan.setAttribute("message", result.getMessage());
-                                }
-                            } finally {
-                                sendTxSpan.end();
+            // Send transactions to all active transports
+            for (ISidecarTransport transport : activeTransports) {
+                metricsRegistry.getSidecarRpcCounter().labels(CredibleLayerMethods.SEND_TRANSACTIONS).inc();
+                var sendTxSpan = tracer.spanBuilder(CredibleLayerMethods.SEND_TRANSACTIONS).startSpan();
+                transport.sendTransactions(sendTxRequest)
+                    .whenComplete((result, ex) -> {
+                        try(Scope sendScope = context.makeCurrent()) {
+                            if (ex != null) {
+                                LOG.debug("SendTransactions error: {} - {}",
+                                    ex.getMessage(),
+                                    ex.getCause() != null ? ex.getCause().getMessage() : "");
+                                metricsRegistry.getErrorCounter().labels().inc();
+                                activeTransports.remove(transport);
+                                sendTxSpan.setAttribute("failed", true);
+                            } else {
+                                LOG.debug("SendTransactions response: count - {}, message - {}",
+                                    result.getRequestCount(),
+                                    result.getMessage());
+                                sendTxSpan.setAttribute("message", result.getMessage());
                             }
-                        });
+                        } finally {
+                            sendTxSpan.end();
+                        }
+                    });
+            }
 
-                    if (!isActive.get()) {
-                        LOG.debug("Transports aren't active!");
-                        return CompletableFuture.<GetTransactionResponse>completedFuture(null);
-                    }
+            if (!isActive.get()) {
+                LOG.debug("Transports aren't active!");
+                span.end();
+                return Collections.emptyList();
+            }
 
-                    var timing = metricsRegistry.getPollingTimer().labels().startTimer();
-                    metricsRegistry.getSidecarRpcCounter().labels(CredibleLayerMethods.GET_TRANSACTION).inc();
-
-                    var getTxSpan = tracer.spanBuilder(CredibleLayerMethods.GET_TRANSACTION).startSpan();
-                    long beforeCall = System.nanoTime();
-                    return transport.getTransaction(GetTransactionRequest.fromTxExecutionId(txExecutionIds.get(0)))
-                        .whenComplete((response, throwable) -> {
-                            try(Scope getScope = context.makeCurrent()) {
-                                if (throwable != null) {
-                                    LOG.debug("GetTransaction error: {} - {}",
-                                        throwable.getMessage(),
-                                        throwable.getCause() != null ? throwable.getCause().getMessage() : "");
-                                    activeTransports.remove(transport);
-                                    getTxSpan.setAttribute("failed", true);
-                                    span.end();
-                                }
-                                long rtt = System.nanoTime() - beforeCall;
-                                LOG.debug("getTransaction RTT: {}us", rtt / 1000.0);
-                                timing.stopTimer();
-                            } finally {
-                                getTxSpan.end();
-                                span.end();
-                            }
-                        });
-                })
-                .collect(Collectors.toList());
-            
+            // Create a future that will be completed when the result arrives via SubscribeResults stream
             // NOTE: making the assumption that it's only 1 transaction per request
             // which is implied with the TransactionSelectionPlugin
-            pendingTxRequests.put(txExecutionIds.get(0), futures);
-            
-            return futures;
+            TxExecutionId txExecId = txExecutionIds.get(0);
+            CompletableFuture<GetTransactionResponse> resultFuture = new CompletableFuture<>();
+            pendingTxRequests.put(txExecId, resultFuture);
+
+            LOG.debug("Dispatched transaction, waiting for result via stream: hash={}", txExecId.getTxHash());
+            span.end();
+
+            // Return a single-element list for compatibility with existing interface
+            return Collections.singletonList(resultFuture);
         }
     }
     
@@ -316,70 +324,36 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         }
 
         TxExecutionId txExecId = transactionRequest.toTxExecutionId();
-        List<CompletableFuture<GetTransactionResponse>> futures = pendingTxRequests.remove(txExecId);
-        if (futures == null || futures.isEmpty()) {
+        CompletableFuture<GetTransactionResponse> future = pendingTxRequests.remove(txExecId);
+        if (future == null) {
             LOG.debug("No pending request found for transaction {}", txExecId);
             return Result.failure(CredibleRejectionReason.NO_RESULT);
         }
-        return handleTransactionFuture(futures);
-    }
-
-    private Result<GetTransactionResponse, CredibleRejectionReason> handleTransactionFuture(
-            List<CompletableFuture<GetTransactionResponse>> futures) {
-        CompletableFuture<Result<GetTransactionResponse, CredibleRejectionReason>> anySuccess = anySuccessOf(futures)
-            .orTimeout(processingTimeout, TimeUnit.MILLISECONDS)
-            .thenApply(res -> Result.<GetTransactionResponse, CredibleRejectionReason>success(res))
-            .exceptionally(ex -> {
-                LOG.debug("Timeout or error getting transactions: exception {}", ex.getMessage());
-                metricsRegistry.getTimeoutCounter().labels().inc();
-                isActive.set(false);
-                return Result.failure(CredibleRejectionReason.TIMEOUT);
-            });
 
         try {
-            return anySuccess.get();
-        } catch (InterruptedException | ExecutionException e) {
-            LOG.debug("Exception waiting for sidecar responses: {}, cause: {}", e.getMessage(), e.getCause() != null ? e.getCause().getMessage() : "null");
+            // Wait for result with timeout - result will be completed by onTransactionResult callback
+            GetTransactionResponse response = future
+                .orTimeout(processingTimeout, TimeUnit.MILLISECONDS)
+                .get();
+            return Result.success(response);
+        } catch (ExecutionException e) {
+            if (e.getCause() instanceof java.util.concurrent.TimeoutException) {
+                LOG.debug("Timeout waiting for transaction result: {}", txExecId.getTxHash());
+                metricsRegistry.getTimeoutCounter().labels().inc();
+                // Mark strategy as inactive when results timeout - no sidecar responded in time
+                isActive.set(false);
+                return Result.failure(CredibleRejectionReason.TIMEOUT);
+            }
+            LOG.debug("Exception waiting for transaction result: {}, cause: {}",
+                e.getMessage(), e.getCause() != null ? e.getCause().getMessage() : "null");
             metricsRegistry.getErrorCounter().labels().inc();
             return Result.failure(CredibleRejectionReason.ERROR);
+        } catch (InterruptedException e) {
+            LOG.debug("Interrupted waiting for transaction result: {}", txExecId.getTxHash());
+            metricsRegistry.getErrorCounter().labels().inc();
+            Thread.currentThread().interrupt();
+            return Result.failure(CredibleRejectionReason.ERROR);
         }
-    }
-
-    /**
-     * Returns the first successful response from all transport getTransactions futures
-     * @param futures Futures from the getTransactions transport calls
-     * @return
-     */
-    private CompletableFuture<GetTransactionResponse> anySuccessOf(List<CompletableFuture<GetTransactionResponse>> futures) {
-        if (futures.isEmpty()) {
-            return CompletableFuture.failedFuture(
-                new IllegalArgumentException("No futures provided")
-            );
-        }
-
-        CompletableFuture<GetTransactionResponse> result = new CompletableFuture<GetTransactionResponse>();
-        AtomicInteger failureCount = new AtomicInteger(0);
-
-        for (CompletableFuture<GetTransactionResponse> future : futures) {
-            future.whenComplete((value, ex) -> {
-                if (ex == null) {
-                    result.complete(value);
-                } else {
-                    LOG.debug("Transport getTransactions failed: {}", ex.getMessage());
-                    
-                    // If all futures have failed, complete exceptionally
-                    if (failureCount.incrementAndGet() == futures.size()) {
-                        LOG.debug("All transports completed exceptionally");
-                        CompletionException allFailed = new CompletionException(
-                            "All transports failed", ex
-                        );
-                        result.completeExceptionally(allFailed);
-                    }
-                }
-            });
-        }
-        
-        return result;
     }
 
     @Override

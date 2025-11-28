@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 import net.phylax.credible.types.SidecarApiModels.*;
 
@@ -26,6 +27,10 @@ public class MockTransport implements ISidecarTransport {
     // List of tx hashes that return assertion_failed
     private List<String> failingTransactions = new ArrayList<>();
 
+    // Results subscription callback
+    private Consumer<TransactionResult> resultsCallback;
+    private Consumer<Throwable> errorCallback;
+
     public MockTransport(int processingLatency) {
         this.processingLatency = processingLatency;
     }
@@ -34,11 +39,32 @@ public class MockTransport implements ISidecarTransport {
     public CompletableFuture<SendTransactionsResponse> sendTransactions(SendTransactionsRequest transactions) {
         Executor delayedExecutor = CompletableFuture.delayedExecutor(
             sendTransactionsLatency, TimeUnit.MILLISECONDS);
-            
+
         return CompletableFuture.supplyAsync(() -> {
             if (throwOnSendTx) {
                 throw new RuntimeException("SendTransactions failed");
             }
+
+            // Simulate results coming via the stream after processing latency
+            // Store callback reference and latency for use in async task (capture at send time)
+            final Consumer<TransactionResult> callbackRef = resultsCallback;
+            final int latency = processingLatency;
+            if (callbackRef != null) {
+                Executor resultExecutor = CompletableFuture.delayedExecutor(
+                    latency, TimeUnit.MILLISECONDS);
+                CompletableFuture.runAsync(() -> {
+                    for (TransactionExecutionPayload tx : transactions.getTransactions()) {
+                        TxExecutionId txExecId = tx.getTxExecutionId();
+                        String status = getTxStatus;
+                        if (failingTransactions.contains(txExecId.getTxHash())) {
+                            status = TransactionStatus.ASSERTION_FAILED;
+                        }
+                        TransactionResult result = new TransactionResult(txExecId, status, 21000L, "");
+                        callbackRef.accept(result);
+                    }
+                }, resultExecutor);
+            }
+
             return new SendTransactionsResponse(
                 sendTxStatus,
                 "Successfuly accepted",
@@ -151,5 +177,36 @@ public class MockTransport implements ISidecarTransport {
 
     public void addFailingTx(String failingTx) {
         failingTransactions.add(failingTx);
+    }
+
+    @Override
+    public CompletableFuture<Void> subscribeResults(Consumer<TransactionResult> onResult, Consumer<Throwable> onError) {
+        this.resultsCallback = onResult;
+        this.errorCallback = onError;
+        return CompletableFuture.completedFuture(null);
+    }
+
+    @Override
+    public void closeResultsSubscription() {
+        this.resultsCallback = null;
+        this.errorCallback = null;
+    }
+
+    /**
+     * Simulate receiving a transaction result from the sidecar
+     */
+    public void simulateResult(TransactionResult result) {
+        if (resultsCallback != null) {
+            resultsCallback.accept(result);
+        }
+    }
+
+    /**
+     * Simulate a stream error
+     */
+    public void simulateError(Throwable error) {
+        if (errorCallback != null) {
+            errorCallback.accept(error);
+        }
     }
 }

@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import com.google.protobuf.ByteString;
+
 import net.phylax.credible.types.SidecarApiModels;
 import sidecar.transport.v1.Sidecar;
 
@@ -11,7 +13,7 @@ import sidecar.transport.v1.Sidecar;
  * Converter between Java POJOs (SidecarApiModels) and Protobuf messages
  */
 public class GrpcModelConverter {
-    private static final ThreadLocal<Sidecar.TransactionEnv.Builder> BUILDER_POOL = 
+    private static final ThreadLocal<Sidecar.TransactionEnv.Builder> BUILDER_POOL =
         ThreadLocal.withInitial(() -> Sidecar.TransactionEnv.newBuilder());
 
 
@@ -27,14 +29,14 @@ public class GrpcModelConverter {
 
         Sidecar.BlockEnv.Builder builder = Sidecar.BlockEnv.newBuilder()
             .setNumber(blockEnv.getNumber())
-            .setBeneficiary(blockEnv.getBeneficiary())
+            .setBeneficiary(hexToByteString(blockEnv.getBeneficiary()))
             .setTimestamp(blockEnv.getTimestamp())
             .setGasLimit(blockEnv.getGasLimit())
             .setBasefee(blockEnv.getBaseFee())
-            .setDifficulty(blockEnv.getDifficulty());
+            .setDifficulty(hexToByteString(blockEnv.getDifficulty(), 32));
 
         if (blockEnv.getPrevrandao() != null) {
-            builder.setPrevrandao(blockEnv.getPrevrandao());
+            builder.setPrevrandao(hexToByteString(blockEnv.getPrevrandao(), 32));
         }
 
         if (blockEnv.getBlobExcessGasAndPrice() != null) {
@@ -52,21 +54,7 @@ public class GrpcModelConverter {
             SidecarApiModels.BlobExcessGasAndPrice pojo) {
         return Sidecar.BlobExcessGasAndPrice.newBuilder()
             .setExcessBlobGas(pojo.getExcessBlobGas())
-            .setBlobGasprice(String.valueOf(pojo.getBlobGasPrice()))
-            .build();
-    }
-
-    /**
-     * Convert SendTransactionsRequest POJO to protobuf
-     */
-    public static Sidecar.SendTransactionsRequest toProtoSendTransactionsRequest(
-            SidecarApiModels.SendTransactionsRequest request) {
-        List<Sidecar.Transaction> transactions = request.getTransactions().stream()
-            .map(GrpcModelConverter::toProtoTransaction)
-            .collect(Collectors.toList());
-
-        return Sidecar.SendTransactionsRequest.newBuilder()
-            .addAllTransactions(transactions)
+            .setBlobGasprice(longToByteString(pojo.getBlobGasPrice(), 16))
             .build();
     }
 
@@ -77,9 +65,9 @@ public class GrpcModelConverter {
         var builder = Sidecar.Transaction.newBuilder()
             .setTxExecutionId(toProtoTxExecutionId(pojo.getTxExecutionId()))
             .setTxEnv(toProtoTransactionEnv(pojo.getTxEnv()));
-        
+
         if (pojo.getPrevTxHash() != null) {
-            builder.setPrevTxHash(pojo.getPrevTxHash());
+            builder.setPrevTxHash(hexToByteString(pojo.getPrevTxHash()));
         }
 
         return builder.build();
@@ -96,7 +84,7 @@ public class GrpcModelConverter {
         return Sidecar.TxExecutionId.newBuilder()
             .setBlockNumber(pojo.getBlockNumber())
             .setIterationId(pojo.getIterationId())
-            .setTxHash(pojo.getTxHash())
+            .setTxHash(hexToByteString(pojo.getTxHash()))
             .setIndex(pojo.getIndex())
             .build();
     }
@@ -111,25 +99,28 @@ public class GrpcModelConverter {
 
         Sidecar.TransactionEnv.Builder builder = BUILDER_POOL.get()
             .setTxType(Byte.toUnsignedInt(pojo.getTxType()))
-            .setCaller(pojo.getCaller())
+            .setCaller(hexToByteString(pojo.getCaller()))
             .setGasLimit(pojo.getGasLimit())
-            .setGasPrice(String.valueOf(pojo.getGasPrice()))
-            .setKind(pojo.getKind())
-            .setValue(pojo.getValue())
-            .setData(pojo.getData())
+            .setGasPrice(longToByteString(pojo.getGasPrice(), 16))
+            .setTransactTo(hexToByteString(pojo.getKind()))
+            .setValue(hexToByteString(pojo.getValue(), 32))
+            .setData(hexToByteString(pojo.getData()))
             .setNonce(pojo.getNonce())
-            .setMaxFeePerBlobGas(String.valueOf(pojo.getMaxFeePerBlobGas()));
+            .setMaxFeePerBlobGas(longToByteString(pojo.getMaxFeePerBlobGas(), 16));
 
         if (pojo.getChainId() != null) {
             builder.setChainId(pojo.getChainId());
         }
 
         if (pojo.getGasPriorityFee() != null) {
-            builder.setGasPriorityFee(String.valueOf(pojo.getGasPriorityFee()));
+            builder.setGasPriorityFee(longToByteString(pojo.getGasPriorityFee(), 16));
         }
 
         if (pojo.getBlobHashes() != null && !pojo.getBlobHashes().isEmpty()) {
-            builder.addAllBlobHashes(pojo.getBlobHashes());
+            List<ByteString> blobHashes = pojo.getBlobHashes().stream()
+                .map(h -> hexToByteString(h, 32))
+                .collect(Collectors.toList());
+            builder.addAllBlobHashes(blobHashes);
         }
 
         if (pojo.getAccessList() != null && !pojo.getAccessList().isEmpty()) {
@@ -153,21 +144,27 @@ public class GrpcModelConverter {
      * Convert AccessListEntry POJO to AccessListItem protobuf
      */
     private static Sidecar.AccessListItem toProtoAccessListItem(SidecarApiModels.AccessListEntry pojo) {
+        List<ByteString> storageKeys = pojo.getStorageKeys() != null
+            ? pojo.getStorageKeys().stream()
+                .map(k -> hexToByteString(k, 32))
+                .collect(Collectors.toList())
+            : new ArrayList<>();
+
         return Sidecar.AccessListItem.newBuilder()
-            .setAddress(pojo.getAddress() != null ? pojo.getAddress() : "")
-            .addAllStorageKeys(pojo.getStorageKeys() != null ? pojo.getStorageKeys() : new ArrayList<>())
+            .setAddress(hexToByteString(pojo.getAddress()))
+            .addAllStorageKeys(storageKeys)
             .build();
     }
 
     private static Sidecar.Authorization toProtoAuthorization(SidecarApiModels.AuthorizationListEntry pojo) {
         Sidecar.Authorization.Builder builder = Sidecar.Authorization.newBuilder()
-            .setAddress(pojo.getAddress() != null ? pojo.getAddress() : "")
-            .setYParity(String.valueOf(Byte.toUnsignedInt(pojo.getV())))
-            .setR(pojo.getR() != null ? pojo.getR() : "")
-            .setS(pojo.getS() != null ? pojo.getS() : "");
+            .setAddress(hexToByteString(pojo.getAddress()))
+            .setYParity(Byte.toUnsignedInt(pojo.getV()))
+            .setR(hexToByteString(pojo.getR(), 32))
+            .setS(hexToByteString(pojo.getS(), 32));
 
         if (pojo.getChainId() != null) {
-            builder.setChainId(String.valueOf(pojo.getChainId()));
+            builder.setChainId(longToByteString(pojo.getChainId(), 32));
         }
 
         if (pojo.getNonce() != null) {
@@ -188,7 +185,7 @@ public class GrpcModelConverter {
             : new ArrayList<>();
 
         return Sidecar.GetTransactionsRequest.newBuilder()
-            .addAllTxExecutionId(protoIds)
+            .addAllTxExecutionIds(protoIds)
             .build();
     }
 
@@ -199,7 +196,7 @@ public class GrpcModelConverter {
         var txExecId = Sidecar.TxExecutionId.newBuilder()
             .setBlockNumber(request.getBlockNumber())
             .setIterationId(request.getIterationId())
-            .setTxHash(request.getTxHash())
+            .setTxHash(hexToByteString(request.getTxHash()))
             .setIndex(request.getIndex());
         return Sidecar.GetTransactionRequest.newBuilder()
             .setTxExecutionId(txExecId)
@@ -207,39 +204,10 @@ public class GrpcModelConverter {
     }
 
     /**
-     * Convert ReorgRequest POJO to protobuf
+     * Convert SendEventsRequestItem POJO to Event protobuf for streaming API
      */
-    public static Sidecar.ReorgRequest toProtoReorgRequest(
-            SidecarApiModels.ReorgRequest request) {
-        Sidecar.TxExecutionId.Builder txExecIdBuilder = Sidecar.TxExecutionId.newBuilder()
-            .setBlockNumber(request.getBlockNumber())
-            .setIterationId(request.getIterationId())
-            .setTxHash(request.getTxHash())
-            .setIndex(request.getIndex());
-
-        return Sidecar.ReorgRequest.newBuilder()
-            .setTxExecutionId(txExecIdBuilder.build())
-            .build();
-    }
-
-    /**
-     * Convert SendEventsRequest POJO to SendEvents protobuf
-     */
-    public static Sidecar.SendEvents toProtoSendEvents(SidecarApiModels.SendEventsRequest request) {
-        List<Sidecar.SendEvents.Event> events = request.getEvents().stream()
-            .map(GrpcModelConverter::toProtoSendEventsEvent)
-            .collect(Collectors.toList());
-
-        return Sidecar.SendEvents.newBuilder()
-            .addAllEvents(events)
-            .build();
-    }
-
-    /**
-     * Convert SendEventsRequestItem POJO to SendEvents.Event protobuf
-     */
-    private static Sidecar.SendEvents.Event toProtoSendEventsEvent(SidecarApiModels.SendEventsRequestItem item) {
-        Sidecar.SendEvents.Event.Builder builder = Sidecar.SendEvents.Event.newBuilder();
+    public static Sidecar.Event toProtoEvent(SidecarApiModels.SendEventsRequestItem item) {
+        Sidecar.Event.Builder builder = Sidecar.Event.newBuilder();
 
         if (item instanceof SidecarApiModels.CommitHeadReqItem) {
             SidecarApiModels.CommitHeadReqItem commitHeadItem = (SidecarApiModels.CommitHeadReqItem) item;
@@ -256,9 +224,23 @@ public class GrpcModelConverter {
             if (transactionItem.getTransaction() != null) {
                 builder.setTransaction(toProtoTransaction(transactionItem.getTransaction()));
             }
+        } else if (item instanceof SidecarApiModels.ReorgEventReqItem) {
+            SidecarApiModels.ReorgEventReqItem reorgItem = (SidecarApiModels.ReorgEventReqItem) item;
+            if (reorgItem.getReorg() != null) {
+                builder.setReorg(toProtoReorgEvent(reorgItem.getReorg()));
+            }
         }
 
         return builder.build();
+    }
+
+    /**
+     * Convert ReorgEvent POJO to ReorgEvent protobuf
+     */
+    private static Sidecar.ReorgEvent toProtoReorgEvent(SidecarApiModels.ReorgEvent reorg) {
+        return Sidecar.ReorgEvent.newBuilder()
+            .setTxExecutionId(toProtoTxExecutionId(reorg.getTxExecutionId()))
+            .build();
     }
 
     /**
@@ -270,7 +252,7 @@ public class GrpcModelConverter {
             .setNTransactions(pojo.getNTransactions());
 
         if (pojo.getLastTxHash() != null && !pojo.getLastTxHash().isEmpty()) {
-            builder.setLastTxHash(pojo.getLastTxHash());
+            builder.setLastTxHash(hexToByteString(pojo.getLastTxHash()));
         }
 
         if (pojo.getSelectedIterationId() != null) {
@@ -293,46 +275,13 @@ public class GrpcModelConverter {
     // ==================== RESPONSE CONVERSIONS (Protobuf → POJO) ====================
 
     /**
-     * Convert BasicAck protobuf to SendBlockEnvResponse POJO
+     * Convert StreamAck protobuf to SendEventsResponse POJO
      */
-    public static SidecarApiModels.SendBlockEnvResponse fromProtoBasicAckToBlockEnvResponse(Sidecar.BasicAck proto) {
-        return new SidecarApiModels.SendBlockEnvResponse(
-            proto.getAccepted() ? "accepted" : "failed",
-            proto.getAccepted() ? 1L : 0L,
-            proto.getMessage().isEmpty() ? null : proto.getMessage()
-        );
-    }
-
-    /**
-     * Convert BasicAck protobuf to ReorgResponse POJO
-     */
-    public static SidecarApiModels.ReorgResponse fromProtoBasicAckToReorgResponse(Sidecar.BasicAck proto) {
-        return new SidecarApiModels.ReorgResponse(
-            proto.getAccepted(),
-            proto.getAccepted() ? null : proto.getMessage()
-        );
-    }
-
-    /**
-     * Convert BasicAck protobuf to SendEventsResponse POJO
-     */
-    public static SidecarApiModels.SendEventsResponse fromProtoBasicAckToSendEventsResponse(Sidecar.BasicAck proto) {
+    public static SidecarApiModels.SendEventsResponse fromProtoStreamAckToSendEventsResponse(Sidecar.StreamAck proto) {
         return new SidecarApiModels.SendEventsResponse(
-            proto.getAccepted() ? "accepted" : "failed",
+            proto.getSuccess() ? "accepted" : "failed",
             proto.getMessage().isEmpty() ? null : proto.getMessage(),
-            proto.getAccepted() ? 1L : 0L
-        );
-    }
-
-    /**
-     * Convert SendTransactionsResponse protobuf to POJO
-     */
-    public static SidecarApiModels.SendTransactionsResponse fromProtoSendTransactionsResponse(
-            Sidecar.SendTransactionsResponse proto) {
-        return new SidecarApiModels.SendTransactionsResponse(
-            "success", // Status field
-            proto.getMessage(),
-            proto.getAcceptedCount()
+            proto.getEventsProcessed()
         );
     }
 
@@ -345,9 +294,14 @@ public class GrpcModelConverter {
             .map(GrpcModelConverter::fromProtoTransactionResult)
             .collect(Collectors.toList());
 
+        // Convert ByteString list to hex String list
+        List<String> notFound = proto.getNotFoundList().stream()
+            .map(bs -> "0x" + bytesToHex(bs.toByteArray()))
+            .collect(Collectors.toList());
+
         return new SidecarApiModels.GetTransactionsResponse(
             results,
-            new ArrayList<>(proto.getNotFoundList())
+            notFound
         );
     }
 
@@ -363,15 +317,37 @@ public class GrpcModelConverter {
     /**
      * Convert TransactionResult protobuf to POJO
      */
-    private static SidecarApiModels.TransactionResult fromProtoTransactionResult(
+    public static SidecarApiModels.TransactionResult fromProtoTransactionResult(
             Sidecar.TransactionResult proto) {
         SidecarApiModels.TxExecutionId txExecutionId = fromProtoTxExecutionId(proto.getTxExecutionId());
+        // Convert ResultStatus enum to string
+        String status = resultStatusToString(proto.getStatus());
         return new SidecarApiModels.TransactionResult(
             txExecutionId,
-            proto.getStatus(),
+            status,
             proto.getGasUsed(),
             proto.getError().isEmpty() ? null : proto.getError()
         );
+    }
+
+    /**
+     * Convert ResultStatus enum to string representation
+     */
+    private static String resultStatusToString(Sidecar.ResultStatus status) {
+        switch (status) {
+            case RESULT_STATUS_SUCCESS:
+                return SidecarApiModels.TransactionStatus.SUCCESS;
+            case RESULT_STATUS_REVERTED:
+                return SidecarApiModels.TransactionStatus.REVERTED;
+            case RESULT_STATUS_HALTED:
+                return SidecarApiModels.TransactionStatus.HALTED;
+            case RESULT_STATUS_FAILED:
+                return SidecarApiModels.TransactionStatus.FAILED;
+            case RESULT_STATUS_ASSERTION_FAILED:
+                return SidecarApiModels.TransactionStatus.ASSERTION_FAILED;
+            default:
+                return "unknown";
+        }
     }
 
     /**
@@ -379,11 +355,98 @@ public class GrpcModelConverter {
      */
     private static SidecarApiModels.TxExecutionId fromProtoTxExecutionId(
             Sidecar.TxExecutionId proto) {
+        // Convert ByteString txHash to hex string
+        String txHash = "0x" + bytesToHex(proto.getTxHash().toByteArray());
         return new SidecarApiModels.TxExecutionId(
             proto.getBlockNumber(),
             proto.getIterationId(),
-            proto.getTxHash(),
+            txHash,
             proto.getIndex()
         );
+    }
+
+    // ==================== HELPER METHODS ====================
+
+    /**
+     * Convert hex string to ByteString (no padding)
+     */
+    private static ByteString hexToByteString(String hex) {
+        return hexToByteString(hex, 0);
+    }
+
+    /**
+     * Convert hex string to ByteString with optional left-padding
+     * @param hex the hex string (with or without 0x prefix)
+     * @param padding target byte length for left-padding with zeros (0 = no padding)
+     */
+    private static ByteString hexToByteString(String hex, int padding) {
+        if (hex == null || hex.isEmpty()) {
+            if (padding > 0) {
+                return ByteString.copyFrom(new byte[padding]);
+            }
+            return ByteString.EMPTY;
+        }
+        // Remove 0x prefix if present
+        String cleanHex = hex.startsWith("0x") || hex.startsWith("0X")
+            ? hex.substring(2)
+            : hex;
+
+        if (cleanHex.isEmpty()) {
+            if (padding > 0) {
+                return ByteString.copyFrom(new byte[padding]);
+            }
+            return ByteString.EMPTY;
+        }
+
+        // Pad with leading zero if odd length
+        if (cleanHex.length() % 2 != 0) {
+            cleanHex = "0" + cleanHex;
+        }
+
+        int hexByteLen = cleanHex.length() / 2;
+        int resultLen = padding > 0 ? Math.max(padding, hexByteLen) : hexByteLen;
+        byte[] bytes = new byte[resultLen];
+
+        // Calculate offset for left-padding (big-endian)
+        int offset = resultLen - hexByteLen;
+
+        for (int i = 0; i < hexByteLen; i++) {
+            int index = i * 2;
+            bytes[offset + i] = (byte) Integer.parseInt(cleanHex.substring(index, index + 2), 16);
+        }
+        return ByteString.copyFrom(bytes);
+    }
+
+    /**
+     * Convert long to ByteString (big-endian) with specified padding
+     * @param value the long value to convert
+     * @param padding target byte length (e.g., 16 for u128, 32 for U256)
+     */
+    private static ByteString longToByteString(Long value, int padding) {
+        if (value == null) {
+            if (padding > 0) {
+                return ByteString.copyFrom(new byte[padding]);
+            }
+            return ByteString.EMPTY;
+        }
+        byte[] bytes = new byte[padding];
+        long v = value;
+        for (int i = padding - 1; i >= padding - 8 && i >= 0; i--) {
+            bytes[i] = (byte) (v & 0xFF);
+            v >>= 8;
+        }
+        // Upper bytes are zero for values that fit in long
+        return ByteString.copyFrom(bytes);
+    }
+
+    /**
+     * Convert byte array to hex string
+     */
+    private static String bytesToHex(byte[] bytes) {
+        StringBuilder sb = new StringBuilder();
+        for (byte b : bytes) {
+            sb.append(String.format("%02x", b));
+        }
+        return sb.toString();
     }
 }

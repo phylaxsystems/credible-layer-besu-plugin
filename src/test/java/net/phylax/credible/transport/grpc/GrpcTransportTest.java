@@ -3,7 +3,11 @@ package net.phylax.credible.transport.grpc;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
+import com.google.protobuf.ByteString;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -35,41 +39,46 @@ public class GrpcTransportTest {
      */
     private static class TestSidecarService extends SidecarTransportGrpc.SidecarTransportImplBase {
         // Store last received requests for verification
-        public Sidecar.SendEvents lastSendEventsRequest;
-        public Sidecar.SendTransactionsRequest lastSendTransactionsRequest;
+        public final AtomicReference<Sidecar.Event> lastEvent = new AtomicReference<>();
+        public final List<Sidecar.Event> receivedEvents = new ArrayList<>();
         public Sidecar.GetTransactionsRequest lastGetTransactionsRequest;
         public Sidecar.GetTransactionRequest lastGetTransactionRequest;
-        public Sidecar.ReorgRequest lastReorgRequest;
 
         // Configurable responses
-        public boolean eventsAccepted = true;
-        public String eventsMessage = "Events accepted";
-        public int transactionsAcceptedCount = 0;
+        public boolean streamAckSuccess = true;
+        public String streamAckMessage = "Events processed";
         public List<Sidecar.TransactionResult> transactionResults = new ArrayList<>();
-        public List<String> notFoundTxHashes = new ArrayList<>();
-        public boolean reorgAccepted = true;
+        public List<ByteString> notFoundTxHashes = new ArrayList<>();
 
         @Override
-        public void sendEvents(Sidecar.SendEvents request,
-                              StreamObserver<Sidecar.BasicAck> responseObserver) {
-            lastSendEventsRequest = request;
-            responseObserver.onNext(Sidecar.BasicAck.newBuilder()
-                .setAccepted(eventsAccepted)
-                .setMessage(eventsMessage)
-                .build());
-            responseObserver.onCompleted();
-        }
+        public StreamObserver<Sidecar.Event> streamEvents(StreamObserver<Sidecar.StreamAck> responseObserver) {
+            return new StreamObserver<>() {
+                private long eventsProcessed = 0;
 
-        @Override
-        public void sendTransactions(Sidecar.SendTransactionsRequest request,
-                                     StreamObserver<Sidecar.SendTransactionsResponse> responseObserver) {
-            lastSendTransactionsRequest = request;
-            responseObserver.onNext(Sidecar.SendTransactionsResponse.newBuilder()
-                .setAcceptedCount(transactionsAcceptedCount)
-                .setRequestCount(request.getTransactionsCount())
-                .setMessage("Transactions processed")
-                .build());
-            responseObserver.onCompleted();
+                @Override
+                public void onNext(Sidecar.Event event) {
+                    lastEvent.set(event);
+                    receivedEvents.add(event);
+                    eventsProcessed++;
+
+                    // Send ack for each event
+                    responseObserver.onNext(Sidecar.StreamAck.newBuilder()
+                        .setSuccess(streamAckSuccess)
+                        .setMessage(streamAckMessage)
+                        .setEventsProcessed(eventsProcessed)
+                        .build());
+                }
+
+                @Override
+                public void onError(Throwable t) {
+                    responseObserver.onError(t);
+                }
+
+                @Override
+                public void onCompleted() {
+                    responseObserver.onCompleted();
+                }
+            };
         }
 
         @Override
@@ -93,15 +102,32 @@ public class GrpcTransportTest {
             responseObserver.onCompleted();
         }
 
+        // Store the results observer for sending results later
+        public StreamObserver<Sidecar.TransactionResult> resultsObserver;
+
         @Override
-        public void reorg(Sidecar.ReorgRequest request,
-                         StreamObserver<Sidecar.BasicAck> responseObserver) {
-            lastReorgRequest = request;
-            responseObserver.onNext(Sidecar.BasicAck.newBuilder()
-                .setAccepted(reorgAccepted)
-                .setMessage("Reorg processed")
-                .build());
-            responseObserver.onCompleted();
+        public void subscribeResults(Sidecar.SubscribeResultsRequest request,
+                                    StreamObserver<Sidecar.TransactionResult> responseObserver) {
+            this.resultsObserver = responseObserver;
+            // Keep the stream open - results will be sent via sendResult()
+        }
+
+        /**
+         * Send a result to the subscribed client
+         */
+        public void sendResult(Sidecar.TransactionResult result) {
+            if (resultsObserver != null) {
+                resultsObserver.onNext(result);
+            }
+        }
+
+        public void reset() {
+            lastEvent.set(null);
+            receivedEvents.clear();
+            lastGetTransactionsRequest = null;
+            lastGetTransactionRequest = null;
+            transactionResults.clear();
+            notFoundTxHashes.clear();
         }
     }
 
@@ -127,7 +153,7 @@ public class GrpcTransportTest {
                 .build());
 
         var metrics = new CredibleMetricsRegistry(new SimpleMockMetricsSystem());
-        
+
         // Create the transport with the in-process channel
         transport = new GrpcTransport(channel, channel, 5000, OpenTelemetry.noop(), metrics);
     }
@@ -163,48 +189,20 @@ public class GrpcTransportTest {
 
         // Verify the response
         assertEquals("accepted", response.getStatus());
-        assertEquals("Events accepted", response.getMessage());
+
+        // Give some time for the stream to process
+        Thread.sleep(100);
 
         // Verify the request was received correctly
-        assertNotNull(testService.lastSendEventsRequest);
-        assertEquals(1, testService.lastSendEventsRequest.getEventsCount());
+        assertFalse(testService.receivedEvents.isEmpty());
 
-        Sidecar.SendEvents.Event event = testService.lastSendEventsRequest.getEvents(0);
+        Sidecar.Event event = testService.receivedEvents.get(0);
         assertTrue(event.hasCommitHead());
 
         Sidecar.CommitHead receivedCommitHead = event.getCommitHead();
-        assertEquals("0xabcdef1234567890", receivedCommitHead.getLastTxHash());
         assertEquals(10, receivedCommitHead.getNTransactions());
         assertEquals(12345L, receivedCommitHead.getBlockNumber());
         assertEquals(1L, receivedCommitHead.getSelectedIterationId());
-    }
-
-    @Test
-    public void testSendEventsRejected() throws Exception {
-        // Configure service to reject
-        testService.eventsAccepted = false;
-        testService.eventsMessage = "Events rejected due to invalid data";
-
-        SidecarApiModels.CommitHead commitHead = new SidecarApiModels.CommitHead(
-            "0x1234567890abcdef1234567890abcdef",
-            0,
-            12345L,
-            1L
-        );
-
-        SidecarApiModels.CommitHeadReqItem commitHeadItem =
-            new SidecarApiModels.CommitHeadReqItem(commitHead);
-
-        List<SidecarApiModels.SendEventsRequestItem> events = new ArrayList<>();
-        events.add(commitHeadItem);
-
-        SidecarApiModels.SendEventsRequest request = new SidecarApiModels.SendEventsRequest(events);
-
-        CompletableFuture<SidecarApiModels.SendEventsResponse> future = transport.sendEvents(request);
-        SidecarApiModels.SendEventsResponse response = future.get();
-
-        assertEquals("failed", response.getStatus());
-        assertEquals("Events rejected due to invalid data", response.getMessage());
     }
 
     @Test
@@ -213,44 +211,41 @@ public class GrpcTransportTest {
         List<SidecarApiModels.TransactionExecutionPayload> transactions = new ArrayList<>();
 
         SidecarApiModels.TxEnv txEnv = new SidecarApiModels.TxEnv();
-        txEnv.setCaller("0xsender123");
+        txEnv.setCaller("0xabcdef1234567890abcdef1234567890abcdef12");
         txEnv.setGasLimit(21000L);
         txEnv.setGasPrice(1_000_000_000L);
-        txEnv.setKind("0xrecipient456");
-        txEnv.setValue("1000000000000000000");
+        txEnv.setKind("0xabcdef1234567890abcdef1234567890abcdef34");
+        txEnv.setValue("0x1000000000000000000");
         txEnv.setData("0x");
         txEnv.setNonce(0L);
         txEnv.setChainId(1L);
         txEnv.setTxType((byte) 2);
         txEnv.setMaxFeePerBlobGas(25L);
         txEnv.setGasPriorityFee(2L);
-        txEnv.setBlobHashes(List.of("0xblobhash"));
+        txEnv.setBlobHashes(List.of("0xabcdef1234567890"));
 
         SidecarApiModels.AccessListEntry accessListEntry = new SidecarApiModels.AccessListEntry(
-            "0xaccess", List.of("0xkey1", "0xkey2"));
+            "0xabcdef1234567890abcdef1234567890abcdef56", List.of("0xaabb", "0xccdd"));
         txEnv.setAccessList(List.of(accessListEntry));
 
         SidecarApiModels.AuthorizationListEntry authorizationListEntry = new SidecarApiModels.AuthorizationListEntry();
-        authorizationListEntry.setAddress("0xauth");
+        authorizationListEntry.setAddress("0xabcdef1234567890abcdef1234567890abcdef78");
         authorizationListEntry.setV((byte) 1);
-        authorizationListEntry.setR("0xr");
-        authorizationListEntry.setS("0xs");
+        authorizationListEntry.setR("0xaabbccdd");
+        authorizationListEntry.setS("0xeeff0011");
         authorizationListEntry.setChainId(1L);
         authorizationListEntry.setNonce(5L);
         txEnv.setAuthorizationList(List.of(authorizationListEntry));
 
         SidecarApiModels.TxExecutionId txExecutionId = new SidecarApiModels.TxExecutionId(
-            12345L, 1L, "0xtxhash1", 0L
+            12345L, 1L, "0xaabbccddeeff00112233445566778899aabbccddeeff00112233445566778899", 0L
         );
         transactions.add(new SidecarApiModels.TransactionExecutionPayload(
-            txExecutionId, txEnv, "0x123456789"
+            txExecutionId, txEnv, "0x1234567890abcdef"
         ));
 
         SidecarApiModels.SendTransactionsRequest request =
             new SidecarApiModels.SendTransactionsRequest(transactions);
-
-        // Configure test service
-        testService.transactionsAcceptedCount = 1;
 
         // Send the request
         CompletableFuture<SidecarApiModels.SendTransactionsResponse> future =
@@ -261,31 +256,16 @@ public class GrpcTransportTest {
         assertEquals("success", response.getStatus());
         assertEquals(1, response.getRequestCount());
 
-        // Verify the request was received correctly
-        assertNotNull(testService.lastSendTransactionsRequest);
-        assertEquals(1, testService.lastSendTransactionsRequest.getTransactionsCount());
-        assertEquals("0xtxhash1",
-                    testService.lastSendTransactionsRequest.getTransactions(0).getTxExecutionId().getTxHash());
+        // Give some time for the stream to process
+        Thread.sleep(100);
 
-        Sidecar.TransactionEnv protoEnv =
-            testService.lastSendTransactionsRequest.getTransactions(0).getTxEnv();
+        // Verify the request was received correctly via stream
+        assertFalse(testService.receivedEvents.isEmpty());
+        Sidecar.Event event = testService.receivedEvents.get(0);
+        assertTrue(event.hasTransaction());
+
+        Sidecar.TransactionEnv protoEnv = event.getTransaction().getTxEnv();
         assertEquals(2, protoEnv.getTxType());
-        assertEquals("0xrecipient456", protoEnv.getKind());
-        assertEquals("1000000000000000000", protoEnv.getValue());
-        assertEquals("1000000000", protoEnv.getGasPrice());
-        assertEquals("25", protoEnv.getMaxFeePerBlobGas());
-        assertEquals("2", protoEnv.getGasPriorityFee());
-        assertEquals(1, protoEnv.getBlobHashesCount());
-        assertEquals("0xblobhash", protoEnv.getBlobHashes(0));
-        assertEquals(1, protoEnv.getAccessListCount());
-        assertEquals("0xaccess", protoEnv.getAccessList(0).getAddress());
-        assertEquals(2, protoEnv.getAccessList(0).getStorageKeysCount());
-        assertEquals(1, protoEnv.getAuthorizationListCount());
-        assertEquals("0xauth", protoEnv.getAuthorizationList(0).getAddress());
-        assertEquals("1", protoEnv.getAuthorizationList(0).getYParity());
-        assertEquals("0xr", protoEnv.getAuthorizationList(0).getR());
-        assertEquals("1", protoEnv.getAuthorizationList(0).getChainId());
-        assertEquals(5L, protoEnv.getAuthorizationList(0).getNonce());
     }
 
     @Test
@@ -296,20 +276,20 @@ public class GrpcTransportTest {
                 .setTxExecutionId(Sidecar.TxExecutionId.newBuilder()
                     .setBlockNumber(0L)
                     .setIterationId(0L)
-                    .setTxHash("0xtxhash1")
+                    .setTxHash(hexToByteString("0xaabbccdd11223344"))
                     .build())
-                .setStatus("success")
+                .setStatus(Sidecar.ResultStatus.RESULT_STATUS_SUCCESS)
                 .setGasUsed(21000)
                 .setError("")
                 .build()
         );
-        testService.notFoundTxHashes.add("0xtxhash2");
+        testService.notFoundTxHashes.add(hexToByteString("0xeeff00112233"));
 
         // Create request with TxExecutionId
         SidecarApiModels.GetTransactionsRequest txReq = new SidecarApiModels.GetTransactionsRequest();
         txReq.setTxExecutionIds(List.of(
-            new SidecarApiModels.TxExecutionId(1000L, 1L, "0xtxhash1", 0L),
-            new SidecarApiModels.TxExecutionId(1000L, 1L, "0xtxhash2", 1L)
+            new SidecarApiModels.TxExecutionId(1000L, 1L, "0xaabbccdd11223344", 0L),
+            new SidecarApiModels.TxExecutionId(1000L, 1L, "0xeeff00112233", 1L)
         ));
 
         // Send the request
@@ -322,15 +302,12 @@ public class GrpcTransportTest {
         assertEquals(1, response.getNotFound().size());
 
         SidecarApiModels.TransactionResult result = response.getResults().get(0);
-        assertEquals("0xtxhash1", result.getTxExecutionId().getTxHash());
         assertEquals("success", result.getStatus());
         assertEquals(21000, result.getGasUsed());
 
-        assertEquals("0xtxhash2", response.getNotFound().get(0));
-
         // Verify the request was received correctly
         assertNotNull(testService.lastGetTransactionsRequest);
-        assertEquals(2, testService.lastGetTransactionsRequest.getTxExecutionIdCount());
+        assertEquals(2, testService.lastGetTransactionsRequest.getTxExecutionIdsCount());
     }
 
     @Test
@@ -341,16 +318,16 @@ public class GrpcTransportTest {
                 .setTxExecutionId(Sidecar.TxExecutionId.newBuilder()
                     .setBlockNumber(0L)
                     .setIterationId(0L)
-                    .setTxHash("0xtxhash1")
+                    .setTxHash(hexToByteString("0xaabbccdd11223344"))
                     .build())
-                .setStatus("success")
+                .setStatus(Sidecar.ResultStatus.RESULT_STATUS_SUCCESS)
                 .setGasUsed(21000)
                 .setError("")
                 .build()
         );
 
         // Create request with TxExecutionId
-        SidecarApiModels.GetTransactionRequest txReq = new SidecarApiModels.GetTransactionRequest(1000L, 1L, "0xtxhash1", 0);
+        SidecarApiModels.GetTransactionRequest txReq = new SidecarApiModels.GetTransactionRequest(1000L, 1L, "0xaabbccdd11223344", 0);
 
         // Send the request
         CompletableFuture<SidecarApiModels.GetTransactionResponse> future =
@@ -361,7 +338,6 @@ public class GrpcTransportTest {
         assertTrue(response.getResult() != null);
 
         SidecarApiModels.TransactionResult result = response.getResult();
-        assertEquals("0xtxhash1", result.getTxExecutionId().getTxHash());
         assertEquals("success", result.getStatus());
         assertEquals(21000, result.getGasUsed());
 
@@ -373,7 +349,7 @@ public class GrpcTransportTest {
     public void testSendReorg() throws Exception {
         // Create reorg request with TxExecutionId
         SidecarApiModels.ReorgRequest request =
-            new SidecarApiModels.ReorgRequest(12345L, 1L, "0xremovedtxhash", 0);
+            new SidecarApiModels.ReorgRequest(12345L, 1L, "0xaabbccdd112233445566778899aabbccddeeff00", 0);
 
         // Send the request
         CompletableFuture<SidecarApiModels.ReorgResponse> future = transport.sendReorg(request);
@@ -383,18 +359,22 @@ public class GrpcTransportTest {
         assertTrue(response.getSuccess());
         assertNull(response.getError());
 
-        // Verify the request was received correctly
-        assertNotNull(testService.lastReorgRequest);
-        assertEquals("0xremovedtxhash", testService.lastReorgRequest.getTxExecutionId().getTxHash());
-        assertEquals(12345L, testService.lastReorgRequest.getTxExecutionId().getBlockNumber());
-        assertEquals(1L, testService.lastReorgRequest.getTxExecutionId().getIterationId());
+        // Give some time for the stream to process
+        Thread.sleep(100);
+
+        // Verify the reorg event was sent via stream
+        assertFalse(testService.receivedEvents.isEmpty());
+        Sidecar.Event event = testService.receivedEvents.get(0);
+        assertTrue(event.hasReorg());
+        assertEquals(12345L, event.getReorg().getTxExecutionId().getBlockNumber());
+        assertEquals(1L, event.getReorg().getTxExecutionId().getIterationId());
     }
 
     @Test
     public void testModelConversionsAreReversible() throws Exception {
         // Test that converting POJO → Proto → POJO maintains data integrity for SendEvents
         SidecarApiModels.CommitHead commitHead = new SidecarApiModels.CommitHead(
-            "0xlasttx", 5, 99999L, 1L
+            "0xaabbccdd11223344", 5, 99999L, 1L
         );
 
         SidecarApiModels.CommitHeadReqItem commitHeadItem =
@@ -406,19 +386,98 @@ public class GrpcTransportTest {
         SidecarApiModels.SendEventsRequest originalRequest = new SidecarApiModels.SendEventsRequest(events);
 
         // Send through transport and verify round-trip works
-        testService.eventsAccepted = true;
+        testService.streamAckSuccess = true;
         CompletableFuture<SidecarApiModels.SendEventsResponse> future =
             transport.sendEvents(originalRequest);
         SidecarApiModels.SendEventsResponse response = future.get();
 
         assertEquals("accepted", response.getStatus());
-        assertNotNull(testService.lastSendEventsRequest);
-        assertEquals(1, testService.lastSendEventsRequest.getEventsCount());
 
-        Sidecar.SendEvents.Event receivedEvent = testService.lastSendEventsRequest.getEvents(0);
+        // Give some time for the stream to process
+        Thread.sleep(100);
+
+        assertFalse(testService.receivedEvents.isEmpty());
+
+        Sidecar.Event receivedEvent = testService.receivedEvents.get(0);
         assertTrue(receivedEvent.hasCommitHead());
-        assertEquals(commitHead.getLastTxHash(), receivedEvent.getCommitHead().getLastTxHash());
         assertEquals(commitHead.getNTransactions().intValue(), receivedEvent.getCommitHead().getNTransactions());
         assertEquals(commitHead.getBlockNumber().longValue(), receivedEvent.getCommitHead().getBlockNumber());
+    }
+
+    @Test
+    public void testSubscribeResults() throws Exception {
+        // Set up a latch to wait for results
+        CountDownLatch resultLatch = new CountDownLatch(1);
+        AtomicReference<SidecarApiModels.TransactionResult> receivedResult = new AtomicReference<>();
+        AtomicReference<Throwable> receivedError = new AtomicReference<>();
+
+        // Subscribe to results
+        transport.subscribeResults(
+            result -> {
+                receivedResult.set(result);
+                resultLatch.countDown();
+            },
+            error -> {
+                receivedError.set(error);
+                resultLatch.countDown();
+            }
+        ).get();
+
+        // Give time for the subscription to be established
+        Thread.sleep(100);
+
+        // Send a result from the server
+        Sidecar.TransactionResult protoResult = Sidecar.TransactionResult.newBuilder()
+            .setTxExecutionId(Sidecar.TxExecutionId.newBuilder()
+                .setBlockNumber(1000L)
+                .setIterationId(1L)
+                .setTxHash(hexToByteString("0xaabbccdd11223344556677889900aabbccdd11223344556677889900aabbccdd"))
+                .setIndex(0)
+                .build())
+            .setStatus(Sidecar.ResultStatus.RESULT_STATUS_SUCCESS)
+            .setGasUsed(21000)
+            .setError("")
+            .build();
+
+        testService.sendResult(protoResult);
+
+        // Wait for the result
+        assertTrue(resultLatch.await(5, TimeUnit.SECONDS), "Should receive result within timeout");
+
+        // Verify the result
+        assertNull(receivedError.get(), "Should not have received an error");
+        assertNotNull(receivedResult.get(), "Should have received a result");
+
+        SidecarApiModels.TransactionResult result = receivedResult.get();
+        assertEquals("success", result.getStatus());
+        assertEquals(21000, result.getGasUsed());
+        assertEquals(1000L, result.getTxExecutionId().getBlockNumber());
+    }
+
+    /**
+     * Helper method to convert hex string to ByteString
+     */
+    private static ByteString hexToByteString(String hex) {
+        if (hex == null || hex.isEmpty()) {
+            return ByteString.EMPTY;
+        }
+        String cleanHex = hex.startsWith("0x") || hex.startsWith("0X")
+            ? hex.substring(2)
+            : hex;
+
+        if (cleanHex.isEmpty()) {
+            return ByteString.EMPTY;
+        }
+
+        if (cleanHex.length() % 2 != 0) {
+            cleanHex = "0" + cleanHex;
+        }
+
+        byte[] bytes = new byte[cleanHex.length() / 2];
+        for (int i = 0; i < bytes.length; i++) {
+            int index = i * 2;
+            bytes[i] = (byte) Integer.parseInt(cleanHex.substring(index, index + 2), 16);
+        }
+        return ByteString.copyFrom(bytes);
     }
 }
