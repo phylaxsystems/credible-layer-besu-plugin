@@ -7,72 +7,84 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 
+import net.phylax.credible.utils.ByteUtils;
+
 import java.util.List;
 import java.util.Objects;
 import java.util.ArrayList;
 
 public class SidecarApiModels {
+
+    /**
+     * Helper method to convert byte array to hex string for logging/debugging.
+     * @deprecated Use {@link ByteUtils#toHex(byte[])} instead
+     */
+    @Deprecated
+    public static String bytesToHex(byte[] bytes) {
+        return ByteUtils.toHex(bytes);
+    }
+
     /**
      * Java equivalent of Rust TxEnv struct
-     * Updated to match API specification field names
+     * Updated to match API specification field names.
+     * Binary fields (addresses, hashes, values) use byte[] to avoid unnecessary hex string conversions.
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class TxEnv {
-        
-        @JsonProperty("tx_type")
+
+        @JsonIgnore
         private byte txType; // u8 -> byte
 
-        @JsonProperty("caller")
-        private String caller; // Address as hex string
-        
-        @JsonProperty("gas_limit")
+        @JsonIgnore
+        private byte[] caller; // 20 bytes - sender address
+
+        @JsonIgnore
         private Long gasLimit; // u64 -> Long
-        
-        @JsonProperty("gas_price")
+
+        @JsonIgnore
         private Long gasPrice; // u64 -> Long
-        
-        @JsonProperty("kind")
-        private String kind; // Address as hex string (null for contract creation)
-        
-        @JsonProperty("value")
-        private String value; // Hex string (e.g., "0x0", "0x1bc16d674ec80000")
-        
-        @JsonProperty("data")
-        private String data; // Bytes as hex string
-        
-        @JsonProperty("nonce")
+
+        @JsonIgnore
+        private byte[] kind; // 20 bytes or empty for contract creation
+
+        @JsonIgnore
+        private byte[] value; // 32 bytes - U256 big-endian
+
+        @JsonIgnore
+        private byte[] data; // calldata bytes (variable length)
+
+        @JsonIgnore
         private Long nonce; // u64 -> Long
-        
-        @JsonProperty("chain_id")
+
+        @JsonIgnore
         private Long chainId; // u64 -> Long
-        
-        @JsonProperty("access_list")
+
+        @JsonIgnore
         private List<AccessListEntry> accessList; // AccessList
 
-        @JsonProperty("max_fee_per_blob_gas")
+        @JsonIgnore
         private Long maxFeePerBlobGas = 0L;
 
-        @JsonProperty("gas_priority_fee")
+        @JsonIgnore
         private Long gasPriorityFee = null;
 
-        @JsonProperty("blob_hashes")
-        private List<String> blobHashes = new ArrayList<>();
+        @JsonIgnore
+        private List<byte[]> blobHashes = new ArrayList<>();
 
-        @JsonProperty("authorization_list")
+        @JsonIgnore
         private List<AuthorizationListEntry> authorizationList = new ArrayList<>();
-        
+
         // Constructors
         public TxEnv() {
             this.accessList = new ArrayList<>();
         }
-        
-        @JsonCreator
-        public TxEnv(@JsonProperty("caller") String caller, @JsonProperty("gas_limit") Long gasLimit, @JsonProperty("gas_price") Long gasPrice,
-            @JsonProperty("transact_to") String kind, @JsonProperty("value") String value, @JsonProperty("data") String data,
-            @JsonProperty("nonce") Long nonce, @JsonProperty("chain_id") Long chainId, @JsonProperty("access_list") List<AccessListEntry> accessList,
-            @JsonProperty("tx_type") byte txType, @JsonProperty("max_fee_per_blob_gas") Long maxFeePerBlobGas,
-            @JsonProperty("gas_priority_fee") Long gasPriorityFee, @JsonProperty("blob_hashes") List<String> blobHashes,
-            @JsonProperty("authorization_list") List<AuthorizationListEntry> authorizationList) {
+
+        public TxEnv(byte[] caller, Long gasLimit, Long gasPrice,
+            byte[] kind, byte[] value, byte[] data,
+            Long nonce, Long chainId, List<AccessListEntry> accessList,
+            byte txType, Long maxFeePerBlobGas,
+            Long gasPriorityFee, List<byte[]> blobHashes,
+            List<AuthorizationListEntry> authorizationList) {
             this.caller = caller;
             this.gasLimit = gasLimit;
             this.gasPrice = gasPrice;
@@ -88,43 +100,43 @@ public class SidecarApiModels {
             this.blobHashes = blobHashes != null ? blobHashes : new ArrayList<>();
             this.authorizationList = authorizationList != null ? authorizationList : new ArrayList<>();
         }
-        
+
         // Getters and Setters
-        public String getCaller() { return caller; }
-        public void setCaller(String caller) { this.caller = caller; }
-        
+        public byte[] getCaller() { return caller; }
+        public void setCaller(byte[] caller) { this.caller = caller; }
+
         public Long getGasLimit() { return gasLimit; }
         public void setGasLimit(Long gasLimit) { this.gasLimit = gasLimit; }
-        
+
         public Long getGasPrice() { return gasPrice; }
         public void setGasPrice(Long gasPrice) { this.gasPrice = gasPrice; }
-        
-        public String getKind() { return kind; }
-        public void setKind(String kind) { this.kind = kind; }
-        
-        public String getValue() { return value; }
-        public void setValue(String value) { this.value = value; }
-        
-        public String getData() { return data; }
-        public void setData(String data) { this.data = data; }
-        
+
+        public byte[] getKind() { return kind; }
+        public void setKind(byte[] kind) { this.kind = kind; }
+
+        public byte[] getValue() { return value; }
+        public void setValue(byte[] value) { this.value = value; }
+
+        public byte[] getData() { return data; }
+        public void setData(byte[] data) { this.data = data; }
+
         public Long getNonce() { return nonce; }
         public void setNonce(Long nonce) { this.nonce = nonce; }
-        
+
         public Long getChainId() { return chainId; }
         public void setChainId(Long chainId) { this.chainId = chainId; }
-        
+
         public List<AccessListEntry> getAccessList() { return accessList; }
-        public void setAccessList(List<AccessListEntry> accessList) { 
-            this.accessList = accessList != null ? accessList : new ArrayList<>(); 
+        public void setAccessList(List<AccessListEntry> accessList) {
+            this.accessList = accessList != null ? accessList : new ArrayList<>();
         }
 
         public Long getGasPriorityFee() { return gasPriorityFee; }
         public void setGasPriorityFee(Long gasPriorityFee) { this.gasPriorityFee = gasPriorityFee; }
 
-        public List<String> getBlobHashes() { return blobHashes; }
-        public void setBlobHashes(List<String> blobHashes) { this.blobHashes = blobHashes; }
-        
+        public List<byte[]> getBlobHashes() { return blobHashes; }
+        public void setBlobHashes(List<byte[]> blobHashes) { this.blobHashes = blobHashes; }
+
         public byte getTxType() { return txType; }
         public void setTxType(byte txType) { this.txType = txType; }
 
@@ -136,37 +148,36 @@ public class SidecarApiModels {
 
         @Override
         public String toString() {
-            return String.format("TxEnv{caller='%s', gasLimit=%d, gasPrice='%s', kind='%s', value='%s', data='%s', nonce=%d, chainId=%d}",
-                    caller, gasLimit, gasPrice, kind, value, data, nonce, chainId);
+            return String.format("TxEnv{caller='%s', gasLimit=%d, gasPrice=%d, kind='%s', value='%s', nonce=%d, chainId=%d}",
+                    bytesToHex(caller), gasLimit, gasPrice, bytesToHex(kind), bytesToHex(value), nonce, chainId);
         }
     }
     
-    // AuthorizationList Entry
+    // AuthorizationList Entry - EIP-7702 authorization
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class AuthorizationListEntry {
-        @JsonProperty("chain_id")
+        @JsonIgnore
         private Long chainId;
 
-        @JsonProperty("nonce")
+        @JsonIgnore
         private Long nonce;
 
-        @JsonProperty("address")
-        private String address;
-        
-        @JsonProperty("v")
+        @JsonIgnore
+        private byte[] address; // 20 bytes - authorized address
+
+        @JsonIgnore
         private byte v;
 
-        @JsonProperty("r")
-        private String r;
+        @JsonIgnore
+        private byte[] r; // 32 bytes - signature r
 
-        @JsonProperty("s")
-        private String s;
-        
+        @JsonIgnore
+        private byte[] s; // 32 bytes - signature s
+
         public AuthorizationListEntry() {}
-        
-        @JsonCreator
-        public AuthorizationListEntry(@JsonProperty("address") String address, @JsonProperty("v") byte v, @JsonProperty("r") String r,
-            @JsonProperty("s") String s, @JsonProperty("chain_id") Long chainId, @JsonProperty("nonce") Long nonce) {
+
+        public AuthorizationListEntry(byte[] address, byte v, byte[] r,
+            byte[] s, Long chainId, Long nonce) {
             this.chainId = chainId;
             this.nonce = nonce;
             this.address = address;
@@ -174,60 +185,59 @@ public class SidecarApiModels {
             this.r = r;
             this.s = s;
         }
-        
-        public String getAddress() { return address; }
-        public void setAddress(String address) { this.address = address; }
-        
+
+        public byte[] getAddress() { return address; }
+        public void setAddress(byte[] address) { this.address = address; }
+
         public byte getV() { return v; }
         public void setV(byte v) { this.v = v; }
-        
-        public String getR() { return r; }
-        public void setR(String r) { this.r = r; }
-        
-        public String getS() { return s; }
-        public void setS(String s) { this.s = s; }
-        
+
+        public byte[] getR() { return r; }
+        public void setR(byte[] r) { this.r = r; }
+
+        public byte[] getS() { return s; }
+        public void setS(byte[] s) { this.s = s; }
+
         public Long getChainId() { return chainId; }
         public void setChainId(Long chainId) { this.chainId = chainId; }
-        
+
         public Long getNonce() { return nonce; }
         public void setNonce(Long nonce) { this.nonce = nonce; }
-        
+
         @Override
         public String toString() {
             return String.format("AuthorizationListEntry{address='%s', v=%d, r='%s', s='%s', chainId=%d, nonce=%d}",
-                    address, v, r, s, chainId, nonce);
+                    bytesToHex(address), v, bytesToHex(r), bytesToHex(s), chainId, nonce);
         }
     }
 
-    // AccessList Entry
+    // AccessList Entry - EIP-2930 access list item
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class AccessListEntry {
-        @JsonProperty("address")
-        private String address;
-        
-        @JsonProperty("storage_keys")
-        private List<String> storageKeys;
-        
+        @JsonIgnore
+        private byte[] address; // 20 bytes - account address
+
+        @JsonIgnore
+        private List<byte[]> storageKeys; // 32 bytes each - storage slot keys
+
         public AccessListEntry() {}
-        
-        @JsonCreator
-        public AccessListEntry(@JsonProperty("address") String address, @JsonProperty("storage_keys") List<String> storageKeys) {
+
+        public AccessListEntry(byte[] address, List<byte[]> storageKeys) {
             this.address = address;
             this.storageKeys = storageKeys != null ? storageKeys : new ArrayList<>();
         }
-        
-        public String getAddress() { return address; }
-        public void setAddress(String address) { this.address = address; }
-        
-        public List<String> getStorageKeys() { return storageKeys; }
-        public void setStorageKeys(List<String> storageKeys) { 
-            this.storageKeys = storageKeys != null ? storageKeys : new ArrayList<>(); 
+
+        public byte[] getAddress() { return address; }
+        public void setAddress(byte[] address) { this.address = address; }
+
+        public List<byte[]> getStorageKeys() { return storageKeys; }
+        public void setStorageKeys(List<byte[]> storageKeys) {
+            this.storageKeys = storageKeys != null ? storageKeys : new ArrayList<>();
         }
-        
+
         @Override
-        public String toString() { 
-            return "AccessListEntry{address='" + address + "', storageKeys=" + storageKeys + "}"; 
+        public String toString() {
+            return "AccessListEntry{address='" + bytesToHex(address) + "', storageKeys=" + storageKeys.size() + " keys}";
         }
     }
 
@@ -235,26 +245,25 @@ public class SidecarApiModels {
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class CommitHead {
-        @JsonProperty("last_tx_hash")
-        private String lastTxHash;
+        @JsonIgnore
+        private byte[] lastTxHash; // 32 bytes - last TX hash
 
-        @JsonProperty("n_transactions")
+        @JsonIgnore
         private Integer nTransactions;
 
-        @JsonProperty("block_number")
+        @JsonIgnore
         private Long blockNumber;
 
-        @JsonProperty("selected_iteration_id")
+        @JsonIgnore
         private Long selectedIterationId;
 
         public CommitHead() {}
 
-        @JsonCreator
         public CommitHead(
-            @JsonProperty("last_tx_hash") String lastTxHash,
-            @JsonProperty("n_transactions") Integer nTransactions,
-            @JsonProperty("block_number") Long blockNumber,
-            @JsonProperty("selected_iteration_id") Long selectedIterationId
+            byte[] lastTxHash,
+            Integer nTransactions,
+            Long blockNumber,
+            Long selectedIterationId
         ) {
             this.lastTxHash = lastTxHash;
             this.nTransactions = nTransactions;
@@ -262,8 +271,8 @@ public class SidecarApiModels {
             this.selectedIterationId = selectedIterationId;
         }
 
-        public String getLastTxHash() { return lastTxHash; }
-        public void setLastTxHash(String lastTxHash) { this.lastTxHash = lastTxHash; }
+        public byte[] getLastTxHash() { return lastTxHash; }
+        public void setLastTxHash(byte[] lastTxHash) { this.lastTxHash = lastTxHash; }
 
         public Integer getNTransactions() { return nTransactions; }
         public void setNTransactions(Integer nTransactions) { this.nTransactions = nTransactions; }
@@ -280,42 +289,41 @@ public class SidecarApiModels {
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class BlockEnv {
-        @JsonProperty("number")
+        @JsonIgnore
         private Long number;
 
-        @JsonProperty("beneficiary")
-        private String beneficiary;
+        @JsonIgnore
+        private byte[] beneficiary; // 20 bytes - coinbase address
 
-        @JsonProperty("timestamp")
+        @JsonIgnore
         private Long timestamp;
 
-        @JsonProperty("gas_limit")
+        @JsonIgnore
         private Long gasLimit;
 
-        @JsonProperty("basefee")
+        @JsonIgnore
         private Long baseFee;
 
-        @JsonProperty("difficulty")
-        private String difficulty;
+        @JsonIgnore
+        private byte[] difficulty; // 32 bytes - U256 big-endian
 
-        @JsonProperty("prevrandao")
-        private String prevrandao;
+        @JsonIgnore
+        private byte[] prevrandao; // 32 bytes - prevrandao hash
 
-        @JsonProperty("blob_excess_gas_and_price")
+        @JsonIgnore
         private BlobExcessGasAndPrice blobExcessGasAndPrice;
 
         public BlockEnv() {}
 
-        @JsonCreator
         public BlockEnv(
-            @JsonProperty("number") Long number,
-            @JsonProperty("beneficiary") String beneficiary,
-            @JsonProperty("timestamp") Long timestamp,
-            @JsonProperty("gas_limit") Long gasLimit,
-            @JsonProperty("basefee") Long baseFee,
-            @JsonProperty("difficulty") String difficulty,
-            @JsonProperty("prevrandao") String prevrandao,
-            @JsonProperty("blob_excess_gas_and_price") BlobExcessGasAndPrice blobExcessGasAndPrice
+            Long number,
+            byte[] beneficiary,
+            Long timestamp,
+            Long gasLimit,
+            Long baseFee,
+            byte[] difficulty,
+            byte[] prevrandao,
+            BlobExcessGasAndPrice blobExcessGasAndPrice
         ) {
             this.number = number;
             this.beneficiary = beneficiary;
@@ -331,8 +339,8 @@ public class SidecarApiModels {
         public Long getNumber() { return number; }
         public void setNumber(Long number) { this.number = number; }
 
-        public String getBeneficiary() { return beneficiary; }
-        public void setBeneficiary(String beneficiary) { this.beneficiary = beneficiary; }
+        public byte[] getBeneficiary() { return beneficiary; }
+        public void setBeneficiary(byte[] beneficiary) { this.beneficiary = beneficiary; }
 
         public Long getTimestamp() { return timestamp; }
         public void setTimestamp(Long timestamp) { this.timestamp = timestamp; }
@@ -343,11 +351,11 @@ public class SidecarApiModels {
         public Long getBaseFee() { return baseFee; }
         public void setBaseFee(Long baseFee) { this.baseFee = baseFee; }
 
-        public String getDifficulty() { return difficulty; }
-        public void setDifficulty(String difficulty) { this.difficulty = difficulty; }
+        public byte[] getDifficulty() { return difficulty; }
+        public void setDifficulty(byte[] difficulty) { this.difficulty = difficulty; }
 
-        public String getPrevrandao() { return prevrandao; }
-        public void setPrevrandao(String prevrandao) { this.prevrandao = prevrandao; }
+        public byte[] getPrevrandao() { return prevrandao; }
+        public void setPrevrandao(byte[] prevrandao) { this.prevrandao = prevrandao; }
 
         public BlobExcessGasAndPrice getBlobExcessGasAndPrice() { return blobExcessGasAndPrice; }
         public void setBlobExcessGasAndPrice(BlobExcessGasAndPrice blobExcessGasAndPrice) {
@@ -532,26 +540,25 @@ public class SidecarApiModels {
     */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class ReorgRequest {
-        @JsonProperty("block_number")
+        @JsonIgnore
         private Long blockNumber;
 
-        @JsonProperty("iteration_id")
+        @JsonIgnore
         private Long iterationId;
 
-        @JsonProperty("tx_hash")
-        private String txHash;
+        @JsonIgnore
+        private byte[] txHash; // 32 bytes - transaction hash
 
-        @JsonProperty
+        @JsonIgnore
         private long index;
 
         public ReorgRequest() {}
 
-        @JsonCreator
         public ReorgRequest(
-            @JsonProperty("block_number") Long blockNumber,
-            @JsonProperty("iteration_id") Long iterationId,
-            @JsonProperty("tx_hash") String txHash,
-            @JsonProperty("index") long index
+            Long blockNumber,
+            Long iterationId,
+            byte[] txHash,
+            long index
         ) {
             this.blockNumber = blockNumber;
             this.iterationId = iterationId;
@@ -584,11 +591,11 @@ public class SidecarApiModels {
             this.iterationId = iterationId;
         }
 
-        public String getTxHash() {
+        public byte[] getTxHash() {
             return txHash;
         }
 
-        public void setTxHash(String txHash) {
+        public void setTxHash(byte[] txHash) {
             this.txHash = txHash;
         }
 
@@ -734,25 +741,24 @@ public class SidecarApiModels {
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class GetTransactionsResponse {
-        @JsonProperty("results")
+        @JsonIgnore
         private List<TransactionResult> results = new ArrayList<>();
-        
-        @JsonProperty("not_found")
-        private List<String> notFound = new ArrayList<>();
-        
+
+        @JsonIgnore
+        private List<byte[]> notFound = new ArrayList<>(); // 32-byte hashes not found
+
         public GetTransactionsResponse() {}
-        
-        @JsonCreator
-        public GetTransactionsResponse(@JsonProperty("results") List<TransactionResult> results, @JsonProperty("not_found") List<String> notFound) {
+
+        public GetTransactionsResponse(List<TransactionResult> results, List<byte[]> notFound) {
             this.results = results;
             this.notFound = notFound;
         }
-        
+
         public List<TransactionResult> getResults() { return results; }
         public void setResults(List<TransactionResult> results) { this.results = results; }
-        
-        public List<String> getNotFound() { return notFound; }
-        public void setNotFound(List<String> notFound) { this.notFound = notFound; }
+
+        public List<byte[]> getNotFound() { return notFound; }
+        public void setNotFound(List<byte[]> notFound) { this.notFound = notFound; }
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -846,26 +852,25 @@ public class SidecarApiModels {
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class TxExecutionId {
-        @JsonProperty("block_number")
+        @JsonIgnore
         private Long blockNumber;
 
-        @JsonProperty("iteration_id")
+        @JsonIgnore
         private Long iterationId;
 
-        @JsonProperty("tx_hash")
-        private String txHash;
+        @JsonIgnore
+        private byte[] txHash; // 32 bytes - transaction hash
 
-        @JsonProperty
+        @JsonIgnore
         private long index;
 
         public TxExecutionId() {}
 
-        @JsonCreator
         public TxExecutionId(
-            @JsonProperty("block_number") Long blockNumber,
-            @JsonProperty("iteration_id") Long iterationId,
-            @JsonProperty("tx_hash") String txHash,
-            @JsonProperty("index") long index
+            Long blockNumber,
+            Long iterationId,
+            byte[] txHash,
+            long index
         ) {
             this.blockNumber = blockNumber;
             this.iterationId = iterationId;
@@ -879,30 +884,30 @@ public class SidecarApiModels {
         public Long getIterationId() { return iterationId; }
         public void setIterationId(Long iterationId) { this.iterationId = iterationId; }
 
-        public String getTxHash() { return txHash; }
-        public void setTxHash(String txHash) { this.txHash = txHash; }
+        public byte[] getTxHash() { return txHash; }
+        public void setTxHash(byte[] txHash) { this.txHash = txHash; }
 
         public long getIndex() { return index; }
         public void setIndex(long index) { this.index = index; }
 
         @Override
         public String toString() {
-            return String.format("TxExecutionId{blockNumber=%d, iterationId='%s', txHash='%s', index='%s'}",
-                blockNumber, iterationId, txHash, index);
+            return String.format("TxExecutionId{blockNumber=%d, iterationId=%d, txHash='%s', index=%d}",
+                blockNumber, iterationId, bytesToHex(txHash), index);
         }
 
         @Override
         public boolean equals(Object o) {
             if (this == o) return true;
             if (o == null || getClass() != o.getClass()) return false;
-            
+
             TxExecutionId tx = (TxExecutionId) o;
-            return blockNumber.equals(tx.blockNumber) && iterationId.equals(tx.iterationId) && txHash.equals(tx.txHash);
+            return blockNumber.equals(tx.blockNumber) && iterationId.equals(tx.iterationId) && java.util.Arrays.equals(txHash, tx.txHash);
         }
-        
+
         @Override
         public int hashCode() {
-            return Objects.hash(blockNumber, iterationId, txHash);
+            return Objects.hash(blockNumber, iterationId, java.util.Arrays.hashCode(txHash));
         }
     }
 
@@ -911,26 +916,25 @@ public class SidecarApiModels {
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class GetTransactionRequest {
-        @JsonProperty("block_number")
+        @JsonIgnore
         private Long blockNumber;
 
-        @JsonProperty("iteration_id")
+        @JsonIgnore
         private Long iterationId;
 
-        @JsonProperty("tx_hash")
-        private String txHash;
+        @JsonIgnore
+        private byte[] txHash; // 32 bytes - transaction hash
 
-        @JsonProperty("index")
+        @JsonIgnore
         private long index;
 
         public GetTransactionRequest() {}
 
-        @JsonCreator
         public GetTransactionRequest(
-            @JsonProperty("block_number") Long blockNumber,
-            @JsonProperty("iteration_id") Long iterationId,
-            @JsonProperty("tx_hash") String txHash,
-            @JsonProperty("index") long index
+            Long blockNumber,
+            Long iterationId,
+            byte[] txHash,
+            long index
         ) {
             this.blockNumber = blockNumber;
             this.iterationId = iterationId;
@@ -944,16 +948,16 @@ public class SidecarApiModels {
         public Long getIterationId() { return iterationId; }
         public void setIterationId(Long iterationId) { this.iterationId = iterationId; }
 
-        public String getTxHash() { return txHash; }
-        public void setTxHash(String txHash) { this.txHash = txHash; }
+        public byte[] getTxHash() { return txHash; }
+        public void setTxHash(byte[] txHash) { this.txHash = txHash; }
 
         public long getIndex() { return index; }
         public void setIndex(long index) { this.index = index; }
 
         @Override
         public String toString() {
-            return String.format("GetTransactionRequest{blockNumber=%d, iterationId='%s', txHash='%s'}",
-                blockNumber, iterationId, txHash);
+            return String.format("GetTransactionRequest{blockNumber=%d, iterationId=%d, txHash='%s'}",
+                blockNumber, iterationId, bytesToHex(txHash));
         }
 
         public static GetTransactionRequest fromTxExecutionId(TxExecutionId txExecutionId) {
@@ -1011,20 +1015,19 @@ public class SidecarApiModels {
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class TransactionExecutionPayload {
-        @JsonProperty("tx_execution_id")
+        @JsonIgnore
         private TxExecutionId txExecutionId;
 
-        @JsonProperty("tx_env")
+        @JsonIgnore
         private TxEnv txEnv;
 
-        @JsonProperty("prev_tx_hash")
-        private String prevTxHash;
+        @JsonIgnore
+        private byte[] prevTxHash; // 32 bytes - previous TX hash for ordering
 
-        @JsonCreator
         public TransactionExecutionPayload(
-            @JsonProperty("tx_execution_id") TxExecutionId txExecutionId,
-            @JsonProperty("tx_env") TxEnv txEnv,
-            @JsonProperty("prev_tx_hash") String prevTxHash
+            TxExecutionId txExecutionId,
+            TxEnv txEnv,
+            byte[] prevTxHash
         ) {
             this.txExecutionId = txExecutionId;
             this.txEnv = txEnv;
@@ -1037,8 +1040,8 @@ public class SidecarApiModels {
         public TxEnv getTxEnv() { return txEnv; }
         public void setTxEnv(TxEnv txEnv) { this.txEnv = txEnv; }
 
-        public String getPrevTxHash() { return prevTxHash; }
-        public void setPrevTxHash(String prevTxHash) { this.prevTxHash = prevTxHash; }
+        public byte[] getPrevTxHash() { return prevTxHash; }
+        public void setPrevTxHash(byte[] prevTxHash) { this.prevTxHash = prevTxHash; }
     }
 
     // ==================== ENUMS & CONSTANTS ====================

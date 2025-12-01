@@ -20,18 +20,6 @@ import org.slf4j.Logger;
 
 import com.google.auto.service.AutoService;
 
-import io.opentelemetry.api.OpenTelemetry;
-import io.opentelemetry.api.common.Attributes;
-import io.opentelemetry.api.trace.Tracer;
-import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator;
-import io.opentelemetry.context.Scope;
-import io.opentelemetry.context.propagation.ContextPropagators;
-import io.opentelemetry.exporter.otlp.http.trace.OtlpHttpSpanExporter;
-import io.opentelemetry.sdk.OpenTelemetrySdk;
-import io.opentelemetry.sdk.resources.Resource;
-import io.opentelemetry.sdk.trace.SdkTracerProvider;
-import io.opentelemetry.sdk.trace.export.BatchSpanProcessor;
-import io.opentelemetry.semconv.ServiceAttributes;
 import net.phylax.credible.metrics.CredibleMetricsCategory;
 import net.phylax.credible.metrics.CredibleMetricsRegistry;
 import net.phylax.credible.strategy.DefaultSidecarStrategy;
@@ -58,8 +46,6 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
     private MetricsSystem metricsSystem;
     private TransactionSelectionService transactionSelectionService;
     private ISidecarStrategy strategy;
-    private OpenTelemetry openTelemetry = null;
-    private Tracer tracer;
 
     private CredibleMetricsRegistry metricsRegistry;
     
@@ -233,9 +219,6 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
                 config.getProcessingTimeout());
         }
 
-        this.openTelemetry = config.getOtelEndpoint() != null ? initOpenTelemetry(config.getOtelEndpoint()) : OpenTelemetry.noop();
-        this.tracer = openTelemetry.getTracer("credible-sidecar-plugin");
-
         serviceManager
             .getService(BesuEvents.class)
             .ifPresentOrElse(this::startEvents, () -> LOG.error("BesuEvents service not available"));
@@ -260,36 +243,13 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
             fallbackTransports = createGrpcTransports(config.getGrpcFallbackEndpoints());
         }
 
-        strategy = new DefaultSidecarStrategy(primaryTransports, fallbackTransports, config.getProcessingTimeout(), metricsRegistry, tracer);
+        strategy = new DefaultSidecarStrategy(primaryTransports, fallbackTransports, config.getProcessingTimeout(), metricsRegistry);
 
         var credibleTxConfig = new CredibleTransactionSelector.Config(strategy);
 
         transactionSelectionService.registerPluginTransactionSelectorFactory(
             new CredibleTransactionSelectorFactory(credibleTxConfig, metricsRegistry)
         );
-    }
-
-    private static OpenTelemetry initOpenTelemetry(String otelEndpoint) {
-        Resource resource = Resource.getDefault()
-            .merge(Resource.create(Attributes.of(
-                ServiceAttributes.SERVICE_NAME, "credible-besu-plugin"
-            )));
-        
-        OtlpHttpSpanExporter spanExporter = OtlpHttpSpanExporter.builder()
-            .setEndpoint(otelEndpoint)
-            .build();
-        
-        SdkTracerProvider tracerProvider = SdkTracerProvider.builder()
-            .addSpanProcessor(BatchSpanProcessor.builder(spanExporter).setScheduleDelay(Duration.ofSeconds(1)).build())
-            .setResource(resource)
-            .build();
-
-        return OpenTelemetrySdk.builder()
-            .setTracerProvider(tracerProvider)
-            .setPropagators(ContextPropagators.create(
-                W3CTraceContextPropagator.getInstance()
-            ))
-            .buildAndRegisterGlobal();
     }
 
     /**
@@ -343,7 +303,6 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
             .map(endpoint -> new JsonRpcTransport.Builder()
                     .readTimeout(Duration.ofMillis(config.getReadTimeout()))
                     .writeTimeout(Duration.ofMillis(config.getWriteTimeout()))
-                    .openTelemetry(openTelemetry)
                     .metricsRegistry(metricsRegistry)
                     .baseUrl(endpoint)
                     .build())
@@ -423,11 +382,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         String blockHash = blockHeader.getBlockHash().toHexString();
         long blockNumber = blockHeader.getNumber();
 
-        var span = tracer.spanBuilder("onBlockAdded").startSpan();
-        try(Scope scope = span.makeCurrent()) {
-            span.setAttribute("block_added.hash", blockHash);
-            span.setAttribute("block_added.number", blockNumber);
-
+        try {
             // Check if we sent the block already
             if (blockHash.equals(lastBlockSent)) {
                 LOG.debug("Block already sent - Hash: {}, Number: {}", blockHash, blockNumber);
@@ -441,13 +396,13 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
             
             // Get transaction information from the actual block
             int transactionCount = transactions.size();
-            String lastTxHash = null;
-            
+            byte[] lastTxHash = null;
+
             if (!transactions.isEmpty()) {
-                lastTxHash = transactions.get(transactions.size() - 1).getHash().toHexString();
+                lastTxHash = transactions.get(transactions.size() - 1).getHash().toArrayUnsafe();
             }
 
-            // NOTE: iterationId will be ovewritten once sent
+            // NOTE: iterationId will be overwritten once sent
             CommitHead newHead = new CommitHead(
                 lastTxHash,
                 transactionCount,
@@ -459,12 +414,8 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
             lastBlockSent = blockHash;
             
             LOG.debug("Block Env sent, hash: {}", blockHash);
-            span.setAttribute("block_added.sidecar_success", true);
-        }catch (Exception e) {
+        } catch (Exception e) {
             LOG.error("Error handling sendBlockEnv {}", e.getMessage());
-            span.setAttribute("block_added.sidecar_success", false);
-        } finally {
-            span.end();
         }
     }
 

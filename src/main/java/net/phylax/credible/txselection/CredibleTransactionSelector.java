@@ -13,8 +13,15 @@ import org.slf4j.Logger;
 import net.phylax.credible.metrics.CredibleMetricsRegistry;
 import net.phylax.credible.strategy.ISidecarStrategy;
 import net.phylax.credible.tracer.CredibleOperationTracer;
-import net.phylax.credible.types.SidecarApiModels.*;
+import net.phylax.credible.types.SidecarApiModels.GetTransactionRequest;
+import net.phylax.credible.types.SidecarApiModels.ReorgRequest;
+import net.phylax.credible.types.SidecarApiModels.SendTransactionsRequest;
+import net.phylax.credible.types.SidecarApiModels.TransactionExecutionPayload;
+import net.phylax.credible.types.SidecarApiModels.TransactionStatus;
+import net.phylax.credible.types.SidecarApiModels.TxEnv;
+import net.phylax.credible.types.SidecarApiModels.TxExecutionId;
 import net.phylax.credible.types.TransactionConverter;
+import net.phylax.credible.utils.ByteUtils;
 import net.phylax.credible.utils.CredibleLogger;
 
 public class CredibleTransactionSelector implements PluginTransactionSelector {
@@ -60,17 +67,19 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
     metricsRegistry.getTransactionCounter().labels().inc();
 
     var tx = txContext.getPendingTransaction().getTransaction();
-    transactionHash = tx.getHash().toHexString();
+    // Store hash as byte[] for efficiency
+    byte[] txHashBytes = tx.getHash().toArrayUnsafe();
+    transactionHash = tx.getHash().toHexString(); // Keep for logging
     long blockNumber = txContext.getPendingBlockHeader().getNumber();
     long iterationId = getOperationTracer().getCurrentIterationId();
     long txIndex = transactions.size();
-    String prevTxHash = getLastTxHash();
+    byte[] prevTxHash = getLastTxHash();
 
     try {
         TxEnv txEnv = TransactionConverter.convertToTxEnv(tx);
-        LOG.debug("Sending transaction for processing, hash: {}, iteration: {}, prevTxHash: {}, index: {}", transactionHash, iterationId, prevTxHash, txIndex);
+        LOG.debug("Sending transaction for processing, hash: {}, iteration: {}, prevTxHash: {}, index: {}", transactionHash, iterationId, ByteUtils.toHex(prevTxHash), txIndex);
 
-        TxExecutionId txExecutionId = new TxExecutionId(blockNumber, iterationId, transactionHash, txIndex);
+        TxExecutionId txExecutionId = new TxExecutionId(blockNumber, iterationId, txHashBytes, txIndex);
         SendTransactionsRequest sendRequest = new SendTransactionsRequest();
         sendRequest.setTransactions(Collections.singletonList(new TransactionExecutionPayload(txExecutionId, txEnv, prevTxHash)));
 
@@ -108,7 +117,9 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
     try {
         LOG.debug("Awaiting result for, hash: {}, iteration: {}, index: {}", transactionHash, iterationId, index);
 
-        GetTransactionRequest txRequest = new GetTransactionRequest(blockNumber, iterationId, transactionHash, index);
+        // Use byte[] for txHash
+        byte[] txHashBytes = txContext.getPendingTransaction().getTransaction().getHash().toArrayUnsafe();
+        GetTransactionRequest txRequest = new GetTransactionRequest(blockNumber, iterationId, txHashBytes, index);
 
         var txResponseResult = config.strategy.getTransactionResult(txRequest);
 
@@ -145,13 +156,15 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
       final TransactionSelectionResult transactionSelectionResult) {
 
     var transaction = evaluationContext.getPendingTransaction().getTransaction();
-    String txHash = transaction.getHash().toHexString();
+    byte[] txHashBytes = transaction.getHash().toArrayUnsafe();
+    String txHashHex = transaction.getHash().toHexString(); // For logging
     String reason = transactionSelectionResult.toString();
     long blockNumber = evaluationContext.getPendingBlockHeader().getNumber();
 
-    // If we didnt process the tx, nothing to do
-    if (!txHash.equals(getLastTxHash())) {
-      LOG.debug("Last tx hash mismatch. Skipping reorg for {}, reason: {}", txHash, reason);
+    // If we didn't process the tx, nothing to do
+    byte[] lastTxHash = getLastTxHash();
+    if (lastTxHash == null || !java.util.Arrays.equals(txHashBytes, lastTxHash)) {
+      LOG.debug("Last tx hash mismatch. Skipping reorg for {}, reason: {}", txHashHex, reason);
       return;
     }
 
@@ -159,22 +172,22 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
     long index = transactions.size();
 
     try {
-        LOG.debug("Sending reorg request for transaction {} due to: {}", txHash, reason);
+        LOG.debug("Sending reorg request for transaction {} due to: {}", txHashHex, reason);
 
-        // Create TxExecutionId with block number, iteration ID, and transaction hash
-        ReorgRequest reorgRequest = new ReorgRequest(blockNumber, iterationId, txHash, index);
+        // Create TxExecutionId with block number, iteration ID, and transaction hash (as byte[])
+        ReorgRequest reorgRequest = new ReorgRequest(blockNumber, iterationId, txHashBytes, index);
         config.strategy.sendReorgRequest(reorgRequest)
           .whenComplete((res, ex) -> {
             if (ex != null) {
-              LOG.error("Failed to send reorg request for transaction {}: {}", txHash, ex.getMessage(), ex);
+              LOG.error("Failed to send reorg request for transaction {}: {}", txHashHex, ex.getMessage(), ex);
               return;
             }
-            LOG.debug("Reorg request successful for transaction {}, got {} responses", txHash, res.size());
+            LOG.debug("Reorg request successful for transaction {}, got {} responses", txHashHex, res.size());
           });
 
-        
+
     } catch (Exception e) {
-        LOG.error("Failed to send reorg request for transaction {}: {}", txHash, e.getMessage(), e);
+        LOG.error("Failed to send reorg request for transaction {}: {}", txHashHex, e.getMessage(), e);
     }
   }
 
@@ -191,10 +204,10 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
   }
 
   /**
-   * Returns the hash of the last transaction, i.e. the previously processed one. 
+   * Returns the hash of the last transaction, i.e. the previously processed one.
    * If this is the first invocation (no transactions were processed yet), return null.
    */
-  private String getLastTxHash() {
+  private byte[] getLastTxHash() {
     if (transactions.isEmpty())
       return null;
 

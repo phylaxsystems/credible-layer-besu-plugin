@@ -1,6 +1,7 @@
 package net.phylax.credible.transport;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
@@ -24,8 +25,18 @@ public class MockTransport implements ISidecarTransport {
     private boolean throwOnSendTx = false;
     private boolean throwOnGetTx = false;
 
-    // List of tx hashes that return assertion_failed
-    private List<String> failingTransactions = new ArrayList<>();
+    // List of tx hashes that return assertion_failed (stored as byte[])
+    private List<byte[]> failingTransactions = new ArrayList<>();
+
+    // Helper to check if a byte[] matches any in the failing list
+    private boolean isFailingTransaction(byte[] txHash) {
+        for (byte[] failing : failingTransactions) {
+            if (Arrays.equals(txHash, failing)) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     // Results subscription callback
     private Consumer<TransactionResult> resultsCallback;
@@ -56,7 +67,7 @@ public class MockTransport implements ISidecarTransport {
                     for (TransactionExecutionPayload tx : transactions.getTransactions()) {
                         TxExecutionId txExecId = tx.getTxExecutionId();
                         String status = getTxStatus;
-                        if (failingTransactions.contains(txExecId.getTxHash())) {
+                        if (isFailingTransaction(txExecId.getTxHash())) {
                             status = TransactionStatus.ASSERTION_FAILED;
                         }
                         TransactionResult result = new TransactionResult(txExecId, status, 21000L, "");
@@ -100,8 +111,8 @@ public class MockTransport implements ISidecarTransport {
             processingLatency, TimeUnit.MILLISECONDS);
 
         final TransactionResult result = new TransactionResult(req.toTxExecutionId(), getTxStatus, 21000L, "");
-        
-        if (failingTransactions.contains(result.getTxExecutionId().getTxHash())) {
+
+        if (isFailingTransaction(result.getTxExecutionId().getTxHash())) {
             result.setStatus(TransactionStatus.ASSERTION_FAILED);
         }
 
@@ -175,7 +186,7 @@ public class MockTransport implements ISidecarTransport {
         this.sendEventsLatency = sendEventsLatency;
     }
 
-    public void addFailingTx(String failingTx) {
+    public void addFailingTx(byte[] failingTx) {
         failingTransactions.add(failingTx);
     }
 

@@ -1,8 +1,8 @@
 package net.phylax.credible.tracer;
 
+import java.math.BigInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
-import org.apache.tuweni.bytes.Bytes32;
 import org.hyperledger.besu.datatypes.Address;
 import org.hyperledger.besu.evm.worldstate.WorldView;
 import org.hyperledger.besu.plugin.data.BlockBody;
@@ -39,14 +39,16 @@ public class CredibleOperationTracer implements BlockAwareOperationTracer {
         final ProcessableBlockHeader processableBlockHeader,
         final Address miningBeneficiary) {
         LOG.debug("traceStartBlock - number: {}, iteration: {}", processableBlockHeader.getNumber(), currentIterationId.get());
+
+        // Convert fields directly to byte[] without hex string intermediate
         BlockEnv blockEnv = new BlockEnv(
             processableBlockHeader.getNumber(),
-            processableBlockHeader.getCoinbase().toHexString(),
+            processableBlockHeader.getCoinbase().toArrayUnsafe(),  // 20 bytes
             processableBlockHeader.getTimestamp(),
             processableBlockHeader.getGasLimit(),
             processableBlockHeader.getBaseFee().map(quantity -> quantity.getAsBigInteger().longValue()).orElse(1L), // 1 Gwei
-            processableBlockHeader.getDifficulty().toString(),
-            processableBlockHeader.getPrevRandao().map(Bytes32::toHexString).orElse(null),
+            bigIntegerToBytes32(processableBlockHeader.getDifficulty().getAsBigInteger()),  // 32 bytes
+            processableBlockHeader.getPrevRandao().map(bytes32 -> bytes32.toArrayUnsafe()).orElse(null),  // 32 bytes
             new BlobExcessGasAndPrice(0L, 1L)
         );
         NewIteration iteration = new NewIteration(currentIterationId.get(), blockEnv);
@@ -57,6 +59,28 @@ public class CredibleOperationTracer implements BlockAwareOperationTracer {
         } catch(Exception e) {
             LOG.error("Error sending new iteration, block number: {}, iteration: {}, reason: {}", processableBlockHeader.getNumber(), currentIterationId.get(), e);
         }
+    }
+
+    /**
+     * Convert BigInteger to 32-byte array (big-endian, left-padded with zeros).
+     */
+    private static byte[] bigIntegerToBytes32(BigInteger value) {
+        byte[] bytes = new byte[32];
+        if (value == null || value.equals(BigInteger.ZERO)) {
+            return bytes; // All zeros
+        }
+        byte[] valueBytes = value.toByteArray();
+        // Handle potential leading zero byte from BigInteger's two's complement representation
+        int srcOffset = valueBytes[0] == 0 && valueBytes.length > 1 ? 1 : 0;
+        int length = valueBytes.length - srcOffset;
+        int destOffset = 32 - length;
+        if (destOffset >= 0) {
+            System.arraycopy(valueBytes, srcOffset, bytes, destOffset, length);
+        } else {
+            // Value is larger than 32 bytes (shouldn't happen for valid U256)
+            System.arraycopy(valueBytes, srcOffset - destOffset, bytes, 0, 32);
+        }
+        return bytes;
     }
 
     @Override

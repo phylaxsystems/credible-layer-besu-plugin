@@ -40,10 +40,23 @@ public class MockTransactionEvaluationContext implements TransactionEvaluationCo
         this.mockPendingBlockHeader = pendingBlockHeader;
     }
 
+    // Helper to convert hex string to byte array
+    private static byte[] hexToBytes(String hex) {
+        if (hex == null || hex.isEmpty()) return new byte[0];
+        String cleanHex = hex.startsWith("0x") ? hex.substring(2) : hex;
+        if (cleanHex.length() % 2 != 0) cleanHex = "0" + cleanHex;
+        byte[] bytes = new byte[cleanHex.length() / 2];
+        for (int i = 0; i < bytes.length; i++) {
+            bytes[i] = (byte) Integer.parseInt(cleanHex.substring(i * 2, i * 2 + 2), 16);
+        }
+        return bytes;
+    }
+
     private void setupDefaultMockBehaviors() {
         Hash mockTxHash = mock(Hash.class);
         when(mockTxHash.toHexString()).thenReturn(this.txHash);
-        
+        when(mockTxHash.toArrayUnsafe()).thenReturn(hexToBytes(this.txHash));
+
         when(mockTransaction.getHash()).thenReturn(mockTxHash);
         when(mockTransaction.getNonce()).thenReturn(0L);
         when(mockTransaction.getGasLimit()).thenReturn(21000L);
