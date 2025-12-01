@@ -1,6 +1,7 @@
 package net.phylax.credible;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -143,7 +144,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
             paramLabel = "<host:port>",
             split = ","
         )
-        private List<String> grpcEndpoints;
+        private List<String> grpcEndpoints = new ArrayList<>();
 
         @CommandLine.Option(
             names = {"--plugin-credible-sidecar-grpc-fallback-endpoints"},
@@ -151,7 +152,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
             paramLabel = "<host:port>",
             split = ","
         )
-        private List<String> grpcFallbackEndpoints;
+        private List<String> grpcFallbackEndpoints =  new ArrayList<>();
 
         @CommandLine.Option(
             names = {"--plugin-credible-sidecar-otel-endpoint"},
@@ -323,16 +324,11 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
                 }
                 break;
             default:
-                throw new IllegalStateException(
-                    "Unsupported transport type configured: " + transportType);
+                LOG.warn("No transport type has been selected!");
         }
 
         if (!hasJsonRpc && !hasGrpc) {
-            throw new IllegalStateException(
-                "No transport endpoints configured. Please specify:\n" +
-                "  --plugin-credible-sidecar-rpc-endpoints for HTTP transport, OR\n" +
-                "  --plugin-credible-sidecar-grpc-endpoints for gRPC transport"
-            );
+            LOG.warn("No transport endpoints configured, plugin will be disabled.");
         }
     }
 

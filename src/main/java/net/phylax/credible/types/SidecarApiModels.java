@@ -400,7 +400,8 @@ public class SidecarApiModels {
     @JsonSubTypes({
         @JsonSubTypes.Type(value = CommitHeadReqItem.class),
         @JsonSubTypes.Type(value = NewIterationReqItem.class),
-        @JsonSubTypes.Type(value = TransactionReqItem.class)
+        @JsonSubTypes.Type(value = TransactionReqItem.class),
+        @JsonSubTypes.Type(value = ReorgEventReqItem.class)
     })
     public static class SendEventsRequestItem {}
 
@@ -444,6 +445,48 @@ public class SidecarApiModels {
 
         public TransactionExecutionPayload getTransaction() { return transaction; }
         public void setTransaction(TransactionExecutionPayload transaction) { this.transaction = transaction; }
+    }
+
+    public static class ReorgEventReqItem extends SendEventsRequestItem {
+        @JsonProperty("reorg")
+        private ReorgEvent reorg;
+
+        public ReorgEventReqItem() {}
+
+        public ReorgEventReqItem(@JsonProperty("reorg") ReorgEvent reorg) {
+            this.reorg = reorg;
+        }
+
+        public ReorgEvent getReorg() { return reorg; }
+        public void setReorg(ReorgEvent reorg) { this.reorg = reorg; }
+    }
+
+    /**
+     * Reorg event for streaming - signals a chain reorganization.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class ReorgEvent {
+        @JsonProperty("tx_execution_id")
+        private TxExecutionId txExecutionId;
+
+        public ReorgEvent() {}
+
+        @JsonCreator
+        public ReorgEvent(@JsonProperty("tx_execution_id") TxExecutionId txExecutionId) {
+            this.txExecutionId = txExecutionId;
+        }
+
+        public static ReorgEvent fromReorgRequest(ReorgRequest request) {
+            return new ReorgEvent(new TxExecutionId(
+                request.getBlockNumber(),
+                request.getIterationId(),
+                request.getTxHash(),
+                request.getIndex()
+            ));
+        }
+
+        public TxExecutionId getTxExecutionId() { return txExecutionId; }
+        public void setTxExecutionId(TxExecutionId txExecutionId) { this.txExecutionId = txExecutionId; }
     }
 
     /**
