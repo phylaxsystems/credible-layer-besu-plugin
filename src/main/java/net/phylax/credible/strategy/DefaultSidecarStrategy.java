@@ -36,8 +36,6 @@ import net.phylax.credible.utils.Result;
 
 @Slf4j
 public class DefaultSidecarStrategy implements ISidecarStrategy {
-    // private static final Logger LOG = CredibleLogger.getLogger(DefaultSidecarStrategy.class);
-
     private List<ISidecarTransport> primaryTransports;
     private List<ISidecarTransport> activeTransports;
     private List<ISidecarTransport> fallbackTransports;

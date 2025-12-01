@@ -22,12 +22,9 @@ import net.phylax.credible.types.SidecarApiModels.TxEnv;
 import net.phylax.credible.types.SidecarApiModels.TxExecutionId;
 import net.phylax.credible.types.TransactionConverter;
 import net.phylax.credible.utils.ByteUtils;
-// import net.phylax.credible.utils.Crediblelogger;
 
 @Slf4j
 public class CredibleTransactionSelector implements PluginTransactionSelector {
-  // private static final logger log = Crediblelogger.getlogger(CredibleTransactionSelector.class);
-
   public static class Config {
     private ISidecarStrategy strategy;
 
