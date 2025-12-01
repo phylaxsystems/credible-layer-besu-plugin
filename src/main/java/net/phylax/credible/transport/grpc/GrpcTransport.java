@@ -9,16 +9,14 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
-
 import javax.net.SocketFactory;
-
-import org.slf4j.Logger;
 
 import io.grpc.ManagedChannel;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import io.grpc.okhttp.OkHttpChannelBuilder;
 import io.grpc.stub.StreamObserver;
+import lombok.extern.slf4j.Slf4j;
 import net.phylax.credible.metrics.CredibleMetricsRegistry;
 import net.phylax.credible.transport.ISidecarTransport;
 import net.phylax.credible.types.SidecarApiModels;
@@ -28,7 +26,7 @@ import net.phylax.credible.types.SidecarApiModels.SendEventsRequest;
 import net.phylax.credible.types.SidecarApiModels.SendEventsResponse;
 import net.phylax.credible.types.SidecarApiModels.TransactionReqItem;
 import net.phylax.credible.types.SidecarApiModels.TransactionResult;
-import net.phylax.credible.utils.CredibleLogger;
+import net.phylax.credible.utils.ByteUtils;
 import sidecar.transport.v1.Sidecar;
 import sidecar.transport.v1.SidecarTransportGrpc;
 
@@ -39,9 +37,8 @@ import sidecar.transport.v1.SidecarTransportGrpc;
  *
  * Uses StreamEvents for sending events (transactions, reorg, etc.) through a long-lived stream.
  */
+@Slf4j
 public class GrpcTransport implements ISidecarTransport {
-    private static final Logger LOG = CredibleLogger.getLogger(GrpcTransport.class);
-
     private final ManagedChannel channel;
     private final SidecarTransportGrpc.SidecarTransportStub stub;
 
@@ -121,7 +118,7 @@ public class GrpcTransport implements ISidecarTransport {
                 return existing;
             }
 
-            LOG.info("Creating new StreamEvents stream");
+            log.info("Creating new StreamEvents stream");
 
             StreamObserver<Sidecar.StreamAck> responseObserver = new StreamObserver<>() {
                 @Override
@@ -132,20 +129,20 @@ public class GrpcTransport implements ISidecarTransport {
                     if (pendingFuture != null) {
                         pendingFuture.complete(ack);
                     } else {
-                        LOG.trace("Received ack for unknown event_id={}", eventId);
+                        log.trace("Received ack for unknown event_id={}", eventId);
                     }
 
                     if (ack.getSuccess()) {
-                        LOG.trace("StreamAck received: event_id={}, events_processed={}, message={}",
+                        log.trace("StreamAck received: event_id={}, events_processed={}, message={}",
                             eventId, ack.getEventsProcessed(), ack.getMessage());
                     } else {
-                        LOG.warn("StreamAck failure: event_id={}, message={}", eventId, ack.getMessage());
+                        log.warn("StreamAck failure: event_id={}, message={}", eventId, ack.getMessage());
                     }
                 }
 
                 @Override
                 public void onError(Throwable t) {
-                    LOG.error("StreamEvents error: {}", getErrorMessage(t), t);
+                    log.error("StreamEvents error: {}", getErrorMessage(t), t);
                     streamConnected = false;
                     eventStreamRef.set(null);
                     // Fail all pending acks
@@ -155,7 +152,7 @@ public class GrpcTransport implements ISidecarTransport {
 
                 @Override
                 public void onCompleted() {
-                    LOG.info("StreamEvents completed");
+                    log.info("StreamEvents completed");
                     streamConnected = false;
                     eventStreamRef.set(null);
                     // Fail all pending acks
@@ -196,19 +193,19 @@ public class GrpcTransport implements ISidecarTransport {
                 if (ack.getSuccess()) {
                     return; // Successfully sent and acked
                 } else {
-                    LOG.warn("StreamAck returned failure on attempt {}: {}", attempt + 1, ack.getMessage());
+                    log.warn("StreamAck returned failure on attempt {}: {}", attempt + 1, ack.getMessage());
                 }
             } catch (TimeoutException e) {
                 // Remove the pending ack since we're giving up on it
                 
                 if (attempt < MAX_RETRIES) {
-                    LOG.debug("Ack timeout on attempt {} for event_id={}, retrying event", attempt + 1, eventId);
+                    log.debug("Ack timeout on attempt {} for event_id={}, retrying event", attempt + 1, eventId);
                 } else {
-                    LOG.warn("Ack timeout after {} retries for event_id={}, proceeding without confirmation", MAX_RETRIES + 1, eventId);
+                    log.warn("Ack timeout after {} retries for event_id={}, proceeding without confirmation", MAX_RETRIES + 1, eventId);
                     return; // Give up but don't fail - event may still be processed
                 }
             } catch (Exception e) {
-                LOG.error("Error sending event: {}", e.getMessage(), e);
+                log.error("Error sending event: {}", e.getMessage(), e);
                 streamConnected = false;
                 eventStreamRef.set(null);
                 throw new RuntimeException("Failed to send event", e);
@@ -228,7 +225,7 @@ public class GrpcTransport implements ISidecarTransport {
                 TransactionReqItem txItem = new TransactionReqItem(tx);
                 Sidecar.Event event = GrpcModelConverter.toProtoEvent(txItem);
                 sendEvent(event);
-                LOG.debug("Sent transaction event: txHash={}", tx.getTxExecutionId().getTxHash());
+                log.debug("Sent transaction event: txHash={}", ByteUtils.toHex(tx.getTxExecutionId().getTxHash()));
             }
 
             // For streaming, we complete immediately after sending
@@ -239,7 +236,7 @@ public class GrpcTransport implements ISidecarTransport {
                 (long) transactions.getTransactions().size()
             ));
         } catch (Exception e) {
-            LOG.error("Error sending transactions: {}", e.getMessage(), e);
+            log.error("Error sending transactions: {}", e.getMessage(), e);
             future.completeExceptionally(e);
         }
 
@@ -255,7 +252,7 @@ public class GrpcTransport implements ISidecarTransport {
             Sidecar.GetTransactionsRequest request =
                 GrpcModelConverter.toProtoGetTransactionsRequest(txRequest);
 
-            LOG.trace("Getting {} transactions via gRPC", txRequest.getTxExecutionIds().size());
+            log.trace("Getting {} transactions via gRPC", txRequest.getTxExecutionIds().size());
 
             // Make async gRPC call with deadline using round-robin channel
             getStub()
@@ -263,24 +260,24 @@ public class GrpcTransport implements ISidecarTransport {
                 .getTransactions(request, new StreamObserver<Sidecar.GetTransactionsResponse>() {
                     @Override
                     public void onNext(Sidecar.GetTransactionsResponse response) {
-                        LOG.debug("Received GetTransactions response: {} results, {} not found",
+                        log.debug("Received GetTransactions response: {} results, {} not found",
                             response.getResultsCount(), response.getNotFoundCount());
                         future.complete(GrpcModelConverter.fromProtoGetTransactionsResponse(response));
                     }
 
                     @Override
                     public void onError(Throwable t) {
-                        LOG.error("GetTransactions gRPC error: {}", getErrorMessage(t), t);
+                        log.error("GetTransactions gRPC error: {}", getErrorMessage(t), t);
                         future.completeExceptionally(t);
                     }
 
                     @Override
                     public void onCompleted() {
-                        LOG.debug("GetTransactions gRPC call completed");
+                        log.debug("GetTransactions gRPC call completed");
                     }
                 });
         } catch (Exception e) {
-            LOG.error("Error preparing GetTransactions request: {}", e.getMessage(), e);
+            log.error("Error preparing GetTransactions request: {}", e.getMessage(), e);
             future.completeExceptionally(e);
         }
 
@@ -307,17 +304,17 @@ public class GrpcTransport implements ISidecarTransport {
 
                     @Override
                     public void onError(Throwable t) {
-                        LOG.error("GetTransaction gRPC error: {}", getErrorMessage(t), t);
+                        log.error("GetTransaction gRPC error: {}", getErrorMessage(t), t);
                         future.completeExceptionally(t);
                     }
 
                     @Override
                     public void onCompleted() {
-                        LOG.trace("GetTransaction gRPC call completed");
+                        log.trace("GetTransaction gRPC call completed");
                     }
                 });
         } catch (Exception e) {
-            LOG.error("Error preparing GetTransaction request: {}", e.getMessage(), e);
+            log.error("Error preparing GetTransaction request: {}", e.getMessage(), e);
             future.completeExceptionally(e);
         }
 
@@ -334,7 +331,7 @@ public class GrpcTransport implements ISidecarTransport {
             ReorgEventReqItem reorgItem = new ReorgEventReqItem(reorgEvent);
             Sidecar.Event event = GrpcModelConverter.toProtoEvent(reorgItem);
 
-            LOG.trace("Sending reorg via stream: blockNumber={}, iterationId={}, txHash={}",
+            log.trace("Sending reorg via stream: blockNumber={}, iterationId={}, txHash={}",
                 reorgRequest.getBlockNumber(),
                 reorgRequest.getIterationId(),
                 reorgRequest.getTxHash());
@@ -344,7 +341,7 @@ public class GrpcTransport implements ISidecarTransport {
             // For streaming, we complete immediately after sending
             future.complete(new SidecarApiModels.ReorgResponse(true, null));
         } catch (Exception e) {
-            LOG.error("Error sending reorg: {}", e.getMessage(), e);
+            log.error("Error sending reorg: {}", e.getMessage(), e);
             future.complete(new SidecarApiModels.ReorgResponse(false, e.getMessage()));
         }
 
@@ -356,12 +353,12 @@ public class GrpcTransport implements ISidecarTransport {
         CompletableFuture<Void> future = new CompletableFuture<>();
 
         if (resultsSubscriptionActive) {
-            LOG.debug("Results subscription already active");
+            log.debug("Results subscription already active");
             future.complete(null);
             return future;
         }
 
-        LOG.info("Creating SubscribeResults stream");
+        log.info("Creating SubscribeResults stream");
 
         // Create a cancellable context for the subscription
         io.grpc.Context.CancellableContext cancellableContext = io.grpc.Context.current().withCancellation();
@@ -374,14 +371,14 @@ public class GrpcTransport implements ISidecarTransport {
                 @Override
                 public void onNext(Sidecar.TransactionResult protoResult) {
                     TransactionResult result = GrpcModelConverter.fromProtoTransactionResult(protoResult);
-                    LOG.debug("Received transaction result: txHash={}, status={}",
-                        result.getTxExecutionId().getTxHash(), result.getStatus());
+                    log.debug("Received transaction result: txHash={}, status={}",
+                        ByteUtils.toHex(result.getTxExecutionId().getTxHash()), result.getStatus());
                     onResult.accept(result);
                 }
 
                 @Override
                 public void onError(Throwable t) {
-                    LOG.error("SubscribeResults stream error: {}", getErrorMessage(t), t);
+                    log.error("SubscribeResults stream error: {}", getErrorMessage(t), t);
                     resultsSubscriptionActive = false;
                     resultsSubscriptionContext.set(null);
                     onError.accept(t);
@@ -389,7 +386,7 @@ public class GrpcTransport implements ISidecarTransport {
 
                 @Override
                 public void onCompleted() {
-                    LOG.info("SubscribeResults stream completed");
+                    log.info("SubscribeResults stream completed");
                     resultsSubscriptionActive = false;
                     resultsSubscriptionContext.set(null);
                 }
@@ -406,7 +403,7 @@ public class GrpcTransport implements ISidecarTransport {
     public void closeResultsSubscription() {
         io.grpc.Context.CancellableContext context = resultsSubscriptionContext.getAndSet(null);
         if (context != null) {
-            LOG.info("Closing SubscribeResults stream");
+            log.info("Closing SubscribeResults stream");
             context.cancel(null);
             resultsSubscriptionActive = false;
         }
@@ -426,12 +423,12 @@ public class GrpcTransport implements ISidecarTransport {
                 try {
                     stream.onCompleted();
                 } catch (Exception e) {
-                    LOG.warn("Error closing event stream: {}", e.getMessage());
+                    log.warn("Error closing event stream: {}", e.getMessage());
                 }
             }
             streamConnected = false;
         } catch (Exception e) {
-            LOG.warn("Interrupted while shutting down gRPC channels", e);
+            log.warn("Interrupted while shutting down gRPC channels", e);
             channel.shutdown();
         }
     }
@@ -559,7 +556,7 @@ public class GrpcTransport implements ISidecarTransport {
                 (long) events.getEvents().size()
             ));
         } catch (Exception e) {
-            LOG.error("Error sending events: {}", e.getMessage(), e);
+            log.error("Error sending events: {}", e.getMessage(), e);
             future.completeExceptionally(e);
         }
 

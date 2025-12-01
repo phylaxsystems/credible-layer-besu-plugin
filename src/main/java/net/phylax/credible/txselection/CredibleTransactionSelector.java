@@ -8,8 +8,8 @@ import org.hyperledger.besu.plugin.data.TransactionProcessingResult;
 import org.hyperledger.besu.plugin.data.TransactionSelectionResult;
 import org.hyperledger.besu.plugin.services.txselection.PluginTransactionSelector;
 import org.hyperledger.besu.plugin.services.txselection.TransactionEvaluationContext;
-import org.slf4j.Logger;
 
+import lombok.extern.slf4j.Slf4j;
 import net.phylax.credible.metrics.CredibleMetricsRegistry;
 import net.phylax.credible.strategy.ISidecarStrategy;
 import net.phylax.credible.tracer.CredibleOperationTracer;
@@ -22,10 +22,11 @@ import net.phylax.credible.types.SidecarApiModels.TxEnv;
 import net.phylax.credible.types.SidecarApiModels.TxExecutionId;
 import net.phylax.credible.types.TransactionConverter;
 import net.phylax.credible.utils.ByteUtils;
-import net.phylax.credible.utils.CredibleLogger;
+// import net.phylax.credible.utils.Crediblelogger;
 
+@Slf4j
 public class CredibleTransactionSelector implements PluginTransactionSelector {
-  private static final Logger LOG = CredibleLogger.getLogger(CredibleTransactionSelector.class);
+  // private static final logger log = Crediblelogger.getlogger(CredibleTransactionSelector.class);
 
   public static class Config {
     private ISidecarStrategy strategy;
@@ -77,7 +78,7 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
 
     try {
         TxEnv txEnv = TransactionConverter.convertToTxEnv(tx);
-        LOG.debug("Sending transaction for processing, hash: {}, iteration: {}, prevTxHash: {}, index: {}", transactionHash, iterationId, ByteUtils.toHex(prevTxHash), txIndex);
+        log.debug("Sending transaction for processing, hash: {}, iteration: {}, prevTxHash: {}, index: {}", transactionHash, iterationId, ByteUtils.toHex(prevTxHash), txIndex);
 
         TxExecutionId txExecutionId = new TxExecutionId(blockNumber, iterationId, txHashBytes, txIndex);
         SendTransactionsRequest sendRequest = new SendTransactionsRequest();
@@ -86,9 +87,9 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
         config.strategy.dispatchTransactions(sendRequest);
         transactions.add(txExecutionId);
 
-        LOG.debug("Started async transaction processing for {}", transactionHash);
+        log.debug("Started async transaction processing for {}", transactionHash);
     } catch (Exception e) {
-        LOG.error("Error in transaction preprocessing for {}: {}", transactionHash, e.getMessage());
+        log.error("Error in transaction preprocessing for {}: {}", transactionHash, e.getMessage());
         status = "error";
     } finally {
         metricsRegistry.getPreProcessingDuration().labels(status).observe(getDurationSeconds(startTime));
@@ -102,7 +103,7 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
       final TransactionEvaluationContext txContext,
       final TransactionProcessingResult transactionProcessingResult) {
     if (!config.strategy.isActive()) {
-      LOG.warn("No active transport available!");
+      log.warn("No active transport available!");
       return TransactionSelectionResult.SELECTED;
     }
 
@@ -115,7 +116,7 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
     long index = transactions.size() - 1;
 
     try {
-        LOG.debug("Awaiting result for, hash: {}, iteration: {}, index: {}", transactionHash, iterationId, index);
+        log.debug("Awaiting result for, hash: {}, iteration: {}, index: {}", transactionHash, iterationId, index);
 
         // Use byte[] for txHash
         byte[] txHashBytes = txContext.getPendingTransaction().getTransaction().getHash().toArrayUnsafe();
@@ -124,7 +125,7 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
         var txResponseResult = config.strategy.getTransactionResult(txRequest);
 
         if (!txResponseResult.isSuccess()) {
-          LOG.warn("Credible Layer failed to process, tx: {}, iteration: {}, reason: {}", transactionHash, iterationId, txResponseResult.getFailure());
+          log.warn("Credible Layer failed to process, tx: {}, iteration: {}, reason: {}", transactionHash, iterationId, txResponseResult.getFailure());
           status = "error";
           return TransactionSelectionResult.SELECTED;
         }
@@ -133,16 +134,16 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
 
         var txStatus = txResult.getStatus();
         if (TransactionStatus.ASSERTION_FAILED.equals(txStatus)) {
-              LOG.info("Transaction {} excluded due to status: {}", transactionHash, txStatus);
+              log.info("Transaction {} excluded due to status: {}", transactionHash, txStatus);
               metricsRegistry.getInvalidationCounter().labels().inc();
               status = "rejected";
               return TransactionSelectionResult.invalid("TX rejected by Credible layer");
           } else {
-              LOG.debug("Transaction {} included with status: {}", transactionHash, txStatus);
+              log.debug("Transaction {} included with status: {}", transactionHash, txStatus);
               return TransactionSelectionResult.SELECTED;
           }
     } catch (Exception e) {
-        LOG.error("Error in transaction postprocessing for {}: {}", transactionHash, e.getMessage());
+        log.error("Error in transaction postprocessing for {}: {}", transactionHash, e.getMessage());
         status = "error";
         return TransactionSelectionResult.SELECTED;
     } finally {
@@ -164,7 +165,7 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
     // If we didn't process the tx, nothing to do
     byte[] lastTxHash = getLastTxHash();
     if (lastTxHash == null || !java.util.Arrays.equals(txHashBytes, lastTxHash)) {
-      LOG.debug("Last tx hash mismatch. Skipping reorg for {}, reason: {}", txHashHex, reason);
+      log.debug("Last tx hash mismatch. Skipping reorg for {}, reason: {}", txHashHex, reason);
       return;
     }
 
@@ -172,22 +173,22 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
     long index = transactions.size();
 
     try {
-        LOG.debug("Sending reorg request for transaction {} due to: {}", txHashHex, reason);
+        log.debug("Sending reorg request for transaction {} due to: {}", txHashHex, reason);
 
         // Create TxExecutionId with block number, iteration ID, and transaction hash (as byte[])
         ReorgRequest reorgRequest = new ReorgRequest(blockNumber, iterationId, txHashBytes, index);
         config.strategy.sendReorgRequest(reorgRequest)
           .whenComplete((res, ex) -> {
             if (ex != null) {
-              LOG.error("Failed to send reorg request for transaction {}: {}", txHashHex, ex.getMessage(), ex);
+              log.error("Failed to send reorg request for transaction {}: {}", txHashHex, ex.getMessage(), ex);
               return;
             }
-            LOG.debug("Reorg request successful for transaction {}, got {} responses", txHashHex, res.size());
+            log.debug("Reorg request successful for transaction {}, got {} responses", txHashHex, res.size());
           });
 
 
     } catch (Exception e) {
-        LOG.error("Failed to send reorg request for transaction {}: {}", txHashHex, e.getMessage(), e);
+        log.error("Failed to send reorg request for transaction {}: {}", txHashHex, e.getMessage(), e);
     }
   }
 

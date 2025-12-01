@@ -8,8 +8,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
 
-import org.slf4j.Logger;
-
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -22,6 +20,7 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.cfg.ConstructorDetector;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 
+import lombok.extern.slf4j.Slf4j;
 import net.phylax.credible.transport.ISidecarTransport;
 import net.phylax.credible.types.SidecarApiModels.CredibleLayerMethods;
 import net.phylax.credible.types.SidecarApiModels.GetTransactionRequest;
@@ -34,7 +33,6 @@ import net.phylax.credible.types.SidecarApiModels.SendEventsRequest;
 import net.phylax.credible.types.SidecarApiModels.SendEventsResponse;
 import net.phylax.credible.types.SidecarApiModels.SendTransactionsRequest;
 import net.phylax.credible.types.SidecarApiModels.SendTransactionsResponse;
-import net.phylax.credible.utils.CredibleLogger;
 import net.phylax.credible.metrics.CredibleMetricsRegistry;
 import okhttp3.Authenticator;
 import okhttp3.Call;
@@ -50,9 +48,8 @@ import okhttp3.Response;
  * Sidecar JSON RPC client
  * Requires dependencies: okhttp3 and jackson-databind
  */
+@Slf4j
 public class JsonRpcTransport implements ISidecarTransport {
-    private static final Logger LOG = CredibleLogger.getLogger(JsonRpcTransport.class);
-    
     // JSON RPC Request class
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class JsonRpcRequest {
@@ -259,7 +256,7 @@ public class JsonRpcTransport implements ISidecarTransport {
             JsonRpcRequest request = new JsonRpcRequest(method, params, requestId);
 
             String requestJson = objectMapper.writeValueAsString(request);
-            LOG.trace("Request ID: {}, body: {}", requestId, requestJson);
+            log.trace("Request ID: {}, body: {}", requestId, requestJson);
 
             RequestBody body = RequestBody.create(requestJson, JSON);
 
@@ -280,7 +277,7 @@ public class JsonRpcTransport implements ISidecarTransport {
                 }
 
                 String responseBody = response.body().string();
-                LOG.trace("Response ID: {}, body: {}", requestId, responseBody);
+                log.trace("Response ID: {}, body: {}", requestId, responseBody);
 
                 // Create JavaType from TypeReference for proper type handling
                 JavaType responseType = objectMapper.getTypeFactory()
@@ -310,7 +307,7 @@ public class JsonRpcTransport implements ISidecarTransport {
             JsonRpcRequest request = new JsonRpcRequest(method, params, requestId);
 
             String requestJson = objectMapper.writeValueAsString(request);
-            LOG.trace("Request ID: {}, body: {}, url: {}", requestId, requestJson, baseUrl);
+            log.trace("Request ID: {}, body: {}, url: {}", requestId, requestJson, baseUrl);
 
             RequestBody body = RequestBody.create(requestJson, JSON);
 
@@ -330,7 +327,7 @@ public class JsonRpcTransport implements ISidecarTransport {
                 }
 
                 String responseBody = response.body().string();
-                LOG.trace("Response ID: {}, body: {}, url: {}", requestId, responseBody, baseUrl);
+                log.trace("Response ID: {}, body: {}, url: {}", requestId, responseBody, baseUrl);
 
                 // Create JavaType for Class-based result type
                 JavaType responseType = objectMapper.getTypeFactory()

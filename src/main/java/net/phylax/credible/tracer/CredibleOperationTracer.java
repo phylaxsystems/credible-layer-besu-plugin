@@ -9,22 +9,20 @@ import org.hyperledger.besu.plugin.data.BlockBody;
 import org.hyperledger.besu.plugin.data.BlockHeader;
 import org.hyperledger.besu.plugin.data.ProcessableBlockHeader;
 import org.hyperledger.besu.plugin.services.tracer.BlockAwareOperationTracer;
-import org.slf4j.Logger;
 
-import net.phylax.credible.CredibleLayerPlugin;
+import lombok.extern.slf4j.Slf4j;
 import net.phylax.credible.strategy.ISidecarStrategy;
 import net.phylax.credible.types.SidecarApiModels.BlobExcessGasAndPrice;
 import net.phylax.credible.types.SidecarApiModels.BlockEnv;
 import net.phylax.credible.types.SidecarApiModels.NewIteration;
-import net.phylax.credible.utils.CredibleLogger;
 
 /**
  * Implementation of the operation tracer that tracks the repetitions of block creation processes
  * for the same block height.
  */
+@Slf4j
 public class CredibleOperationTracer implements BlockAwareOperationTracer {
-    private static final Logger LOG = CredibleLogger.getLogger(CredibleLayerPlugin.class);
-
+    
     private final AtomicLong currentIterationId;
     private final ISidecarStrategy strategy;
 
@@ -38,7 +36,7 @@ public class CredibleOperationTracer implements BlockAwareOperationTracer {
         final WorldView worldView,
         final ProcessableBlockHeader processableBlockHeader,
         final Address miningBeneficiary) {
-        LOG.debug("traceStartBlock - number: {}, iteration: {}", processableBlockHeader.getNumber(), currentIterationId.get());
+        log.debug("traceStartBlock - number: {}, iteration: {}", processableBlockHeader.getNumber(), currentIterationId.get());
 
         // Convert fields directly to byte[] without hex string intermediate
         BlockEnv blockEnv = new BlockEnv(
@@ -57,7 +55,7 @@ public class CredibleOperationTracer implements BlockAwareOperationTracer {
         try {
             strategy.newIteration(iteration);
         } catch(Exception e) {
-            LOG.error("Error sending new iteration, block number: {}, iteration: {}, reason: {}", processableBlockHeader.getNumber(), currentIterationId.get(), e);
+            log.error("Error sending new iteration, block number: {}, iteration: {}, reason: {}", processableBlockHeader.getNumber(), currentIterationId.get(), e);
         }
     }
 
@@ -85,7 +83,7 @@ public class CredibleOperationTracer implements BlockAwareOperationTracer {
 
     @Override
     public void traceEndBlock(final BlockHeader blockHeader, final BlockBody blockBody) {
-        LOG.debug("traceEndBlock - hash: {}, number: {}, iteration: {}, tx_count: {}",
+        log.debug("traceEndBlock - hash: {}, number: {}, iteration: {}, tx_count: {}",
             blockHeader.getBlockHash().toHexString(),
             blockHeader.getNumber(),
             currentIterationId.get(),

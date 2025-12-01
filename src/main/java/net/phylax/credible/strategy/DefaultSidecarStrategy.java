@@ -14,8 +14,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import org.slf4j.Logger;
-
+import lombok.extern.slf4j.Slf4j;
 import net.phylax.credible.metrics.CredibleMetricsRegistry;
 import net.phylax.credible.transport.ISidecarTransport;
 import net.phylax.credible.types.CredibleRejectionReason;
@@ -33,11 +32,11 @@ import net.phylax.credible.types.SidecarApiModels.SendTransactionsRequest;
 import net.phylax.credible.types.SidecarApiModels.TransactionResult;
 import net.phylax.credible.types.SidecarApiModels.TxExecutionId;
 import net.phylax.credible.utils.ByteUtils;
-import net.phylax.credible.utils.CredibleLogger;
 import net.phylax.credible.utils.Result;
 
+@Slf4j
 public class DefaultSidecarStrategy implements ISidecarStrategy {
-    private static final Logger LOG = CredibleLogger.getLogger(DefaultSidecarStrategy.class);
+    // private static final Logger LOG = CredibleLogger.getLogger(DefaultSidecarStrategy.class);
 
     private List<ISidecarTransport> primaryTransports;
     private List<ISidecarTransport> activeTransports;
@@ -104,14 +103,14 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
             .collect(Collectors.toList());
 
         commitHead.ifPresent(head -> {
-            LOG.debug("Sending commit_head {} with {} transactions and iteration {} for block number {}",
+            log.debug("Sending commit_head {} with {} transactions and iteration {} for block number {}",
                 head.getBlockNumber(),
                 head.getNTransactions(),
                 iteration.getIterationId(),
                 iteration.getBlockEnv().getNumber());
         });
 
-        LOG.debug("Sending iteration {} for block number {} to {} primaries and {} fallbacks",
+        log.debug("Sending iteration {} for block number {} to {} primaries and {} fallbacks",
             iteration.getIterationId(),
             iteration.getBlockEnv().getNumber(),
             primaryFutures.size(),
@@ -134,11 +133,11 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                     updateActiveTransports(successfulPrimaries);
                 } else if (!successfulFallbacks.isEmpty()) {
                     if (!primaryFutures.isEmpty()) {
-                        LOG.warn("Sending CommitHead to primary sidecars failed, using fallbacks");
+                        log.warn("Sending CommitHead to primary sidecars failed, using fallbacks");
                     }
                     updateActiveTransports(successfulFallbacks);
                 } else {
-                    LOG.warn("Sending CommitHead failed for all sidecars");
+                    log.warn("Sending CommitHead failed for all sidecars");
                     isActive.set(false);
                     activeTransports.clear();
                     pendingTxRequests.clear();
@@ -176,14 +175,14 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         activeTransports.clear();
         activeTransports.addAll(successfulTransports);
         metricsRegistry.registerActiveTransportsGauge(successfulTransports::size);
-        LOG.debug("Updated active sidecars - count {}", successfulTransports.size());
+        log.debug("Updated active sidecars - count {}", successfulTransports.size());
 
         // Subscribe to results stream for each transport
         for (ISidecarTransport transport : successfulTransports) {
             transport.subscribeResults(
                 this::onTransactionResult,
                 error -> {
-                    LOG.error("Results subscription error: {}", error.getMessage());
+                    log.error("Results subscription error: {}", error.getMessage());
                     activeTransports.remove(transport);
                 }
             );
@@ -199,11 +198,11 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         CompletableFuture<GetTransactionResponse> future = pendingTxRequests.get(txExecId);
 
         if (future != null) {
-            LOG.debug("Received result for pending tx: hash={}, status={}",
+            log.debug("Received result for pending tx: hash={}, status={}",
                 ByteUtils.toHex(txExecId.getTxHash()), result.getStatus());
             future.complete(new GetTransactionResponse(result));
         } else {
-            LOG.trace("Received result for unknown/already-completed tx: hash={}",
+            log.trace("Received result for unknown/already-completed tx: hash={}",
                 ByteUtils.toHex(txExecId.getTxHash()));
         }
     }
@@ -217,7 +216,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                 return new TransportResponse(transport, "accepted".equals(sendEventsResponse.getStatus()), "Success", latency);
             })
             .exceptionally(ex -> {
-                LOG.debug("NewIteration error: {} - {}",
+                log.debug("NewIteration error: {} - {}",
                     ex.getMessage(),
                     ex.getCause() != null ? ex.getCause().getMessage() : "");
                 metricsRegistry.getErrorCounter().labels().inc();
@@ -231,7 +230,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
     public List<CompletableFuture<GetTransactionResponse>> dispatchTransactions(
         SendTransactionsRequest sendTxRequest) {
         if (activeTransports.isEmpty()) {
-            LOG.warn("Active sidecars empty");
+            log.warn("Active sidecars empty");
             return Collections.emptyList();
         }
 
@@ -252,13 +251,13 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
             transport.sendTransactions(sendTxRequest)
                 .whenComplete((result, ex) -> {
                     if (ex != null) {
-                        LOG.debug("SendTransactions error: {} - {}",
+                        log.debug("SendTransactions error: {} - {}",
                             ex.getMessage(),
                             ex.getCause() != null ? ex.getCause().getMessage() : "");
                         metricsRegistry.getErrorCounter().labels().inc();
                         activeTransports.remove(transport);
                     } else {
-                        LOG.debug("SendTransactions response: count - {}, message - {}",
+                        log.debug("SendTransactions response: count - {}, message - {}",
                             result.getRequestCount(),
                             result.getMessage());
                     }
@@ -266,11 +265,11 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         }
 
         if (!isActive.get()) {
-            LOG.debug("Transports aren't active!");
+            log.debug("Transports aren't active!");
             return Collections.emptyList();
         }
 
-        LOG.debug("Dispatched transaction, waiting for result via stream: hash={}", ByteUtils.toHex(txExecId.getTxHash()));
+        log.debug("Dispatched transaction, waiting for result via stream: hash={}", ByteUtils.toHex(txExecId.getTxHash()));
 
         // Return a single-element list for compatibility with existing interface
         return Collections.singletonList(resultFuture);
@@ -285,7 +284,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         TxExecutionId txExecId = transactionRequest.toTxExecutionId();
         CompletableFuture<GetTransactionResponse> future = pendingTxRequests.get(txExecId);
         if (future == null) {
-            LOG.debug("No pending request found for transaction {}", txExecId);
+            log.debug("No pending request found for transaction {}", txExecId);
             return Result.failure(CredibleRejectionReason.NO_RESULT);
         }
 
@@ -297,7 +296,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
             return Result.success(response);
         } catch (ExecutionException e) {
             if (e.getCause() instanceof java.util.concurrent.TimeoutException) {
-                LOG.debug("Timeout waiting for transaction result via stream, falling back to getTransaction: {}", ByteUtils.toHex(txExecId.getTxHash()));
+                log.debug("Timeout waiting for transaction result via stream, falling back to getTransaction: {}", ByteUtils.toHex(txExecId.getTxHash()));
                 metricsRegistry.getTimeoutCounter().labels().inc();
 
                 // Fallback: try to get the transaction result via direct RPC call
@@ -306,25 +305,25 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                         GetTransactionResponse fallbackResponse = transport.getTransaction(transactionRequest)
                             .get(processingTimeout, TimeUnit.MILLISECONDS);
                         if (fallbackResponse != null && fallbackResponse.getResult() != null) {
-                            LOG.debug("Got transaction result via fallback getTransaction: {}", ByteUtils.toHex(txExecId.getTxHash()));
+                            log.debug("Got transaction result via fallback getTransaction: {}", ByteUtils.toHex(txExecId.getTxHash()));
                             return Result.success(fallbackResponse);
                         }
                     } catch (Exception fallbackEx) {
-                        LOG.debug("Fallback getTransaction failed for transport: {}", fallbackEx.getMessage());
+                        log.debug("Fallback getTransaction failed for transport: {}", fallbackEx.getMessage());
                     }
                 }
 
                 // Mark strategy as inactive when results timeout - no sidecar responded in time
-                LOG.debug("All fallback attempts failed for transaction: {}", ByteUtils.toHex(txExecId.getTxHash()));
+                log.debug("All fallback attempts failed for transaction: {}", ByteUtils.toHex(txExecId.getTxHash()));
                 isActive.set(false);
                 return Result.failure(CredibleRejectionReason.TIMEOUT);
             }
-            LOG.debug("Exception waiting for transaction result: {}, cause: {}",
+            log.debug("Exception waiting for transaction result: {}, cause: {}",
                 e.getMessage(), e.getCause() != null ? e.getCause().getMessage() : "null");
             metricsRegistry.getErrorCounter().labels().inc();
             return Result.failure(CredibleRejectionReason.ERROR);
         } catch (InterruptedException e) {
-            LOG.debug("Interrupted waiting for transaction result: {}", ByteUtils.toHex(txExecId.getTxHash()));
+            log.debug("Interrupted waiting for transaction result: {}", ByteUtils.toHex(txExecId.getTxHash()));
             metricsRegistry.getErrorCounter().labels().inc();
             Thread.currentThread().interrupt();
             return Result.failure(CredibleRejectionReason.ERROR);
@@ -342,7 +341,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                     .exceptionally(ex -> {
                         // Safe to remove with CopyOnWriteArrayList
                         activeTransports.remove(transport);
-                        LOG.debug("Exception sending reorg request to transport {}: {}",
+                        log.debug("Exception sending reorg request to transport {}: {}",
                             transport.toString(), ex.getMessage());
                         metricsRegistry.getErrorCounter().labels().inc();
                         return null;
@@ -367,7 +366,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
     public void setNewHead(String blockhash, CommitHead newHead) {
         var iterationId = blockHashToIterationId.get(blockhash);
         if (iterationId == null) {
-            LOG.warn("No iteration id found for blockhash {}", blockhash);
+            log.warn("No iteration id found for blockhash {}", blockhash);
         }
         blockHashToIterationId.clear();
         newHead.setSelectedIterationId(iterationId);

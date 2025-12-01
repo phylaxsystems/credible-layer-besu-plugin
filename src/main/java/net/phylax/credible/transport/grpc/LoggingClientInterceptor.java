@@ -1,7 +1,5 @@
 package net.phylax.credible.transport.grpc;
 
-import org.slf4j.Logger;
-
 import io.grpc.CallOptions;
 import io.grpc.Channel;
 import io.grpc.ClientCall;
@@ -10,15 +8,15 @@ import io.grpc.ForwardingClientCall;
 import io.grpc.ForwardingClientCallListener;
 import io.grpc.Metadata;
 import io.grpc.MethodDescriptor;
+import lombok.extern.slf4j.Slf4j;
 import net.phylax.credible.metrics.CredibleMetricsRegistry;
-import net.phylax.credible.utils.CredibleLogger;
 
 /**
  * gRPC client interceptor that logs the start and completion of RPC calls
  * with precise timing information and records metrics.
  */
+@Slf4j
 public class LoggingClientInterceptor implements ClientInterceptor {
-    private static final Logger LOG = CredibleLogger.getLogger(LoggingClientInterceptor.class);
     private final CredibleMetricsRegistry metricsRegistry;
 
     /**
@@ -53,7 +51,7 @@ public class LoggingClientInterceptor implements ClientInterceptor {
                 startTimeNanos = System.nanoTime();
                 methodName = method.getFullMethodName();
 
-                LOG.debug("[gRPC-START] {} at {}ns", methodName, startTimeNanos);
+                log.debug("[gRPC-START] {} at {}ns", methodName, startTimeNanos);
 
                 super.start(new ForwardingClientCallListener.SimpleForwardingClientCallListener<RespT>(responseListener) {
                     @Override
@@ -62,10 +60,10 @@ public class LoggingClientInterceptor implements ClientInterceptor {
                         long elapsedUs = (closeTime - startTimeNanos) / 1_000;
 
                         if (status.isOk()) {
-                            LOG.debug("[gRPC-CLOSE] {} - completed successfully after {}us", methodName, elapsedUs);
+                            log.debug("[gRPC-CLOSE] {} - completed successfully after {}us", methodName, elapsedUs);
                             recordRequestDuration(startTimeNanos, methodName, "success");
                         } else {
-                            LOG.warn("[gRPC-CLOSE] {} - failed with {} after {}us: {}",
+                            log.warn("[gRPC-CLOSE] {} - failed with {} after {}us: {}",
                                 methodName, status.getCode(), elapsedUs, status.getDescription());
                             recordRequestDuration(startTimeNanos, methodName, "error");
                         }

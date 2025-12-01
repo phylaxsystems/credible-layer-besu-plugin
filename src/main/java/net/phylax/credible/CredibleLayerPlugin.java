@@ -16,10 +16,10 @@ import org.hyperledger.besu.plugin.services.MetricsSystem;
 import org.hyperledger.besu.plugin.services.PicoCLIOptions;
 import org.hyperledger.besu.plugin.services.TransactionSelectionService;
 import org.hyperledger.besu.plugin.services.metrics.MetricCategoryRegistry;
-import org.slf4j.Logger;
 
 import com.google.auto.service.AutoService;
 
+import lombok.extern.slf4j.Slf4j;
 import net.phylax.credible.metrics.CredibleMetricsCategory;
 import net.phylax.credible.metrics.CredibleMetricsRegistry;
 import net.phylax.credible.strategy.DefaultSidecarStrategy;
@@ -30,15 +30,14 @@ import net.phylax.credible.transport.jsonrpc.JsonRpcTransport;
 import net.phylax.credible.txselection.CredibleTransactionSelector;
 import net.phylax.credible.txselection.CredibleTransactionSelectorFactory;
 import net.phylax.credible.types.SidecarApiModels.CommitHead;
-import net.phylax.credible.utils.CredibleLogger;
 import picocli.CommandLine;
 
 /**
  * Plugin for sending BlockEnv to the Credible Layer sidecar
  */
 @AutoService(BesuPlugin.class)
+@Slf4j
 public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedListener {
-    private static final Logger LOG = CredibleLogger.getLogger(CredibleLayerPlugin.class);
     private static final String PLUGIN_NAME = "credible-sidecar";
 
     private ServiceManager serviceManager;
@@ -184,9 +183,9 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         Optional<PicoCLIOptions> cmdlineOptions = serviceManager.getService(PicoCLIOptions.class);
         if (cmdlineOptions.isPresent()) {
             cmdlineOptions.get().addPicoCLIOptions(PLUGIN_NAME, config);
-            LOG.info("CLI options are available");
+            log.info("CLI options are available");
         } else {
-            LOG.error("PicoCLI not available");
+            log.error("PicoCLI not available");
         }
     }
 
@@ -205,14 +204,14 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         boolean isJsonRpc = transportType == CrediblePluginConfiguration.TransportType.HTTP;
 
         if (isJsonRpc) {
-            LOG.info(
+            log.info(
                 "Starting plugin with JSON-RPC transport to {}: readTimeout {}, writeTimeout {}, processingTimeout {}",
                 String.join(", ", config.getRpcEndpoints()),
                 config.getReadTimeout(),
                 config.getWriteTimeout(),
                 config.getProcessingTimeout());
         } else {
-            LOG.info(
+            log.info(
                 "Starting plugin with gRPC transport to {}: deadlineTimeout {}, processingTimeout {}",
                 String.join(", ", config.getGrpcEndpoints()),
                 config.getReadTimeout(),
@@ -221,7 +220,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
 
         serviceManager
             .getService(BesuEvents.class)
-            .ifPresentOrElse(this::startEvents, () -> LOG.error("BesuEvents service not available"));
+            .ifPresentOrElse(this::startEvents, () -> log.error("BesuEvents service not available"));
 
         // Initialize the metrics system
         this.metricsSystem = serviceManager.getService(MetricsSystem.class)
@@ -269,7 +268,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
                     );
                 }
                 if (hasGrpc) {
-                    LOG.warn("gRPC endpoints are configured but transport type is HTTP; the gRPC endpoints will be ignored");
+                    log.warn("gRPC endpoints are configured but transport type is HTTP; the gRPC endpoints will be ignored");
                 }
                 break;
             case GRPC:
@@ -280,15 +279,15 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
                     );
                 }
                 if (hasJsonRpc) {
-                    LOG.warn("JSON-RPC endpoints are configured but transport type is gRPC; the JSON-RPC endpoints will be ignored");
+                    log.warn("JSON-RPC endpoints are configured but transport type is gRPC; the JSON-RPC endpoints will be ignored");
                 }
                 break;
             default:
-                LOG.warn("No transport type has been selected!");
+                log.warn("No transport type has been selected!");
         }
 
         if (!hasJsonRpc && !hasGrpc) {
-            LOG.warn("No transport endpoints configured, plugin will be disabled.");
+            log.warn("No transport endpoints configured, plugin will be disabled.");
         }
     }
 
@@ -366,13 +365,13 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
     public void stop() {
         serviceManager
             .getService(BesuEvents.class)
-            .ifPresentOrElse(this::stopEvents, () -> LOG.error("Error retrieving BesuEvents service"));
+            .ifPresentOrElse(this::stopEvents, () -> log.error("Error retrieving BesuEvents service"));
     }
         
     @Override
     public void onBlockAdded(final AddedBlockContext block) {
         if (block.getEventType() != EventType.HEAD_ADVANCED) {
-            LOG.debug("Skipping onBlockAdded, event type: {}", block.getEventType());
+            log.debug("Skipping onBlockAdded, event type: {}", block.getEventType());
             return;
         }
         var blockHeader = block.getBlockHeader();
@@ -385,14 +384,14 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         try {
             // Check if we sent the block already
             if (blockHash.equals(lastBlockSent)) {
-                LOG.debug("Block already sent - Hash: {}, Number: {}", blockHash, blockNumber);
+                log.debug("Block already sent - Hash: {}, Number: {}", blockHash, blockNumber);
                 return;
             }
 
             // Validates if the block is valid for sending it to the Credible Layer
             validateBlock(block);
             
-            LOG.debug("Processing new block - Hash: {}, Number: {}", blockHash, blockNumber);
+            log.debug("Processing new block - Hash: {}, Number: {}", blockHash, blockNumber);
             
             // Get transaction information from the actual block
             int transactionCount = transactions.size();
@@ -413,9 +412,9 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
             this.strategy.setNewHead(blockHash, newHead);
             lastBlockSent = blockHash;
             
-            LOG.debug("Block Env sent, hash: {}", blockHash);
+            log.debug("Block Env sent, hash: {}", blockHash);
         } catch (Exception e) {
-            LOG.error("Error handling sendBlockEnv {}", e.getMessage());
+            log.error("Error handling sendBlockEnv {}", e.getMessage());
         }
     }
 
