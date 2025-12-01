@@ -1,10 +1,10 @@
 package net.phylax.credible.types;
 
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import org.hyperledger.besu.datatypes.Address;
 import org.hyperledger.besu.datatypes.CodeDelegation;
 import org.hyperledger.besu.datatypes.Transaction;
 import org.hyperledger.besu.datatypes.TransactionType;
@@ -13,31 +13,31 @@ import org.hyperledger.besu.datatypes.VersionedHash;
 import net.phylax.credible.types.SidecarApiModels.TxEnv;
 
 public class TransactionConverter {
-    private static final ThreadLocal<StringBuilder> STRING_BUILDER = 
-        ThreadLocal.withInitial(() -> new StringBuilder(128));
 
     private static final List<SidecarApiModels.AccessListEntry> EMPTY_LIST = new ArrayList<>();
+    private static final byte[] EMPTY_BYTES = new byte[0];
 
     /**
-     * Convert Besu Transaction to TxEnv
+     * Convert Besu Transaction to TxEnv.
+     * Binary fields are passed directly as byte[] to avoid unnecessary hex string conversions.
      */
     public static TxEnv convertToTxEnv(Transaction transaction) {
         SidecarApiModels.TxEnv txEnv = new SidecarApiModels.TxEnv();
-        
+
         txEnv.setTxType(convertType(transaction.getType()));
 
-        // Caller (sender address)
-        txEnv.setCaller(addressToString(transaction.getSender()));
-        
+        // Caller (sender address) - 20 bytes
+        txEnv.setCaller(transaction.getSender().toArrayUnsafe());
+
         // Gas limit
         txEnv.setGasLimit(transaction.getGasLimit());
-        
+
         // Gas price handling based on transaction type
         if (supportsEip1559(transaction.getType())) {
             // EIP-1559: Use maxFeePerGas as gasPrice
-            transaction.getMaxFeePerGas().ifPresent(maxFee -> 
+            transaction.getMaxFeePerGas().ifPresent(maxFee ->
                 txEnv.setGasPrice(maxFee.getAsBigInteger().longValue()));
-            transaction.getMaxPriorityFeePerGas().ifPresent(maxPriorityFee -> 
+            transaction.getMaxPriorityFeePerGas().ifPresent(maxPriorityFee ->
                 txEnv.setGasPriorityFee(maxPriorityFee.getAsBigInteger().longValue()));
         } else {
             // Legacy: Use gasPrice
@@ -48,9 +48,11 @@ public class TransactionConverter {
         transaction.getMaxFeePerBlobGas().ifPresent(maxFeePerBlobGas ->
             txEnv.setMaxFeePerBlobGas(maxFeePerBlobGas.getAsBigInteger().longValue()));
 
+        // Blob hashes - 32 bytes each
         transaction.getVersionedHashes().ifPresent(versionedHashes ->
             txEnv.setBlobHashes(versionedHashes.stream()
-                .map(VersionedHash::toString)
+                .map(VersionedHash::toBytes)
+                .map(bytes -> bytes.toArrayUnsafe())
                 .collect(Collectors.toList()))
             );
 
@@ -59,33 +61,32 @@ public class TransactionConverter {
                 .map(TransactionConverter::convertAuthorizationListEntry)
                 .collect(Collectors.toList()));
         });
-        
-        // Transaction destination
+
+        // Transaction destination - 20 bytes or empty for contract creation
         if (transaction.getTo().isPresent()) {
-            // Contract call
-            txEnv.setKind(addressToString(transaction.getTo().get()));
+            txEnv.setKind(transaction.getTo().get().toArrayUnsafe());
         } else {
-            // Contract creation - kind should be empty/0x (taken from spec)
-            txEnv.setKind("0x");
+            // Contract creation - empty bytes
+            txEnv.setKind(EMPTY_BYTES);
         }
-        
-        // Data/payload - use getData() if available, otherwise getPayload()
+
+        // Data/payload - variable length calldata bytes
         if (transaction.getData().isPresent()) {
-            txEnv.setData(transaction.getData().get().toHexString());
+            txEnv.setData(transaction.getData().get().toArrayUnsafe());
         } else {
-            txEnv.setData(transaction.getPayload().toHexString());
+            txEnv.setData(transaction.getPayload().toArrayUnsafe());
         }
-        
-        // Value
-        txEnv.setValue("0x" + transaction.getValue().getAsBigInteger().toString(16));
-        
+
+        // Value - 32 bytes U256 big-endian
+        txEnv.setValue(bigIntegerToBytes32(transaction.getValue().getAsBigInteger()));
+
         // Nonce
         txEnv.setNonce(transaction.getNonce());
-        
+
         // Chain ID
         transaction.getChainId().ifPresent(chainId ->
             txEnv.setChainId(chainId.longValue()));
-        
+
         // Access List (EIP-2930 and later)
         if (transaction.getAccessList().isPresent()) {
             List<SidecarApiModels.AccessListEntry> accessList = convertAccessList(transaction.getAccessList().get());
@@ -93,15 +94,30 @@ public class TransactionConverter {
         } else {
             txEnv.setAccessList(EMPTY_LIST); // Empty access list
         }
-        
+
         return txEnv;
     }
 
-    private static String addressToString(Address address) {
-        StringBuilder sb = STRING_BUILDER.get();
-        sb.setLength(0);
-        sb.append(address.toHexString());
-        return sb.toString();
+    /**
+     * Convert BigInteger to 32-byte array (big-endian, left-padded with zeros).
+     */
+    private static byte[] bigIntegerToBytes32(BigInteger value) {
+        byte[] bytes = new byte[32];
+        if (value == null || value.equals(BigInteger.ZERO)) {
+            return bytes; // All zeros
+        }
+        byte[] valueBytes = value.toByteArray();
+        // Handle potential leading zero byte from BigInteger's two's complement representation
+        int srcOffset = valueBytes[0] == 0 && valueBytes.length > 1 ? 1 : 0;
+        int length = valueBytes.length - srcOffset;
+        int destOffset = 32 - length;
+        if (destOffset >= 0) {
+            System.arraycopy(valueBytes, srcOffset, bytes, destOffset, length);
+        } else {
+            // Value is larger than 32 bytes (shouldn't happen for valid U256)
+            System.arraycopy(valueBytes, srcOffset - destOffset, bytes, 0, 32);
+        }
+        return bytes;
     }
 
     private static boolean supportsEip1559(TransactionType type) {
@@ -129,36 +145,39 @@ public class TransactionConverter {
     private static SidecarApiModels.AuthorizationListEntry convertAuthorizationListEntry(
             CodeDelegation codeDelegation) {
         return new SidecarApiModels.AuthorizationListEntry(
-            codeDelegation.address().toHexString(),
+            codeDelegation.address().toArrayUnsafe(),  // 20 bytes
             codeDelegation.v(),
-            "0x" + codeDelegation.r().toString(16),
-            "0x" +codeDelegation.s().toString(16),
+            bigIntegerToBytes32(codeDelegation.r()),   // 32 bytes
+            bigIntegerToBytes32(codeDelegation.s()),   // 32 bytes
             codeDelegation.chainId().longValue(),
             codeDelegation.nonce());
     }
-    
+
     /**
      * Convert Besu AccessList to TxEnv AccessList
      */
     private static List<SidecarApiModels.AccessListEntry> convertAccessList(
             List<org.hyperledger.besu.datatypes.AccessListEntry> besuAccessList) {
-        
+
         return besuAccessList.stream()
             .map(TransactionConverter::convertAccessListEntry)
             .collect(Collectors.toList());
     }
-    
+
     /**
      * Convert individual AccessListEntry
      */
     private static SidecarApiModels.AccessListEntry convertAccessListEntry(
             org.hyperledger.besu.datatypes.AccessListEntry besuEntry) {
-        
-        String address = besuEntry.getAddressString();
-        
-        List<String> storageKeys = besuEntry.getStorageKeysString().stream()
+
+        // Address - 20 bytes
+        byte[] address = besuEntry.address().toArrayUnsafe();
+
+        // Storage keys - 32 bytes each
+        List<byte[]> storageKeys = besuEntry.storageKeys().stream()
+            .map(key -> key.toArrayUnsafe())
             .collect(Collectors.toList());
-        
+
         return new SidecarApiModels.AccessListEntry(address, storageKeys);
     }
     
@@ -192,47 +211,47 @@ public class TransactionConverter {
             // Log error and return basic TxEnv
             System.err.println("Error converting transaction: " + e.getMessage());
             e.printStackTrace();
-            
+
             // Return minimal TxEnv with available data
             TxEnv fallbackTxEnv = new TxEnv();
-            
-            fallbackTxEnv.setCaller(transaction.getSender().toHexString());
+
+            fallbackTxEnv.setCaller(transaction.getSender().toArrayUnsafe());
             fallbackTxEnv.setGasLimit(transaction.getGasLimit());
-            fallbackTxEnv.setValue("0x" + transaction.getValue().getAsBigInteger().toString(16));
+            fallbackTxEnv.setValue(bigIntegerToBytes32(transaction.getValue().getAsBigInteger()));
             fallbackTxEnv.setNonce(transaction.getNonce());
             fallbackTxEnv.setAccessList(new ArrayList<>());
-            
+
             // Handle gas price safely
             if (transaction.getGasPrice().isPresent()) {
                 fallbackTxEnv.setGasPrice(transaction.getGasPrice().get().getAsBigInteger().longValue());
             } else {
                 fallbackTxEnv.setGasPrice(0L);
             }
-            
+
             // Handle destination and data safely
             if (transaction.getTo().isPresent()) {
-                fallbackTxEnv.setKind(transaction.getTo().get().toHexString());
+                fallbackTxEnv.setKind(transaction.getTo().get().toArrayUnsafe());
             } else {
-                fallbackTxEnv.setKind(null);
+                fallbackTxEnv.setKind(EMPTY_BYTES);
             }
-            
+
             // Handle data safely
             try {
                 if (transaction.getData().isPresent()) {
-                    fallbackTxEnv.setData(transaction.getData().get().toHexString());
+                    fallbackTxEnv.setData(transaction.getData().get().toArrayUnsafe());
                 } else {
-                    fallbackTxEnv.setData(transaction.getPayload().toHexString());
+                    fallbackTxEnv.setData(transaction.getPayload().toArrayUnsafe());
                 }
             } catch (Exception dataException) {
-                fallbackTxEnv.setData("0x");
+                fallbackTxEnv.setData(EMPTY_BYTES);
             }
-            
+
             // Handle chain ID safely
             transaction.getChainId().ifPresentOrElse(
                 chainId -> fallbackTxEnv.setChainId(chainId.longValue()),
                 () -> fallbackTxEnv.setChainId(1L)
             );
-            
+
             return fallbackTxEnv;
         }
     }

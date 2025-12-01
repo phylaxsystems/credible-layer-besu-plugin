@@ -15,7 +15,6 @@ import org.junit.jupiter.api.Test;
 
 import com.google.common.base.Stopwatch;
 
-import io.opentelemetry.api.OpenTelemetry;
 import net.phylax.credible.metrics.CredibleMetricsRegistry;
 import net.phylax.credible.transport.MockTransport;
 import net.phylax.credible.transport.ISidecarTransport;
@@ -25,30 +24,43 @@ import net.phylax.credible.utils.Result;
 import net.phylax.credible.metrics.SimpleMockMetricsSystem;
 
 public class DefaultStrategyTest {
+
+    // Helper to convert hex string to byte array for tests
+    private static byte[] hexToBytes(String hex) {
+        if (hex == null || hex.isEmpty()) return new byte[0];
+        String cleanHex = hex.startsWith("0x") ? hex.substring(2) : hex;
+        if (cleanHex.length() % 2 != 0) cleanHex = "0" + cleanHex;
+        byte[] bytes = new byte[cleanHex.length() / 2];
+        for (int i = 0; i < bytes.length; i++) {
+            bytes[i] = (byte) Integer.parseInt(cleanHex.substring(i * 2, i * 2 + 2), 16);
+        }
+        return bytes;
+    }
+
     NewIteration generateNewIteration() {
         // generate block env
         BlockEnv blockEnvData = new BlockEnv(
             1L,
-            "0x0000000000000000000000000000000000000001",
+            hexToBytes("0x0000000000000000000000000000000000000001"),
             System.currentTimeMillis(),
             200000L,
             10L,
-            "0x123",
-            "0x123123123123123123123123123123",
+            hexToBytes("0x123"),
+            hexToBytes("0x123123123123123123123123123123"),
             new BlobExcessGasAndPrice(1L, 1L)
         );
         return new NewIteration(1L, blockEnvData);
     }
 
     CommitHead generateNewCommitHead() {
-        return new CommitHead("0x0000000000000000000000000000000000000001", 1, 1L, 1L);
+        return new CommitHead(hexToBytes("0x0000000000000000000000000000000000000001"), 1, 1L, 1L);
     }
 
-    SendTransactionsRequest generateTransactionRequest(String hash) {
+    SendTransactionsRequest generateTransactionRequest(byte[] hash) {
         // generate transaction request
         var transactions = new ArrayList<TransactionExecutionPayload>();
         TxExecutionId txExecutionId = new TxExecutionId(0L, 1L, hash, 0L);
-        transactions.add(new TransactionExecutionPayload(txExecutionId, new TxEnv(), "0x1234567890"));
+        transactions.add(new TransactionExecutionPayload(txExecutionId, new TxEnv(), hexToBytes("0x1234567890")));
         return new SendTransactionsRequest(transactions);
     }
 
@@ -60,15 +72,12 @@ public class DefaultStrategyTest {
     ) {
         var metricsSystem = new SimpleMockMetricsSystem();
         var metrics = new CredibleMetricsRegistry(metricsSystem);
-
-        var openTelemetry = OpenTelemetry.noop();
         
         var strategy =  new DefaultSidecarStrategy(
             primaryTransports == null ? new ArrayList<>() : primaryTransports,
             fallbackTransports == null ? new ArrayList<>() : fallbackTransports,
             processingTimeout,
-            metrics,
-            openTelemetry.getTracer("default-strategy"));
+            metrics);
 
         var newIteration = generateNewIteration();
         var commitHead = generateNewCommitHead();
@@ -97,7 +106,7 @@ public class DefaultStrategyTest {
      * @return GetTransactionsResponse
      */
     Result<GetTransactionResponse, CredibleRejectionReason> sendTransaction(ISidecarStrategy strategy) {
-        var hash = "0x1" + new Random().nextInt(Integer.MAX_VALUE);
+        byte[] hash = hexToBytes("0x1" + new Random().nextInt(Integer.MAX_VALUE));
 
         strategy.dispatchTransactions(generateTransactionRequest(hash));
         GetTransactionRequest txRequest = new GetTransactionRequest(0L, 1L, hash, 0);
@@ -110,19 +119,19 @@ public class DefaultStrategyTest {
         var mockTransport = new MockTransport(200);
         var strategy = initStrategy(mockTransport, null, 500, true);
 
-        String hash1 = "0x1";
+        byte[] hash1 = hexToBytes("0x1");
         assertDoesNotThrow(() -> strategy.dispatchTransactions(generateTransactionRequest(hash1)));
         GetTransactionRequest txReq1 = new GetTransactionRequest(0L, 1L, hash1, 0);
         var response = strategy.getTransactionResult(txReq1);
         assertNotNull(response.getSuccess().getResult());
 
-        String hash2 = "0x2";
+        byte[] hash2 = hexToBytes("0x2");
         assertDoesNotThrow(() -> strategy.dispatchTransactions(generateTransactionRequest(hash2)));
         GetTransactionRequest txReq2 = new GetTransactionRequest(0L, 1L, hash2, 0);
         response = strategy.getTransactionResult(txReq2);
         assertNotNull(response.getSuccess().getResult());
 
-        String hash3 = "0x3";
+        byte[] hash3 = hexToBytes("0x3");
         assertDoesNotThrow(() -> strategy.dispatchTransactions(generateTransactionRequest(hash3)));
         GetTransactionRequest txReq3 = new GetTransactionRequest(0L, 1L, hash3, 0);
         response = strategy.getTransactionResult(txReq3);
@@ -281,11 +290,11 @@ public class DefaultStrategyTest {
 
         strategy.newIteration(generateNewIteration());
         // It should return an empty list (same as when transports aren't active)
-        var response = strategy.dispatchTransactions(generateTransactionRequest("0x1"));
+        var response = strategy.dispatchTransactions(generateTransactionRequest(hexToBytes("0x1")));
         assertTrue(response.size() == 1);
 
         // GetTransactions should reject
-        GetTransactionRequest txReq = new GetTransactionRequest(0L, 1L, "0x1", 0);
+        GetTransactionRequest txReq = new GetTransactionRequest(0L, 1L, hexToBytes("0x1"), 0);
         var result = strategy.getTransactionResult(txReq);
         assertNotNull(result.getSuccess().getResult());
     }

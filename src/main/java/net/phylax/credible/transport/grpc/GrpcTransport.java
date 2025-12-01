@@ -19,12 +19,9 @@ import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import io.grpc.okhttp.OkHttpChannelBuilder;
 import io.grpc.stub.StreamObserver;
-import io.opentelemetry.api.OpenTelemetry;
-import io.opentelemetry.api.trace.Tracer;
 import net.phylax.credible.metrics.CredibleMetricsRegistry;
 import net.phylax.credible.transport.ISidecarTransport;
 import net.phylax.credible.types.SidecarApiModels;
-import net.phylax.credible.types.SidecarApiModels.CredibleLayerMethods;
 import net.phylax.credible.types.SidecarApiModels.ReorgEvent;
 import net.phylax.credible.types.SidecarApiModels.ReorgEventReqItem;
 import net.phylax.credible.types.SidecarApiModels.SendEventsRequest;
@@ -49,7 +46,6 @@ public class GrpcTransport implements ISidecarTransport {
     private final SidecarTransportGrpc.SidecarTransportStub stub;
 
     private final long deadlineMillis;
-    private final Tracer tracer;
     private final CredibleMetricsRegistry metricsRegistry;
 
     // Stream management for StreamEvents
@@ -70,11 +66,10 @@ public class GrpcTransport implements ISidecarTransport {
     /**
      * Create a new GrpcTransport with pre-configured channel pools
      */
-    public GrpcTransport(ManagedChannel channel, long deadlineMillis, OpenTelemetry openTelemetry, CredibleMetricsRegistry metricsRegistry) {
+    public GrpcTransport(ManagedChannel channel, long deadlineMillis, CredibleMetricsRegistry metricsRegistry) {
         this.channel = channel;
         this.stub = SidecarTransportGrpc.newStub(channel);
         this.deadlineMillis = deadlineMillis;
-        this.tracer = openTelemetry.getTracer("grpc-transport");
         this.metricsRegistry = metricsRegistry;
         this.eventStreamRef = new AtomicReference<>();
         this.resultsSubscriptionContext = new AtomicReference<>();
@@ -83,14 +78,14 @@ public class GrpcTransport implements ISidecarTransport {
     /**
      * Create a new GrpcTransport with a single channel (backward compatibility)
      */
-    public GrpcTransport(ManagedChannel channel, ManagedChannel pollingChannel, long deadlineMillis, OpenTelemetry openTelemetry, CredibleMetricsRegistry metricsRegistry) {
-        this(channel, deadlineMillis, openTelemetry, metricsRegistry);
+    public GrpcTransport(ManagedChannel channel, ManagedChannel pollingChannel, long deadlineMillis, CredibleMetricsRegistry metricsRegistry) {
+        this(channel, deadlineMillis, metricsRegistry);
     }
 
     /**
      * Create a new GrpcTransport connecting to the specified host and port
      */
-    public GrpcTransport(String host, int port, long deadlineMillis, OpenTelemetry openTelemetry, CredibleMetricsRegistry metricsRegistry) {
+    public GrpcTransport(String host, int port, long deadlineMillis, CredibleMetricsRegistry metricsRegistry) {
         this(OkHttpChannelBuilder
                 .forAddress(host, port)
                 .usePlaintext()
@@ -99,7 +94,7 @@ public class GrpcTransport implements ISidecarTransport {
                 .forAddress(host, port)
                 .usePlaintext()
                 .build(),
-            deadlineMillis, openTelemetry, metricsRegistry);
+            deadlineMillis, metricsRegistry);
     }
 
 
@@ -253,7 +248,6 @@ public class GrpcTransport implements ISidecarTransport {
 
     @Override
     public CompletableFuture<SidecarApiModels.GetTransactionsResponse> getTransactions(SidecarApiModels.GetTransactionsRequest txRequest) {
-        var span = tracer.spanBuilder(CredibleLayerMethods.GET_TRANSACTIONS).startSpan();
         CompletableFuture<SidecarApiModels.GetTransactionsResponse> future = new CompletableFuture<>();
 
         try {
@@ -278,20 +272,16 @@ public class GrpcTransport implements ISidecarTransport {
                     public void onError(Throwable t) {
                         LOG.error("GetTransactions gRPC error: {}", getErrorMessage(t), t);
                         future.completeExceptionally(t);
-                        span.setAttribute("failed", true);
-                        span.end();
                     }
 
                     @Override
                     public void onCompleted() {
                         LOG.debug("GetTransactions gRPC call completed");
-                        span.end();
                     }
                 });
         } catch (Exception e) {
             LOG.error("Error preparing GetTransactions request: {}", e.getMessage(), e);
             future.completeExceptionally(e);
-            span.end();
         }
 
         return future;
@@ -465,7 +455,6 @@ public class GrpcTransport implements ISidecarTransport {
         private String host = "localhost";
         private int port = 50051;
         private long deadlineMillis = 5000; // 5 seconds default
-        private OpenTelemetry openTelemetry = OpenTelemetry.noop();
         private CredibleMetricsRegistry metricsRegistry;
         
         public Builder host(String host) {
@@ -483,18 +472,13 @@ public class GrpcTransport implements ISidecarTransport {
             return this;
         }
 
-        public Builder openTelemetry(OpenTelemetry openTelemetry) {
-            this.openTelemetry = openTelemetry;
-            return this;
-        }
-
         public Builder metricsRegistry(CredibleMetricsRegistry metricsRegistry) {
             this.metricsRegistry = metricsRegistry;
             return this;
         }
 
         public GrpcTransport build() {
-            return new GrpcTransport(createChannel(), deadlineMillis, openTelemetry, metricsRegistry);
+            return new GrpcTransport(createChannel(), deadlineMillis, metricsRegistry);
         }
 
         private ManagedChannel createChannel() {

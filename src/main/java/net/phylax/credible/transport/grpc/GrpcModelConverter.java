@@ -20,7 +20,8 @@ public class GrpcModelConverter {
     // ==================== REQUEST CONVERSIONS (POJO → Protobuf) ====================
 
     /**
-     * Convert BlockEnv POJO to BlockEnv protobuf
+     * Convert BlockEnv POJO to BlockEnv protobuf.
+     * Now works directly with byte[] fields - no hex string conversion needed.
      */
     private static Sidecar.BlockEnv toProtoBlockEnv(SidecarApiModels.BlockEnv blockEnv) {
         if (blockEnv == null) {
@@ -29,14 +30,14 @@ public class GrpcModelConverter {
 
         Sidecar.BlockEnv.Builder builder = Sidecar.BlockEnv.newBuilder()
             .setNumber(blockEnv.getNumber())
-            .setBeneficiary(hexToByteString(blockEnv.getBeneficiary()))
+            .setBeneficiary(bytesToByteString(blockEnv.getBeneficiary()))
             .setTimestamp(blockEnv.getTimestamp())
             .setGasLimit(blockEnv.getGasLimit())
             .setBasefee(blockEnv.getBaseFee())
-            .setDifficulty(hexToByteString(blockEnv.getDifficulty(), 32));
+            .setDifficulty(bytesToByteStringPadded(blockEnv.getDifficulty(), 32));
 
         if (blockEnv.getPrevrandao() != null) {
-            builder.setPrevrandao(hexToByteString(blockEnv.getPrevrandao(), 32));
+            builder.setPrevrandao(bytesToByteStringPadded(blockEnv.getPrevrandao(), 32));
         }
 
         if (blockEnv.getBlobExcessGasAndPrice() != null) {
@@ -66,8 +67,8 @@ public class GrpcModelConverter {
             .setTxExecutionId(toProtoTxExecutionId(pojo.getTxExecutionId()))
             .setTxEnv(toProtoTransactionEnv(pojo.getTxEnv()));
 
-        if (pojo.getPrevTxHash() != null) {
-            builder.setPrevTxHash(hexToByteString(pojo.getPrevTxHash()));
+        if (pojo.getPrevTxHash() != null && pojo.getPrevTxHash().length > 0) {
+            builder.setPrevTxHash(bytesToByteString(pojo.getPrevTxHash()));
         }
 
         return builder.build();
@@ -84,13 +85,14 @@ public class GrpcModelConverter {
         return Sidecar.TxExecutionId.newBuilder()
             .setBlockNumber(pojo.getBlockNumber())
             .setIterationId(pojo.getIterationId())
-            .setTxHash(hexToByteString(pojo.getTxHash()))
+            .setTxHash(bytesToByteString(pojo.getTxHash()))
             .setIndex(pojo.getIndex())
             .build();
     }
 
     /**
-     * Convert TxEnv POJO to TransactionEnv protobuf
+     * Convert TxEnv POJO to TransactionEnv protobuf.
+     * Now works directly with byte[] fields - no hex string conversion needed.
      */
     private static Sidecar.TransactionEnv toProtoTransactionEnv(SidecarApiModels.TxEnv pojo) {
         if (pojo == null) {
@@ -99,12 +101,12 @@ public class GrpcModelConverter {
 
         Sidecar.TransactionEnv.Builder builder = BUILDER_POOL.get()
             .setTxType(Byte.toUnsignedInt(pojo.getTxType()))
-            .setCaller(hexToByteString(pojo.getCaller()))
+            .setCaller(bytesToByteString(pojo.getCaller()))
             .setGasLimit(pojo.getGasLimit())
             .setGasPrice(longToByteString(pojo.getGasPrice(), 16))
-            .setTransactTo(hexToByteString(pojo.getKind()))
-            .setValue(hexToByteString(pojo.getValue(), 32))
-            .setData(hexToByteString(pojo.getData()))
+            .setTransactTo(bytesToByteString(pojo.getKind()))
+            .setValue(bytesToByteStringPadded(pojo.getValue(), 32))
+            .setData(bytesToByteString(pojo.getData()))
             .setNonce(pojo.getNonce())
             .setMaxFeePerBlobGas(longToByteString(pojo.getMaxFeePerBlobGas(), 16));
 
@@ -118,7 +120,7 @@ public class GrpcModelConverter {
 
         if (pojo.getBlobHashes() != null && !pojo.getBlobHashes().isEmpty()) {
             List<ByteString> blobHashes = pojo.getBlobHashes().stream()
-                .map(h -> hexToByteString(h, 32))
+                .map(h -> bytesToByteStringPadded(h, 32))
                 .collect(Collectors.toList());
             builder.addAllBlobHashes(blobHashes);
         }
@@ -146,22 +148,22 @@ public class GrpcModelConverter {
     private static Sidecar.AccessListItem toProtoAccessListItem(SidecarApiModels.AccessListEntry pojo) {
         List<ByteString> storageKeys = pojo.getStorageKeys() != null
             ? pojo.getStorageKeys().stream()
-                .map(k -> hexToByteString(k, 32))
+                .map(k -> bytesToByteStringPadded(k, 32))
                 .collect(Collectors.toList())
             : new ArrayList<>();
 
         return Sidecar.AccessListItem.newBuilder()
-            .setAddress(hexToByteString(pojo.getAddress()))
+            .setAddress(bytesToByteString(pojo.getAddress()))
             .addAllStorageKeys(storageKeys)
             .build();
     }
 
     private static Sidecar.Authorization toProtoAuthorization(SidecarApiModels.AuthorizationListEntry pojo) {
         Sidecar.Authorization.Builder builder = Sidecar.Authorization.newBuilder()
-            .setAddress(hexToByteString(pojo.getAddress()))
+            .setAddress(bytesToByteString(pojo.getAddress()))
             .setYParity(Byte.toUnsignedInt(pojo.getV()))
-            .setR(hexToByteString(pojo.getR(), 32))
-            .setS(hexToByteString(pojo.getS(), 32));
+            .setR(bytesToByteStringPadded(pojo.getR(), 32))
+            .setS(bytesToByteStringPadded(pojo.getS(), 32));
 
         if (pojo.getChainId() != null) {
             builder.setChainId(longToByteString(pojo.getChainId(), 32));
@@ -196,7 +198,7 @@ public class GrpcModelConverter {
         var txExecId = Sidecar.TxExecutionId.newBuilder()
             .setBlockNumber(request.getBlockNumber())
             .setIterationId(request.getIterationId())
-            .setTxHash(hexToByteString(request.getTxHash()))
+            .setTxHash(bytesToByteString(request.getTxHash()))
             .setIndex(request.getIndex());
         return Sidecar.GetTransactionRequest.newBuilder()
             .setTxExecutionId(txExecId)
@@ -251,8 +253,8 @@ public class GrpcModelConverter {
             .setBlockNumber(pojo.getBlockNumber())
             .setNTransactions(pojo.getNTransactions());
 
-        if (pojo.getLastTxHash() != null && !pojo.getLastTxHash().isEmpty()) {
-            builder.setLastTxHash(hexToByteString(pojo.getLastTxHash()));
+        if (pojo.getLastTxHash() != null && pojo.getLastTxHash().length > 0) {
+            builder.setLastTxHash(bytesToByteString(pojo.getLastTxHash()));
         }
 
         if (pojo.getSelectedIterationId() != null) {
@@ -294,9 +296,9 @@ public class GrpcModelConverter {
             .map(GrpcModelConverter::fromProtoTransactionResult)
             .collect(Collectors.toList());
 
-        // Convert ByteString list to hex String list
-        List<String> notFound = proto.getNotFoundList().stream()
-            .map(bs -> "0x" + bytesToHex(bs.toByteArray()))
+        // Convert ByteString list to byte[] list directly
+        List<byte[]> notFound = proto.getNotFoundList().stream()
+            .map(ByteString::toByteArray)
             .collect(Collectors.toList());
 
         return new SidecarApiModels.GetTransactionsResponse(
@@ -355,12 +357,11 @@ public class GrpcModelConverter {
      */
     private static SidecarApiModels.TxExecutionId fromProtoTxExecutionId(
             Sidecar.TxExecutionId proto) {
-        // Convert ByteString txHash to hex string
-        String txHash = "0x" + bytesToHex(proto.getTxHash().toByteArray());
+        // Convert ByteString txHash directly to byte[]
         return new SidecarApiModels.TxExecutionId(
             proto.getBlockNumber(),
             proto.getIterationId(),
-            txHash,
+            proto.getTxHash().toByteArray(),
             proto.getIndex()
         );
     }
@@ -368,66 +369,45 @@ public class GrpcModelConverter {
     // ==================== HELPER METHODS ====================
 
     /**
-     * Convert hex string to ByteString (no padding)
+     * Convert byte array to ByteString directly (no conversion needed).
+     * This is the efficient path - just wraps the bytes.
      */
-    private static ByteString hexToByteString(String hex) {
-        return hexToByteString(hex, 0);
-    }
-
-    /**
-     * Convert hex string to ByteString with optional left-padding
-     * @param hex the hex string (with or without 0x prefix)
-     * @param padding target byte length for left-padding with zeros (0 = no padding)
-     */
-    private static ByteString hexToByteString(String hex, int padding) {
-        if (hex == null || hex.isEmpty()) {
-            if (padding > 0) {
-                return ByteString.copyFrom(new byte[padding]);
-            }
+    private static ByteString bytesToByteString(byte[] bytes) {
+        if (bytes == null || bytes.length == 0) {
             return ByteString.EMPTY;
-        }
-        // Remove 0x prefix if present
-        String cleanHex = hex.startsWith("0x") || hex.startsWith("0X")
-            ? hex.substring(2)
-            : hex;
-
-        if (cleanHex.isEmpty()) {
-            if (padding > 0) {
-                return ByteString.copyFrom(new byte[padding]);
-            }
-            return ByteString.EMPTY;
-        }
-
-        // Pad with leading zero if odd length
-        if (cleanHex.length() % 2 != 0) {
-            cleanHex = "0" + cleanHex;
-        }
-
-        int hexByteLen = cleanHex.length() / 2;
-        int resultLen = padding > 0 ? Math.max(padding, hexByteLen) : hexByteLen;
-        byte[] bytes = new byte[resultLen];
-
-        // Calculate offset for left-padding (big-endian)
-        int offset = resultLen - hexByteLen;
-
-        for (int i = 0; i < hexByteLen; i++) {
-            int index = i * 2;
-            bytes[offset + i] = (byte) Integer.parseInt(cleanHex.substring(index, index + 2), 16);
         }
         return ByteString.copyFrom(bytes);
     }
 
     /**
-     * Convert long to ByteString (big-endian) with specified padding
+     * Convert byte array to ByteString with left-padding to specified length.
+     * Used for fixed-size fields like addresses (20 bytes), hashes (32 bytes), etc.
+     * @param bytes the source byte array
+     * @param targetLength target byte length for left-padding with zeros
+     */
+    private static ByteString bytesToByteStringPadded(byte[] bytes, int targetLength) {
+        if (bytes == null || bytes.length == 0) {
+            return ByteString.copyFrom(new byte[targetLength]);
+        }
+        if (bytes.length >= targetLength) {
+            // Already at or exceeds target length, use as-is
+            return ByteString.copyFrom(bytes);
+        }
+        // Need to left-pad with zeros
+        byte[] padded = new byte[targetLength];
+        int offset = targetLength - bytes.length;
+        System.arraycopy(bytes, 0, padded, offset, bytes.length);
+        return ByteString.copyFrom(padded);
+    }
+
+    /**
+     * Convert long to ByteString (big-endian) with specified padding.
      * @param value the long value to convert
      * @param padding target byte length (e.g., 16 for u128, 32 for U256)
      */
     private static ByteString longToByteString(Long value, int padding) {
         if (value == null) {
-            if (padding > 0) {
-                return ByteString.copyFrom(new byte[padding]);
-            }
-            return ByteString.EMPTY;
+            return ByteString.copyFrom(new byte[padding]);
         }
         byte[] bytes = new byte[padding];
         long v = value;
@@ -437,16 +417,5 @@ public class GrpcModelConverter {
         }
         // Upper bytes are zero for values that fit in long
         return ByteString.copyFrom(bytes);
-    }
-
-    /**
-     * Convert byte array to hex string
-     */
-    private static String bytesToHex(byte[] bytes) {
-        StringBuilder sb = new StringBuilder();
-        for (byte b : bytes) {
-            sb.append(String.format("%02x", b));
-        }
-        return sb.toString();
     }
 }

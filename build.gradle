@@ -129,22 +129,6 @@ dependencies {
     implementation 'com.google.protobuf:protobuf-java:4.32.1'
     compileOnly 'javax.annotation:javax.annotation-api:1.3.2'
     
-    // Caching (Caffeine)
-    implementation 'com.github.ben-manes.caffeine:caffeine:3.1.8'
-
-    // OpenTelemetry SDK
-    implementation 'io.opentelemetry:opentelemetry-sdk:1.32.0'
-    
-    // OTLP Exporter
-    implementation 'io.opentelemetry:opentelemetry-exporter-otlp:1.32.0'
-    
-    // Semantic Conventions
-    implementation 'io.opentelemetry.semconv:opentelemetry-semconv:1.32.0'
-    
-    // OkHttp Instrumentation
-    implementation 'io.opentelemetry.instrumentation:opentelemetry-okhttp-3.0:2.20.0-alpha'
-    implementation 'io.opentelemetry.instrumentation:opentelemetry-grpc-1.6:2.20.0-alpha'
-    
     // Logging (including Lombok support)
     implementation 'org.slf4j:slf4j-api:1.7.36'
     compileOnly 'org.projectlombok:lombok:1.18.30'

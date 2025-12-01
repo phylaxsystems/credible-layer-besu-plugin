@@ -18,9 +18,19 @@ import org.hyperledger.besu.plugin.services.txselection.SelectorsStateManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import io.opentelemetry.api.OpenTelemetry;
-
 public class CredibleTransactionSelectorTest {
+
+    // Helper to convert hex string to byte array for tests
+    private static byte[] hexToBytes(String hex) {
+        if (hex == null || hex.isEmpty()) return new byte[0];
+        String cleanHex = hex.startsWith("0x") ? hex.substring(2) : hex;
+        if (cleanHex.length() % 2 != 0) cleanHex = "0" + cleanHex;
+        byte[] bytes = new byte[cleanHex.length() / 2];
+        for (int i = 0; i < bytes.length; i++) {
+            bytes[i] = (byte) Integer.parseInt(cleanHex.substring(i * 2, i * 2 + 2), 16);
+        }
+        return bytes;
+    }
     private CredibleTransactionSelectorFactory factory = null;
     private MockTransport mockTransport = null;
     private ISidecarStrategy strategy = null;
@@ -46,15 +56,13 @@ public class CredibleTransactionSelectorTest {
         var metricsSystem = new SimpleMockMetricsSystem();
         var metrics = new CredibleMetricsRegistry(metricsSystem);
 
-        var openTelemetry = OpenTelemetry.noop();
         mockTransport = new MockTransport(200);
         
         strategy =  new DefaultSidecarStrategy(
             List.of(mockTransport),
             new ArrayList<>(),
             1000,
-            metrics,
-            openTelemetry.getTracer("default-strategy"));
+            metrics);
 
 
         var config = new CredibleTransactionSelector.Config(strategy);
@@ -85,7 +93,7 @@ public class CredibleTransactionSelectorTest {
         var selector = (CredibleTransactionSelector) factory.create(new SelectorsStateManager());
         final var operationTracer = selector.getOperationTracer();
         strategy.setNewHead("0x00000002", new CommitHead());
-        mockTransport.addFailingTx("0x3");
+        mockTransport.addFailingTx(hexToBytes("0x3"));
         
         operationTracer.traceStartBlock(new MockWorldView(), new MockProcessableBlockHeader(1L), null);
 

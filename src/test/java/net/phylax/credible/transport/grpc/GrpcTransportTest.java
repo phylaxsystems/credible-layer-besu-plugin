@@ -17,7 +17,6 @@ import io.grpc.inprocess.InProcessChannelBuilder;
 import io.grpc.inprocess.InProcessServerBuilder;
 import io.grpc.stub.StreamObserver;
 import io.grpc.testing.GrpcCleanupRule;
-import io.opentelemetry.api.OpenTelemetry;
 import net.phylax.credible.metrics.CredibleMetricsRegistry;
 import net.phylax.credible.metrics.SimpleMockMetricsSystem;
 import net.phylax.credible.types.SidecarApiModels;
@@ -30,6 +29,18 @@ import static org.junit.jupiter.api.Assertions.*;
  * Tests for GrpcTransport using an in-process gRPC server
  */
 public class GrpcTransportTest {
+
+    // Helper to convert hex string to byte array for tests
+    private static byte[] hexToBytes(String hex) {
+        if (hex == null || hex.isEmpty()) return new byte[0];
+        String cleanHex = hex.startsWith("0x") ? hex.substring(2) : hex;
+        if (cleanHex.length() % 2 != 0) cleanHex = "0" + cleanHex;
+        byte[] bytes = new byte[cleanHex.length() / 2];
+        for (int i = 0; i < bytes.length; i++) {
+            bytes[i] = (byte) Integer.parseInt(cleanHex.substring(i * 2, i * 2 + 2), 16);
+        }
+        return bytes;
+    }
     private GrpcTransport transport;
     private TestSidecarService testService;
     private final GrpcCleanupRule grpcCleanup = new GrpcCleanupRule();
@@ -155,7 +166,7 @@ public class GrpcTransportTest {
         var metrics = new CredibleMetricsRegistry(new SimpleMockMetricsSystem());
 
         // Create the transport with the in-process channel
-        transport = new GrpcTransport(channel, channel, 5000, OpenTelemetry.noop(), metrics);
+        transport = new GrpcTransport(channel, channel, 5000, metrics);
     }
 
     @AfterEach
@@ -169,7 +180,7 @@ public class GrpcTransportTest {
     public void testSendEventsWithCommitHead() throws Exception {
         // Create a CommitHead event
         SidecarApiModels.CommitHead commitHead = new SidecarApiModels.CommitHead(
-            "0xabcdef1234567890",  // lastTxHash
+            hexToBytes("0xabcdef1234567890"),  // lastTxHash
             10,                     // nTransactions
             12345L,                 // blockNumber
             1L                      // selectedIterationId
@@ -211,37 +222,37 @@ public class GrpcTransportTest {
         List<SidecarApiModels.TransactionExecutionPayload> transactions = new ArrayList<>();
 
         SidecarApiModels.TxEnv txEnv = new SidecarApiModels.TxEnv();
-        txEnv.setCaller("0xabcdef1234567890abcdef1234567890abcdef12");
+        txEnv.setCaller(hexToBytes("0xabcdef1234567890abcdef1234567890abcdef12"));
         txEnv.setGasLimit(21000L);
         txEnv.setGasPrice(1_000_000_000L);
-        txEnv.setKind("0xabcdef1234567890abcdef1234567890abcdef34");
-        txEnv.setValue("0x1000000000000000000");
-        txEnv.setData("0x");
+        txEnv.setKind(hexToBytes("0xabcdef1234567890abcdef1234567890abcdef34"));
+        txEnv.setValue(hexToBytes("0x1000000000000000000"));
+        txEnv.setData(hexToBytes("0x"));
         txEnv.setNonce(0L);
         txEnv.setChainId(1L);
         txEnv.setTxType((byte) 2);
         txEnv.setMaxFeePerBlobGas(25L);
         txEnv.setGasPriorityFee(2L);
-        txEnv.setBlobHashes(List.of("0xabcdef1234567890"));
+        txEnv.setBlobHashes(List.of(hexToBytes("0xabcdef1234567890")));
 
         SidecarApiModels.AccessListEntry accessListEntry = new SidecarApiModels.AccessListEntry(
-            "0xabcdef1234567890abcdef1234567890abcdef56", List.of("0xaabb", "0xccdd"));
+            hexToBytes("0xabcdef1234567890abcdef1234567890abcdef56"), List.of(hexToBytes("0xaabb"), hexToBytes("0xccdd")));
         txEnv.setAccessList(List.of(accessListEntry));
 
         SidecarApiModels.AuthorizationListEntry authorizationListEntry = new SidecarApiModels.AuthorizationListEntry();
-        authorizationListEntry.setAddress("0xabcdef1234567890abcdef1234567890abcdef78");
+        authorizationListEntry.setAddress(hexToBytes("0xabcdef1234567890abcdef1234567890abcdef78"));
         authorizationListEntry.setV((byte) 1);
-        authorizationListEntry.setR("0xaabbccdd");
-        authorizationListEntry.setS("0xeeff0011");
+        authorizationListEntry.setR(hexToBytes("0xaabbccdd"));
+        authorizationListEntry.setS(hexToBytes("0xeeff0011"));
         authorizationListEntry.setChainId(1L);
         authorizationListEntry.setNonce(5L);
         txEnv.setAuthorizationList(List.of(authorizationListEntry));
 
         SidecarApiModels.TxExecutionId txExecutionId = new SidecarApiModels.TxExecutionId(
-            12345L, 1L, "0xaabbccddeeff00112233445566778899aabbccddeeff00112233445566778899", 0L
+            12345L, 1L, hexToBytes("0xaabbccddeeff00112233445566778899aabbccddeeff00112233445566778899"), 0L
         );
         transactions.add(new SidecarApiModels.TransactionExecutionPayload(
-            txExecutionId, txEnv, "0x1234567890abcdef"
+            txExecutionId, txEnv, hexToBytes("0x1234567890abcdef")
         ));
 
         SidecarApiModels.SendTransactionsRequest request =
@@ -288,8 +299,8 @@ public class GrpcTransportTest {
         // Create request with TxExecutionId
         SidecarApiModels.GetTransactionsRequest txReq = new SidecarApiModels.GetTransactionsRequest();
         txReq.setTxExecutionIds(List.of(
-            new SidecarApiModels.TxExecutionId(1000L, 1L, "0xaabbccdd11223344", 0L),
-            new SidecarApiModels.TxExecutionId(1000L, 1L, "0xeeff00112233", 1L)
+            new SidecarApiModels.TxExecutionId(1000L, 1L, hexToBytes("0xaabbccdd11223344"), 0L),
+            new SidecarApiModels.TxExecutionId(1000L, 1L, hexToBytes("0xeeff00112233"), 1L)
         ));
 
         // Send the request
@@ -327,7 +338,7 @@ public class GrpcTransportTest {
         );
 
         // Create request with TxExecutionId
-        SidecarApiModels.GetTransactionRequest txReq = new SidecarApiModels.GetTransactionRequest(1000L, 1L, "0xaabbccdd11223344", 0);
+        SidecarApiModels.GetTransactionRequest txReq = new SidecarApiModels.GetTransactionRequest(1000L, 1L, hexToBytes("0xaabbccdd11223344"), 0);
 
         // Send the request
         CompletableFuture<SidecarApiModels.GetTransactionResponse> future =
@@ -349,7 +360,7 @@ public class GrpcTransportTest {
     public void testSendReorg() throws Exception {
         // Create reorg request with TxExecutionId
         SidecarApiModels.ReorgRequest request =
-            new SidecarApiModels.ReorgRequest(12345L, 1L, "0xaabbccdd112233445566778899aabbccddeeff00", 0);
+            new SidecarApiModels.ReorgRequest(12345L, 1L, hexToBytes("0xaabbccdd112233445566778899aabbccddeeff00"), 0);
 
         // Send the request
         CompletableFuture<SidecarApiModels.ReorgResponse> future = transport.sendReorg(request);
@@ -374,7 +385,7 @@ public class GrpcTransportTest {
     public void testModelConversionsAreReversible() throws Exception {
         // Test that converting POJO → Proto → POJO maintains data integrity for SendEvents
         SidecarApiModels.CommitHead commitHead = new SidecarApiModels.CommitHead(
-            "0xaabbccdd11223344", 5, 99999L, 1L
+            hexToBytes("0xaabbccdd11223344"), 5, 99999L, 1L
         );
 
         SidecarApiModels.CommitHeadReqItem commitHeadItem =
