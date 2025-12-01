@@ -1,9 +1,16 @@
 package net.phylax.credible.transport.grpc;
 
+import java.io.IOException;
+import java.net.Socket;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+
+import javax.net.SocketFactory;
 
 import org.slf4j.Logger;
 
@@ -49,6 +56,12 @@ public class GrpcTransport implements ISidecarTransport {
     private final AtomicReference<StreamObserver<Sidecar.Event>> eventStreamRef;
     private final Object streamLock = new Object();
     private volatile boolean streamConnected = false;
+
+    // Ack tracking for event stream - map event_id to pending ack futures
+    private final ConcurrentHashMap<Long, CompletableFuture<Sidecar.StreamAck>> pendingAcks = new ConcurrentHashMap<>();
+    private final AtomicLong eventIdCounter = new AtomicLong(0);
+    private static final long ACK_TIMEOUT_MS = 1;
+    private static final int MAX_RETRIES = 3;
 
     // Stream management for SubscribeResults
     private final AtomicReference<io.grpc.Context.CancellableContext> resultsSubscriptionContext;
@@ -118,11 +131,20 @@ public class GrpcTransport implements ISidecarTransport {
             StreamObserver<Sidecar.StreamAck> responseObserver = new StreamObserver<>() {
                 @Override
                 public void onNext(Sidecar.StreamAck ack) {
-                    if (ack.getSuccess()) {
-                        LOG.trace("StreamAck received: events_processed={}, message={}",
-                            ack.getEventsProcessed(), ack.getMessage());
+                    // Match ack to pending future using event_id
+                    long eventId = ack.getEventId();
+                    CompletableFuture<Sidecar.StreamAck> pendingFuture = pendingAcks.remove(eventId);
+                    if (pendingFuture != null) {
+                        pendingFuture.complete(ack);
                     } else {
-                        LOG.warn("StreamAck failure: message={}", ack.getMessage());
+                        LOG.trace("Received ack for unknown event_id={}", eventId);
+                    }
+
+                    if (ack.getSuccess()) {
+                        LOG.trace("StreamAck received: event_id={}, events_processed={}, message={}",
+                            eventId, ack.getEventsProcessed(), ack.getMessage());
+                    } else {
+                        LOG.warn("StreamAck failure: event_id={}, message={}", eventId, ack.getMessage());
                     }
                 }
 
@@ -131,6 +153,9 @@ public class GrpcTransport implements ISidecarTransport {
                     LOG.error("StreamEvents error: {}", getErrorMessage(t), t);
                     streamConnected = false;
                     eventStreamRef.set(null);
+                    // Fail all pending acks
+                    pendingAcks.values().forEach(future -> future.completeExceptionally(t));
+                    pendingAcks.clear();
                 }
 
                 @Override
@@ -138,6 +163,10 @@ public class GrpcTransport implements ISidecarTransport {
                     LOG.info("StreamEvents completed");
                     streamConnected = false;
                     eventStreamRef.set(null);
+                    // Fail all pending acks
+                    pendingAcks.values().forEach(future ->
+                        future.completeExceptionally(new RuntimeException("Stream completed")));
+                    pendingAcks.clear();
                 }
             };
 
@@ -150,17 +179,47 @@ public class GrpcTransport implements ISidecarTransport {
     }
 
     /**
-     * Send an event through the StreamEvents stream.
+     * Send an event through the StreamEvents stream with ack confirmation.
+     * Retries up to MAX_RETRIES times if ack is not received within ACK_TIMEOUT_MS.
      */
     private void sendEvent(Sidecar.Event event) {
-        StreamObserver<Sidecar.Event> stream = getOrCreateEventStream();
-        try {
-            stream.onNext(event);
-        } catch (Exception e) {
-            LOG.error("Error sending event: {}", e.getMessage(), e);
-            streamConnected = false;
-            eventStreamRef.set(null);
-            throw e;
+        for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            StreamObserver<Sidecar.Event> stream = getOrCreateEventStream();
+
+            // Generate unique event_id and rebuild event with it
+            long eventId = eventIdCounter.incrementAndGet();
+            Sidecar.Event eventWithId = event.toBuilder().setEventId(eventId).build();
+
+            CompletableFuture<Sidecar.StreamAck> ackFuture = new CompletableFuture<>();
+            pendingAcks.put(eventId, ackFuture);
+
+            try {
+                stream.onNext(eventWithId);
+
+                // Wait for ack with timeout
+                Sidecar.StreamAck ack = ackFuture.get(ACK_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                if (ack.getSuccess()) {
+                    return; // Successfully sent and acked
+                } else {
+                    LOG.warn("StreamAck returned failure on attempt {}: {}", attempt + 1, ack.getMessage());
+                }
+            } catch (TimeoutException e) {
+                // Remove the pending ack since we're giving up on it
+                
+                if (attempt < MAX_RETRIES) {
+                    LOG.debug("Ack timeout on attempt {} for event_id={}, retrying event", attempt + 1, eventId);
+                } else {
+                    LOG.warn("Ack timeout after {} retries for event_id={}, proceeding without confirmation", MAX_RETRIES + 1, eventId);
+                    return; // Give up but don't fail - event may still be processed
+                }
+            } catch (Exception e) {
+                LOG.error("Error sending event: {}", e.getMessage(), e);
+                streamConnected = false;
+                eventStreamRef.set(null);
+                throw new RuntimeException("Failed to send event", e);
+            } finally {
+                pendingAcks.remove(eventId);
+            }
         }
     }
 
@@ -439,9 +498,51 @@ public class GrpcTransport implements ISidecarTransport {
         }
 
         private ManagedChannel createChannel() {
+            SocketFactory flushingSocketFactory = new SocketFactory() {
+                private final SocketFactory delegate = SocketFactory.getDefault();
+                
+                @Override
+                public Socket createSocket() throws IOException {
+                    Socket socket = delegate.createSocket();
+                    socket.setTcpNoDelay(true);
+                    return socket;
+                }
+                
+                @Override
+                public Socket createSocket(String host, int port) throws IOException {
+                    Socket socket = delegate.createSocket(host, port);
+                    socket.setTcpNoDelay(true);
+                    return socket;
+                }
+                
+                @Override
+                public Socket createSocket(String host, int port,
+                        java.net.InetAddress localHost, int localPort) throws IOException {
+                    Socket socket = delegate.createSocket(host, port, localHost, localPort);
+                    socket.setTcpNoDelay(true);
+                    return socket;
+                }
+                
+                @Override
+                public Socket createSocket(java.net.InetAddress host, int port) throws IOException {
+                    Socket socket = delegate.createSocket(host, port);
+                    socket.setTcpNoDelay(true);
+                    return socket;
+                }
+                
+                @Override
+                public Socket createSocket(java.net.InetAddress address, int port,
+                        java.net.InetAddress localAddress, int localPort) throws IOException {
+                    Socket socket = delegate.createSocket(address, port, localAddress, localPort);
+                    socket.setTcpNoDelay(true);
+                    return socket;
+                }
+            };
+
             OkHttpChannelBuilder channelBuilder = OkHttpChannelBuilder
                 .forAddress(host, port)
                 .usePlaintext()
+                .socketFactory(flushingSocketFactory)
                 .keepAliveTime(30, TimeUnit.SECONDS)
                 .keepAliveTimeout(10, TimeUnit.SECONDS)
                 .keepAliveWithoutCalls(true)

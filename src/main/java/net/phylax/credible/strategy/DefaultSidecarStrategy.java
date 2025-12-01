@@ -270,6 +270,13 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                 .map(tx -> tx.getTxExecutionId())
                 .collect(Collectors.toList());
 
+            // Create a future that will be completed when the result arrives via SubscribeResults stream
+            // NOTE: making the assumption that it's only 1 transaction per request
+            // which is implied with the TransactionSelectionPlugin
+            TxExecutionId txExecId = txExecutionIds.get(0);
+            CompletableFuture<GetTransactionResponse> resultFuture = new CompletableFuture<>();
+            pendingTxRequests.put(txExecId, resultFuture);
+
             Context context = Context.current();
 
             // Send transactions to all active transports
@@ -304,13 +311,6 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                 return Collections.emptyList();
             }
 
-            // Create a future that will be completed when the result arrives via SubscribeResults stream
-            // NOTE: making the assumption that it's only 1 transaction per request
-            // which is implied with the TransactionSelectionPlugin
-            TxExecutionId txExecId = txExecutionIds.get(0);
-            CompletableFuture<GetTransactionResponse> resultFuture = new CompletableFuture<>();
-            pendingTxRequests.put(txExecId, resultFuture);
-
             LOG.debug("Dispatched transaction, waiting for result via stream: hash={}", txExecId.getTxHash());
             span.end();
 
@@ -340,9 +340,25 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
             return Result.success(response);
         } catch (ExecutionException e) {
             if (e.getCause() instanceof java.util.concurrent.TimeoutException) {
-                LOG.debug("Timeout waiting for transaction result: {}", txExecId.getTxHash());
+                LOG.debug("Timeout waiting for transaction result via stream, falling back to getTransaction: {}", txExecId.getTxHash());
                 metricsRegistry.getTimeoutCounter().labels().inc();
+
+                // Fallback: try to get the transaction result via direct RPC call
+                for (ISidecarTransport transport : activeTransports) {
+                    try {
+                        GetTransactionResponse fallbackResponse = transport.getTransaction(transactionRequest)
+                            .get(processingTimeout, TimeUnit.MILLISECONDS);
+                        if (fallbackResponse != null && fallbackResponse.getResult() != null) {
+                            LOG.debug("Got transaction result via fallback getTransaction: {}", txExecId.getTxHash());
+                            return Result.success(fallbackResponse);
+                        }
+                    } catch (Exception fallbackEx) {
+                        LOG.debug("Fallback getTransaction failed for transport: {}", fallbackEx.getMessage());
+                    }
+                }
+
                 // Mark strategy as inactive when results timeout - no sidecar responded in time
+                LOG.debug("All fallback attempts failed for transaction: {}", txExecId.getTxHash());
                 isActive.set(false);
                 return Result.failure(CredibleRejectionReason.TIMEOUT);
             }
