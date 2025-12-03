@@ -12,6 +12,8 @@ import net.phylax.credible.types.SidecarApiModels.*;
 
 public class MockTransport implements ISidecarTransport {
     private int processingLatency;
+    // Separate latency for getTransaction fallback (if not set, uses processingLatency)
+    private Integer getTransactionLatency = null;
     private String sendTxStatus = "accepted";
     private String getTxStatus = TransactionStatus.SUCCESS;
     private boolean reorgSuccess = true;
@@ -107,8 +109,9 @@ public class MockTransport implements ISidecarTransport {
 
     @Override
     public CompletableFuture<GetTransactionResponse> getTransaction(GetTransactionRequest req) {
+        int latency = getTransactionLatency != null ? getTransactionLatency : processingLatency;
         Executor delayedExecutor = CompletableFuture.delayedExecutor(
-            processingLatency, TimeUnit.MILLISECONDS);
+            latency, TimeUnit.MILLISECONDS);
 
         final TransactionResult result = new TransactionResult(req.toTxExecutionId(), getTxStatus, 21000L, "");
 
@@ -184,6 +187,10 @@ public class MockTransport implements ISidecarTransport {
 
     public void setSendEventsLatency(int sendEventsLatency) {
         this.sendEventsLatency = sendEventsLatency;
+    }
+
+    public void setGetTransactionLatency(Integer getTransactionLatency) {
+        this.getTransactionLatency = getTransactionLatency;
     }
 
     public void addFailingTx(byte[] failingTx) {
