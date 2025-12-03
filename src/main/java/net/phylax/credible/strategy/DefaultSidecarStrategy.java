@@ -49,6 +49,9 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
     private final Map<TxExecutionId, CompletableFuture<GetTransactionResponse>> pendingTxRequests;
 
     private int processingTimeout;
+    // The ratio of the processing timeout that will be used for the stream future (the initial request)
+    // The rest is used in the fallback transport
+    private float futureTimeoutRatio = 0.8f;
     private final CredibleMetricsRegistry metricsRegistry;
 
     public static class TransportResponse {
@@ -286,10 +289,14 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
             return Result.failure(CredibleRejectionReason.NO_RESULT);
         }
 
+        // Use futureTimeoutRatio percentage of timeout for stream, leave the rest for the fallback
+        long streamTimeout = (long) (processingTimeout * futureTimeoutRatio);
+        long fallbackTimeout = processingTimeout - streamTimeout;
+
         try {
             // Wait for result with timeout - result will be completed by onTransactionResult callback
             GetTransactionResponse response = future
-                .orTimeout(processingTimeout, TimeUnit.MILLISECONDS)
+                .orTimeout(streamTimeout, TimeUnit.MILLISECONDS)
                 .get();
             return Result.success(response);
         } catch (ExecutionException e) {
@@ -297,18 +304,38 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                 log.debug("Timeout waiting for transaction result via stream, falling back to getTransaction: {}", ByteUtils.toHex(txExecId.getTxHash()));
                 metricsRegistry.getTimeoutCounter().labels().inc();
 
-                // Fallback: try to get the transaction result via direct RPC call
-                for (ISidecarTransport transport : activeTransports) {
-                    try {
-                        GetTransactionResponse fallbackResponse = transport.getTransaction(transactionRequest)
-                            .get(processingTimeout, TimeUnit.MILLISECONDS);
-                        if (fallbackResponse != null && fallbackResponse.getResult() != null) {
-                            log.debug("Got transaction result via fallback getTransaction: {}", ByteUtils.toHex(txExecId.getTxHash()));
-                            return Result.success(fallbackResponse);
-                        }
-                    } catch (Exception fallbackEx) {
-                        log.debug("Fallback getTransaction failed for transport: {}", fallbackEx.getMessage());
+                // Fallback: dispatch getTransaction to all active transports in parallel
+                List<CompletableFuture<GetTransactionResponse>> fallbackFutures = activeTransports.stream()
+                    .map(transport -> transport.getTransaction(transactionRequest)
+                        .exceptionally(ex -> {
+                            log.debug("Fallback getTransaction failed for transport: {}", ex.getMessage());
+                            return null;
+                        }))
+                    .collect(Collectors.toList());
+
+                // Wait for any successful response with remaining timeout
+                CompletableFuture<GetTransactionResponse> anySuccess = CompletableFuture.anyOf(
+                    fallbackFutures.stream()
+                        .map(f -> f.thenApply(resp -> {
+                            if (resp != null && resp.getResult() != null) {
+                                return resp;
+                            }
+                            // Return a never-completing future for null/invalid responses
+                            return null;
+                        }))
+                        .toArray(CompletableFuture[]::new)
+                ).thenApply(obj -> (GetTransactionResponse) obj);
+
+                try {
+                    GetTransactionResponse fallbackResponse = anySuccess
+                        .orTimeout(fallbackTimeout, TimeUnit.MILLISECONDS)
+                        .get();
+                    if (fallbackResponse != null && fallbackResponse.getResult() != null) {
+                        log.debug("Got transaction result via fallback getTransaction: {}", ByteUtils.toHex(txExecId.getTxHash()));
+                        return Result.success(fallbackResponse);
                     }
+                } catch (Exception fallbackEx) {
+                    log.debug("All parallel fallback getTransaction attempts failed: {}", fallbackEx.getMessage());
                 }
 
                 // Mark strategy as inactive when results timeout - no sidecar responded in time

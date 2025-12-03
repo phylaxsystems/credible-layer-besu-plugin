@@ -313,4 +313,33 @@ public class DefaultStrategyTest {
         var response = sendTransaction(strategy);
         assertNotNull(response.getSuccess().getResult());
     }
+
+    @Test
+    void shouldFallbackToGetTransactionWhenStreamTimesOut() {
+        int processingTimeout = 1000;
+        
+        // processingLatency controls stream result delay - set to exceed stream timeout
+        int streamResultLatency = 900;
+        // getTransaction fallback responds quickly within fallback timeout
+        int fallbackLatency = 100;
+
+        var mockTransport = new MockTransport(streamResultLatency);
+        mockTransport.setGetTransactionLatency(fallbackLatency);
+
+        var strategy = initStrategy(mockTransport, null, processingTimeout, true);
+
+        Stopwatch stopwatch = Stopwatch.createStarted();
+        var response = sendTransaction(strategy);
+        stopwatch.stop();
+
+        // Should succeed via fallback
+        assertNotNull(response.getSuccess());
+        assertNotNull(response.getSuccess().getResult());
+
+        long elapsed = stopwatch.elapsed().toMillis();
+        assertTrue("Total time should be less than processingTimeout, was: " + elapsed,
+            elapsed < processingTimeout);
+        assertTrue("Should have waited for stream timeout (800ms), was: " + elapsed,
+            elapsed >= 800);
+    }
 }
