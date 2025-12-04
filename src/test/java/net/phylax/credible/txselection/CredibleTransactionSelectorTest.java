@@ -65,7 +65,7 @@ public class CredibleTransactionSelectorTest {
             metrics);
 
 
-        var config = new CredibleTransactionSelector.Config(strategy);
+        var config = new CredibleTransactionSelector.Config(strategy, 0);
         factory = new CredibleTransactionSelectorFactory(config, metrics);
     }
 
@@ -85,6 +85,99 @@ public class CredibleTransactionSelectorTest {
             assertEquals(postResult, TransactionSelectionResult.SELECTED);
 
             operationTracer.traceEndBlock(new MockBlockHeader(Long.valueOf(i)), new MockBlockBody(1));
+        }
+    }
+
+    @Test
+    public void shouldTimeoutOnSecondIterationButNotFirst() throws InterruptedException {
+        // Setup with a short iteration timeout (100ms)
+        var metricsSystem = new SimpleMockMetricsSystem();
+        var metrics = new CredibleMetricsRegistry(metricsSystem);
+
+        // Processing latency of 50ms per transaction
+        var slowTransport = new MockTransport(50);
+
+        var testStrategy = new DefaultSidecarStrategy(
+            List.of(slowTransport),
+            new ArrayList<>(),
+            1000,
+            metrics);
+
+        // Iteration timeout of 100ms - enough for ~1-2 transactions
+        var configWithTimeout = new CredibleTransactionSelector.Config(testStrategy, 100);
+        var factoryWithTimeout = new CredibleTransactionSelectorFactory(configWithTimeout, metrics);
+
+        // First iteration - should complete successfully (processes quickly)
+        {
+            var selector = (CredibleTransactionSelector) factoryWithTimeout.create(new SelectorsStateManager());
+            var operationTracer = selector.getOperationTracer();
+            testStrategy.setNewHead("0x00000001", new CommitHead());
+            operationTracer.traceStartBlock(new MockWorldView(), new MockProcessableBlockHeader(1L), null);
+
+            var evaluationContext = new MockTransactionEvaluationContext("0x1");
+
+            var preResult = selector.evaluateTransactionPreProcessing(evaluationContext);
+            assertEquals(TransactionSelectionResult.SELECTED, preResult);
+
+            var postResult = selector.evaluateTransactionPostProcessing(evaluationContext, null);
+            assertEquals(TransactionSelectionResult.SELECTED, postResult);
+
+            operationTracer.traceEndBlock(new MockBlockHeader(1L), new MockBlockBody(1));
+        }
+
+        // Second iteration - simulate slow processing that exceeds timeout
+        {
+            var selector = (CredibleTransactionSelector) factoryWithTimeout.create(new SelectorsStateManager());
+            var operationTracer = selector.getOperationTracer();
+            testStrategy.setNewHead("0x00000002", new CommitHead());
+            operationTracer.traceStartBlock(new MockWorldView(), new MockProcessableBlockHeader(2L), null);
+
+            // First transaction - should succeed
+            var evaluationContext1 = new MockTransactionEvaluationContext("0x1");
+            var preResult1 = selector.evaluateTransactionPreProcessing(evaluationContext1);
+            assertEquals(TransactionSelectionResult.SELECTED, preResult1);
+            var postResult1 = selector.evaluateTransactionPostProcessing(evaluationContext1, null);
+            assertEquals(TransactionSelectionResult.SELECTED, postResult1);
+
+            // Sleep to exceed the iteration timeout
+            Thread.sleep(150);
+
+            // Second transaction - should be skipped due to timeout (returns SELECTED without processing)
+            var evaluationContext2 = new MockTransactionEvaluationContext("0x2");
+            var preResult2 = selector.evaluateTransactionPreProcessing(evaluationContext2);
+            // Pre-processing returns SELECTED (skipped due to timeout)
+            assertEquals(TransactionSelectionResult.SELECTED, preResult2);
+
+            var postResult2 = selector.evaluateTransactionPostProcessing(evaluationContext2, null);
+            // Post-processing also returns SELECTED (skipped due to timeout)
+            assertEquals(TransactionSelectionResult.SELECTED, postResult2);
+
+            // Third transaction - also skipped
+            var evaluationContext3 = new MockTransactionEvaluationContext("0x3");
+            var preResult3 = selector.evaluateTransactionPreProcessing(evaluationContext3);
+            assertEquals(TransactionSelectionResult.SELECTED, preResult3);
+            var postResult3 = selector.evaluateTransactionPostProcessing(evaluationContext3, null);
+            assertEquals(TransactionSelectionResult.SELECTED, postResult3);
+
+            operationTracer.traceEndBlock(new MockBlockHeader(2L), new MockBlockBody(1));
+        }
+
+        // Third iteration - should work again (new selector, new timer)
+        {
+            var selector = (CredibleTransactionSelector) factoryWithTimeout.create(new SelectorsStateManager());
+            var operationTracer = selector.getOperationTracer();
+            testStrategy.setNewHead("0x00000003", new CommitHead());
+            operationTracer.traceStartBlock(new MockWorldView(), new MockProcessableBlockHeader(3L), null);
+
+            var evaluationContext = new MockTransactionEvaluationContext("0x1");
+
+            var preResult = selector.evaluateTransactionPreProcessing(evaluationContext);
+            assertEquals(TransactionSelectionResult.SELECTED, preResult);
+
+            var postResult = selector.evaluateTransactionPostProcessing(evaluationContext, null);
+            assertEquals(TransactionSelectionResult.SELECTED, postResult);
+
+            operationTracer.traceEndBlock(new MockBlockHeader(3L), new MockBlockBody(1));
         }
     }
 
