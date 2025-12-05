@@ -27,29 +27,30 @@ import net.phylax.credible.utils.ByteUtils;
 public class CredibleTransactionSelector implements PluginTransactionSelector {
   public static class Config {
     private final ISidecarStrategy strategy;
-    private final int iterationTimeoutMs;
+    private final int aggreagatedTimeoutMs;
 
-    public Config(ISidecarStrategy strategy, int iterationTimeoutMs) {
+    public Config(ISidecarStrategy strategy, int aggreagatedTimeoutMs) {
       this.strategy = strategy;
-      this.iterationTimeoutMs = iterationTimeoutMs;
+      this.aggreagatedTimeoutMs = aggreagatedTimeoutMs;
     }
 
     public ISidecarStrategy getStrategy() {
       return strategy;
     }
 
-    public int getIterationTimeoutMs() {
-      return iterationTimeoutMs;
+    public int getAggregatedTimeoutMs() {
+      return aggreagatedTimeoutMs;
     }
   }
 
   private final Config config;
   private final CredibleMetricsRegistry metricsRegistry;
   private final Long iterationId;
-  private final long iterationStartTimeMs;
   private boolean iterationTimedOut = false;
   private String transactionHash;
   private List<TxExecutionId> transactions = new ArrayList<>();
+  // Aggregated time for pre and post processing within a single iteration
+  private long aggregatedTimeExecutionMs = 0;
 
   public CredibleTransactionSelector(
     final Config config,
@@ -58,7 +59,6 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
     this.config = config;
     this.iterationId = iterationId;
     this.metricsRegistry = metricsRegistry;
-    this.iterationStartTimeMs = System.currentTimeMillis();
   }
 
   @Override
@@ -103,6 +103,7 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
         status = "error";
     } finally {
         metricsRegistry.getPreProcessingDuration().labels(status).observe(getDurationSeconds(startTime));
+        aggregatedTimeExecutionMs += getDurationMillis(startTime);
     }
 
     return TransactionSelectionResult.SELECTED;
@@ -163,6 +164,7 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
         return TransactionSelectionResult.SELECTED;
     } finally {
         metricsRegistry.getPostProcessingDuration().labels(status).observe(getDurationSeconds(startTime));
+        aggregatedTimeExecutionMs += getDurationMillis(startTime);
     }
   }
 
@@ -219,9 +221,14 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
     return (System.nanoTime() - startTimeNanos) / 1_000_000_000.0;
   }
 
+  private double getDurationMillis(long startTimeNanos) {
+    return (System.nanoTime() - startTimeNanos) / 1_000_000.0;
+  }
+
   /**
    * Checks if the iteration has exceeded the configured timeout.
    * Once timed out, the flag is cached to avoid repeated checks.
+   * When timeout occurs, the strategy is set to inactive.
    *
    * @return true if iteration timeout is configured and has been exceeded
    */
@@ -230,16 +237,16 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
       return true;
     }
 
-    int timeoutMs = config.getIterationTimeoutMs();
+    int timeoutMs = config.getAggregatedTimeoutMs();
     if (timeoutMs <= 0) {
       return false;
     }
-    
-    long elapsed = System.currentTimeMillis() - iterationStartTimeMs;
-    if (elapsed >= timeoutMs) {
+
+    if (aggregatedTimeExecutionMs >= timeoutMs) {
       iterationTimedOut = true;
-      log.warn("Iteration {} timeout after {}ms (limit: {}ms)", iterationId, elapsed, timeoutMs);
+      log.warn("Iteration {} timeout after {}ms (limit: {}ms)", iterationId, aggregatedTimeExecutionMs, timeoutMs);
       metricsRegistry.getIterationTimeoutCounter().labels().inc();
+      config.getStrategy().setActive(false);
       return true;
     }
     return false;

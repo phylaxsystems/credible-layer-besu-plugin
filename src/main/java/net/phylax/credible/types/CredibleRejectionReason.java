@@ -1,8 +1,10 @@
 package net.phylax.credible.types;
 
 public enum CredibleRejectionReason {
-    // Credible Layer timed out
-    TIMEOUT,
+    // Timeout hit on processing a transaction
+    PROCESSING_TIMEOUT,
+    // Aggregated timeout
+    AGGREGATED_TIMEOUT,
     // Credible Layer didn't return any result
     NO_RESULT,
     // There is not active transport

@@ -341,7 +341,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                 // Mark strategy as inactive when results timeout - no sidecar responded in time
                 log.debug("All fallback attempts failed for transaction: {}", ByteUtils.toHex(txExecId.getTxHash()));
                 isActive.set(false);
-                return Result.failure(CredibleRejectionReason.TIMEOUT);
+                return Result.failure(CredibleRejectionReason.PROCESSING_TIMEOUT);
             }
             log.debug("Exception waiting for transaction result: {}, cause: {}",
                 e.getMessage(), e.getCause() != null ? e.getCause().getMessage() : "null");
@@ -385,6 +385,11 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
     @Override
     public boolean isActive() {
         return isActive.get();
+    }
+
+    @Override
+    public void setActive(boolean active) {
+        isActive.set(active);
     }
 
     @Override

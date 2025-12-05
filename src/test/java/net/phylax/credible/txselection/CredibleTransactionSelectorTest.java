@@ -89,13 +89,13 @@ public class CredibleTransactionSelectorTest {
     }
 
     @Test
-    public void shouldTimeoutOnSecondIterationButNotFirst() throws InterruptedException {
-        // Setup with a short iteration timeout (100ms)
+    public void shouldTimeoutOnSecondIterationButNotFirst() {
+        // Setup with a short aggregated timeout (100ms)
         var metricsSystem = new SimpleMockMetricsSystem();
         var metrics = new CredibleMetricsRegistry(metricsSystem);
 
-        // Processing latency of 50ms per transaction
-        var slowTransport = new MockTransport(50);
+        // Processing latency of 60ms per transaction (pre + post = ~120ms for 1 full tx)
+        var slowTransport = new MockTransport(60);
 
         var testStrategy = new DefaultSidecarStrategy(
             List.of(slowTransport),
@@ -103,11 +103,12 @@ public class CredibleTransactionSelectorTest {
             1000,
             metrics);
 
-        // Iteration timeout of 100ms - enough for ~1-2 transactions
+        // Aggregated timeout of 100ms - only counts time spent in pre/post processing
+        // With 60ms per call, first tx will use ~120ms (pre + post), exceeding the 100ms budget
         var configWithTimeout = new CredibleTransactionSelector.Config(testStrategy, 100);
         var factoryWithTimeout = new CredibleTransactionSelectorFactory(configWithTimeout, metrics);
 
-        // First iteration - should complete successfully (processes quickly)
+        // First iteration - should complete successfully (only 1 transaction)
         {
             var selector = (CredibleTransactionSelector) factoryWithTimeout.create(new SelectorsStateManager());
             var operationTracer = selector.getOperationTracer();
@@ -125,22 +126,20 @@ public class CredibleTransactionSelectorTest {
             operationTracer.traceEndBlock(new MockBlockHeader(1L), new MockBlockBody(1));
         }
 
-        // Second iteration - simulate slow processing that exceeds timeout
+        // Second iteration - process multiple transactions to exceed aggregated timeout
         {
             var selector = (CredibleTransactionSelector) factoryWithTimeout.create(new SelectorsStateManager());
             var operationTracer = selector.getOperationTracer();
             testStrategy.setNewHead("0x00000002", new CommitHead());
             operationTracer.traceStartBlock(new MockWorldView(), new MockProcessableBlockHeader(2L), null);
 
-            // First transaction - should succeed
+            // First transaction - should succeed (uses ~120ms of the 100ms budget, triggering timeout)
             var evaluationContext1 = new MockTransactionEvaluationContext("0x1");
             var preResult1 = selector.evaluateTransactionPreProcessing(evaluationContext1);
             assertEquals(TransactionSelectionResult.SELECTED, preResult1);
             var postResult1 = selector.evaluateTransactionPostProcessing(evaluationContext1, null);
+            // Post-processing should trigger timeout since aggregated time exceeds budget
             assertEquals(TransactionSelectionResult.SELECTED, postResult1);
-
-            // Sleep to exceed the iteration timeout
-            Thread.sleep(150);
 
             // Second transaction - should be skipped due to timeout (returns SELECTED without processing)
             var evaluationContext2 = new MockTransactionEvaluationContext("0x2");
@@ -160,9 +159,12 @@ public class CredibleTransactionSelectorTest {
             assertEquals(TransactionSelectionResult.SELECTED, postResult3);
 
             operationTracer.traceEndBlock(new MockBlockHeader(2L), new MockBlockBody(1));
+
+            // Strategy should be inactive after timeout
+            assertEquals(false, testStrategy.isActive());
         }
 
-        // Third iteration - should work again (new selector, new timer)
+        // Third iteration - should work again (new selector, new timer, re-activate strategy)
         {
             var selector = (CredibleTransactionSelector) factoryWithTimeout.create(new SelectorsStateManager());
             var operationTracer = selector.getOperationTracer();

@@ -145,7 +145,7 @@ public class DefaultStrategyTest {
         var strategy = initStrategy(mockTransport, mockTransportFallback, 500, true);
 
         var response = sendTransaction(strategy);
-        assertEquals(response.getFailure(), CredibleRejectionReason.TIMEOUT);
+        assertEquals(response.getFailure(), CredibleRejectionReason.PROCESSING_TIMEOUT);
     }
 
     @Test
@@ -246,7 +246,7 @@ public class DefaultStrategyTest {
         mockTransport3.setProcessingLatency(500);
 
         response = sendTransaction(strategy);
-        assertTrue(response.getFailure() == CredibleRejectionReason.TIMEOUT);
+        assertTrue(response.getFailure() == CredibleRejectionReason.PROCESSING_TIMEOUT);
         assertEquals(strategy.isActive(), false);
 
         // Should still be inactive
