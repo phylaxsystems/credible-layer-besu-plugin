@@ -125,7 +125,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
 
         @CommandLine.Option(
             names = {"--plugin-credible-sidecar-aggregated-timeout-ms"},
-            description = "Maximum time in ms allowed to spend in pre and post processing within an iteration (block building). When exceeded, the strategy becomes inactive for the remainder of the iteration.",
+            description = "Maximum time in ms allowed to spend in pre and post processing within an iteration (block building). When exceeded, the strategy becomes inactive for the remainder of block production.",
             defaultValue = "2000"
         )
         private int aggregatedTimeout = 2000;
