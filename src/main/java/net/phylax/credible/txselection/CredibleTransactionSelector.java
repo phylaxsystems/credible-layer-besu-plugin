@@ -50,7 +50,7 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
   private String transactionHash;
   private List<TxExecutionId> transactions = new ArrayList<>();
   // Aggregated time for pre and post processing within a single iteration
-  private long aggregatedTimeExecutionMs = 0;
+  private long aggregatedTimeExecutionMicros = 0;
 
   public CredibleTransactionSelector(
     final Config config,
@@ -99,7 +99,7 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
         status = "error";
     } finally {
         metricsRegistry.getPreProcessingDuration().labels(status).observe(getDurationSeconds(startTime));
-        aggregatedTimeExecutionMs += getDurationMillis(startTime);
+        aggregatedTimeExecutionMicros += getDurationMicros(startTime);
     }
 
     return TransactionSelectionResult.SELECTED;
@@ -157,7 +157,7 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
         return TransactionSelectionResult.SELECTED;
     } finally {
         metricsRegistry.getPostProcessingDuration().labels(status).observe(getDurationSeconds(startTime));
-        aggregatedTimeExecutionMs += getDurationMillis(startTime);
+        aggregatedTimeExecutionMicros += getDurationMicros(startTime);
     }
   }
 
@@ -214,8 +214,8 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
     return (System.nanoTime() - startTimeNanos) / 1_000_000_000.0;
   }
 
-  private double getDurationMillis(long startTimeNanos) {
-    return (System.nanoTime() - startTimeNanos) / 1_000_000.0;
+  private double getDurationMicros(long startTimeNanos) {
+    return (System.nanoTime() - startTimeNanos) / 1_000.0;
   }
 
   /**
@@ -235,9 +235,9 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
       return false;
     }
 
-    if (aggregatedTimeExecutionMs >= timeoutMs) {
+    if (aggregatedTimeExecutionMicros >= timeoutMs * 1_000) {
       iterationTimedOut = true;
-      log.warn("Iteration {} timeout after {}ms (limit: {}ms)", iterationId, aggregatedTimeExecutionMs, timeoutMs);
+      log.warn("Iteration {} timeout after {}ms (limit: {}ms)", iterationId, aggregatedTimeExecutionMicros / 1_000, timeoutMs);
       metricsRegistry.getIterationTimeoutCounter().labels().inc();
       config.getStrategy().setActive(false);
       return true;
