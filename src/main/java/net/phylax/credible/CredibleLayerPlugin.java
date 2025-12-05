@@ -409,7 +409,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
                 lastTxHash = transactions.get(transactions.size() - 1).getHash().toArrayUnsafe();
             }
 
-            byte[] parentBlockHash = blockHeader.getBlockHash().toArrayUnsafe();
+            byte[] blockHashBytes = blockHeader.getBlockHash().toArrayUnsafe();
 
             byte[] parentBeaconBlockRoot = blockHeader.getParentBeaconBlockRoot()
                 .map(root -> root.toArrayUnsafe())
@@ -423,7 +423,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
                 transactionCount,
                 blockNumber,
                 0L,
-                parentBlockHash,
+                blockHashBytes,
                 parentBeaconBlockRoot,
                 timestamp
             );

@@ -261,7 +261,7 @@ public class SidecarApiModels {
         private byte[] blockHash;
 
         @JsonIgnore
-        private byte[] beaconBlockRoot;
+        private byte[] parentBeaconBlockRoot;
 
         @JsonIgnore
         private Long timestamp;
@@ -286,7 +286,7 @@ public class SidecarApiModels {
             Long blockNumber,
             Long selectedIterationId,
             byte[] blockHash,
-            byte[] beaconBlockRoot,
+            byte[] parentBeaconBlockRoot,
             Long timestamp
         ) {
             this.lastTxHash = lastTxHash;
@@ -294,7 +294,7 @@ public class SidecarApiModels {
             this.blockNumber = blockNumber;
             this.selectedIterationId = selectedIterationId;
             this.blockHash = blockHash;
-            this.beaconBlockRoot = beaconBlockRoot;
+            this.parentBeaconBlockRoot = parentBeaconBlockRoot;
             this.timestamp = timestamp;
         }
 
@@ -313,8 +313,8 @@ public class SidecarApiModels {
         public byte[] getBlockHash() { return blockHash; }
         public void setBlockHash(byte[] blockHash) { this.blockHash = blockHash; }
 
-        public byte[] getBeaconBlockRoot() { return beaconBlockRoot; }
-        public void setBeaconBlockRoot(byte[] beaconBlockRoot) { this.beaconBlockRoot = beaconBlockRoot; }
+        public byte[] getParentBeaconBlockRoot() { return parentBeaconBlockRoot; }
+        public void setParentBeaconBlockRoot(byte[] parentBeaconBlockRoot) { this.parentBeaconBlockRoot = parentBeaconBlockRoot; }
 
         public Long getTimestamp() { return timestamp; }
         public void setTimestamp(Long timestamp) { this.timestamp = timestamp; }

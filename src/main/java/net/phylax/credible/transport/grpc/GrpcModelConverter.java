@@ -265,8 +265,8 @@ public class GrpcModelConverter {
             builder.setBlockHash(bytesToByteStringPadded(pojo.getBlockHash(), 32));
         }
 
-        if (pojo.getBeaconBlockRoot() != null && pojo.getBeaconBlockRoot().length > 0) {
-            builder.setBeaconBlockRoot(bytesToByteStringPadded(pojo.getBeaconBlockRoot(), 32));
+        if (pojo.getParentBeaconBlockRoot() != null && pojo.getParentBeaconBlockRoot().length > 0) {
+            builder.setParentBeaconBlockRoot(bytesToByteStringPadded(pojo.getParentBeaconBlockRoot(), 32));
         }
 
         if (pojo.getTimestamp() != null) {
