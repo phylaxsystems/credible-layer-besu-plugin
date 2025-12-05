@@ -16,6 +16,7 @@ import org.hyperledger.besu.plugin.services.metrics.OperationTimer;
 public class CredibleMetricsRegistry {
     private final LabelledMetric<OperationTimer> pollingTimer;
     private final LabelledMetric<Counter> timeoutCounter;
+    private final LabelledMetric<Counter> iterationTimeoutCounter;
     private final LabelledMetric<Counter> errorCounter;
     private final LabelledMetric<Counter> transactionCounter;
     private final LabelledMetric<Counter> invalidationCounter;
@@ -47,7 +48,13 @@ public class CredibleMetricsRegistry {
             "timeout_counter",
             "Number of timeout exceptions"
         );
-        
+
+        iterationTimeoutCounter = metricsSystem.createLabelledCounter(
+            CredibleMetricsCategory.PLUGIN,
+            "iteration_timeout_counter",
+            "Number of iterations that exceeded the configured timeout"
+        );
+
         errorCounter = metricsSystem.createLabelledCounter(
             CredibleMetricsCategory.PLUGIN,
             "error_counter",
@@ -110,7 +117,11 @@ public class CredibleMetricsRegistry {
     public LabelledMetric<Counter> getTimeoutCounter() {
         return timeoutCounter;
     }
-    
+
+    public LabelledMetric<Counter> getIterationTimeoutCounter() {
+        return iterationTimeoutCounter;
+    }
+
     public LabelledMetric<Counter> getErrorCounter() {
         return errorCounter;
     }

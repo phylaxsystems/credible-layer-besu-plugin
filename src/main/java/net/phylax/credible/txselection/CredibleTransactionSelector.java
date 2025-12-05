@@ -26,22 +26,31 @@ import net.phylax.credible.utils.ByteUtils;
 @Slf4j
 public class CredibleTransactionSelector implements PluginTransactionSelector {
   public static class Config {
-    private ISidecarStrategy strategy;
+    private final ISidecarStrategy strategy;
+    private final int aggreagatedTimeoutMs;
 
-    public Config(ISidecarStrategy strategy) {
+    public Config(ISidecarStrategy strategy, int aggreagatedTimeoutMs) {
       this.strategy = strategy;
+      this.aggreagatedTimeoutMs = aggreagatedTimeoutMs;
     }
 
     public ISidecarStrategy getStrategy() {
       return strategy;
+    }
+
+    public int getAggregatedTimeoutMs() {
+      return aggreagatedTimeoutMs;
     }
   }
 
   private final Config config;
   private final CredibleMetricsRegistry metricsRegistry;
   private final Long iterationId;
+  private boolean iterationTimedOut = false;
   private String transactionHash;
   private List<TxExecutionId> transactions = new ArrayList<>();
+  // Aggregated time for pre and post processing within a single iteration
+  private long aggregatedTimeExecutionMicros = 0;
 
   public CredibleTransactionSelector(
     final Config config,
@@ -90,6 +99,7 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
         status = "error";
     } finally {
         metricsRegistry.getPreProcessingDuration().labels(status).observe(getDurationSeconds(startTime));
+        aggregatedTimeExecutionMicros += getDurationMicros(startTime);
     }
 
     return TransactionSelectionResult.SELECTED;
@@ -99,6 +109,8 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
   public TransactionSelectionResult evaluateTransactionPostProcessing(
       final TransactionEvaluationContext txContext,
       final TransactionProcessingResult transactionProcessingResult) {
+    checkAggregatedTimeout();
+
     if (!config.strategy.isActive()) {
       log.warn("No active transport available!");
       return TransactionSelectionResult.SELECTED;
@@ -145,6 +157,7 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
         return TransactionSelectionResult.SELECTED;
     } finally {
         metricsRegistry.getPostProcessingDuration().labels(status).observe(getDurationSeconds(startTime));
+        aggregatedTimeExecutionMicros += getDurationMicros(startTime);
     }
   }
 
@@ -199,6 +212,37 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
 
   private double getDurationSeconds(long startTimeNanos) {
     return (System.nanoTime() - startTimeNanos) / 1_000_000_000.0;
+  }
+
+  private double getDurationMicros(long startTimeNanos) {
+    return (System.nanoTime() - startTimeNanos) / 1_000.0;
+  }
+
+  /**
+   * Checks if the iteration has exceeded the configured timeout.
+   * Once timed out, the flag is cached to avoid repeated checks.
+   * When timeout occurs, the strategy is set to inactive.
+   *
+   * @return true if iteration timeout is configured and has been exceeded
+   */
+  private boolean checkAggregatedTimeout() {
+    if (iterationTimedOut) {
+      return true;
+    }
+
+    int timeoutMs = config.getAggregatedTimeoutMs();
+    if (timeoutMs <= 0) {
+      return false;
+    }
+
+    if (aggregatedTimeExecutionMicros >= timeoutMs * 1_000) {
+      iterationTimedOut = true;
+      log.warn("Iteration {} timeout after {}ms (limit: {}ms)", iterationId, aggregatedTimeExecutionMicros / 1_000, timeoutMs);
+      metricsRegistry.getIterationTimeoutCounter().labels().inc();
+      config.getStrategy().setActive(false);
+      return true;
+    }
+    return false;
   }
 
   /**

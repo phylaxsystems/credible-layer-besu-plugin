@@ -66,4 +66,10 @@ public interface ISidecarStrategy {
      * @return
      */
     boolean isActive();
+
+    /**
+     * Sets the active state of the strategy
+     * @param active
+     */
+    void setActive(boolean active);
 }

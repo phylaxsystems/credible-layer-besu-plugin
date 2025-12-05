@@ -124,6 +124,13 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         private int processingTimeout = 300;
 
         @CommandLine.Option(
+            names = {"--plugin-credible-sidecar-aggregated-timeout-ms"},
+            description = "Maximum time in ms allowed to spend in pre and post processing within an iteration (block building). When exceeded, the strategy becomes inactive for the remainder of block production.",
+            defaultValue = "2000"
+        )
+        private int aggregatedTimeout = 2000;
+
+        @CommandLine.Option(
             names = {"--plugin-credible-sidecar-grpc-endpoints"},
             description = "List of gRPC endpoints (format: host:port) - mutually exclusive with rpc-endpoints",
             paramLabel = "<host:port>",
@@ -150,6 +157,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         public List<String> getGrpcEndpoints() { return grpcEndpoints; }
         public List<String> getGrpcFallbackEndpoints() { return grpcFallbackEndpoints; }
         public int getProcessingTimeout() { return processingTimeout; }
+        public int getAggregatedTimeout() { return aggregatedTimeout; }
         public int getReadTimeout() { return readTimeout; }
         public int getWriteTimeout() { return writeTimeout; }
         public TransportType getTransportType() { return transportType; }
@@ -244,7 +252,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
 
         strategy = new DefaultSidecarStrategy(primaryTransports, fallbackTransports, config.getProcessingTimeout(), metricsRegistry);
 
-        var credibleTxConfig = new CredibleTransactionSelector.Config(strategy);
+        var credibleTxConfig = new CredibleTransactionSelector.Config(strategy, config.getAggregatedTimeout());
 
         transactionSelectionService.registerPluginTransactionSelectorFactory(
             new CredibleTransactionSelectorFactory(credibleTxConfig, metricsRegistry)
