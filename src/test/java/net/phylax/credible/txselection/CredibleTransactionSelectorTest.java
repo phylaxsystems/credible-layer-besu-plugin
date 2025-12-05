@@ -158,6 +158,13 @@ public class CredibleTransactionSelectorTest {
             var postResult3 = selector.evaluateTransactionPostProcessing(evaluationContext3, null);
             assertEquals(TransactionSelectionResult.SELECTED, postResult3);
 
+            // Third transaction - also skipped
+            var evaluationContext4 = new MockTransactionEvaluationContext("0x4");
+            var preResult4 = selector.evaluateTransactionPreProcessing(evaluationContext4);
+            assertEquals(TransactionSelectionResult.SELECTED, preResult4);
+            var postResult4 = selector.evaluateTransactionPostProcessing(evaluationContext4, null);
+            assertEquals(TransactionSelectionResult.SELECTED, postResult4);
+
             operationTracer.traceEndBlock(new MockBlockHeader(2L), new MockBlockBody(1));
 
             // Strategy should be inactive after timeout

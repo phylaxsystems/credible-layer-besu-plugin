@@ -69,10 +69,6 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
   @Override
   public TransactionSelectionResult evaluateTransactionPreProcessing(
       final TransactionEvaluationContext txContext) {
-    if (hasIterationTimedOut()) {
-      log.debug("Skipping pre-processing due to iteration timeout, tx: {}", transactionHash);
-      return TransactionSelectionResult.SELECTED;
-    }
     long startTime = System.nanoTime();
     String status = "success";
     metricsRegistry.getTransactionCounter().labels().inc();
@@ -113,10 +109,7 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
   public TransactionSelectionResult evaluateTransactionPostProcessing(
       final TransactionEvaluationContext txContext,
       final TransactionProcessingResult transactionProcessingResult) {
-    if (hasIterationTimedOut()) {
-      log.debug("Skipping post-processing due to iteration timeout, tx: {}", transactionHash);
-      return TransactionSelectionResult.SELECTED;
-    }
+    checkAggregatedTimeout();
 
     if (!config.strategy.isActive()) {
       log.warn("No active transport available!");
@@ -232,7 +225,7 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
    *
    * @return true if iteration timeout is configured and has been exceeded
    */
-  private boolean hasIterationTimedOut() {
+  private boolean checkAggregatedTimeout() {
     if (iterationTimedOut) {
       return true;
     }
