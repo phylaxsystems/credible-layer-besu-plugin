@@ -257,6 +257,15 @@ public class SidecarApiModels {
         @JsonIgnore
         private Long selectedIterationId;
 
+        @JsonIgnore
+        private byte[] blockHash;
+
+        @JsonIgnore
+        private byte[] parentBeaconBlockRoot;
+
+        @JsonIgnore
+        private Long timestamp;
+
         public CommitHead() {}
 
         public CommitHead(
@@ -271,6 +280,24 @@ public class SidecarApiModels {
             this.selectedIterationId = selectedIterationId;
         }
 
+        public CommitHead(
+            byte[] lastTxHash,
+            Integer nTransactions,
+            Long blockNumber,
+            Long selectedIterationId,
+            byte[] blockHash,
+            byte[] parentBeaconBlockRoot,
+            Long timestamp
+        ) {
+            this.lastTxHash = lastTxHash;
+            this.nTransactions = nTransactions;
+            this.blockNumber = blockNumber;
+            this.selectedIterationId = selectedIterationId;
+            this.blockHash = blockHash;
+            this.parentBeaconBlockRoot = parentBeaconBlockRoot;
+            this.timestamp = timestamp;
+        }
+
         public byte[] getLastTxHash() { return lastTxHash; }
         public void setLastTxHash(byte[] lastTxHash) { this.lastTxHash = lastTxHash; }
 
@@ -282,6 +309,15 @@ public class SidecarApiModels {
 
         public Long getSelectedIterationId() { return selectedIterationId; }
         public void setSelectedIterationId(Long selectedIterationId) { this.selectedIterationId = selectedIterationId; }
+
+        public byte[] getBlockHash() { return blockHash; }
+        public void setBlockHash(byte[] blockHash) { this.blockHash = blockHash; }
+
+        public byte[] getParentBeaconBlockRoot() { return parentBeaconBlockRoot; }
+        public void setParentBeaconBlockRoot(byte[] parentBeaconBlockRoot) { this.parentBeaconBlockRoot = parentBeaconBlockRoot; }
+
+        public Long getTimestamp() { return timestamp; }
+        public void setTimestamp(Long timestamp) { this.timestamp = timestamp; }
     }
 
     /**

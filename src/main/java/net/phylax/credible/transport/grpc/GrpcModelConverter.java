@@ -261,6 +261,18 @@ public class GrpcModelConverter {
             builder.setSelectedIterationId(pojo.getSelectedIterationId());
         }
 
+        if (pojo.getBlockHash() != null && pojo.getBlockHash().length > 0) {
+            builder.setBlockHash(bytesToByteStringPadded(pojo.getBlockHash(), 32));
+        }
+
+        if (pojo.getParentBeaconBlockRoot() != null && pojo.getParentBeaconBlockRoot().length > 0) {
+            builder.setParentBeaconBlockRoot(bytesToByteStringPadded(pojo.getParentBeaconBlockRoot(), 32));
+        }
+
+        if (pojo.getTimestamp() != null) {
+            builder.setTimestamp(longToByteString(pojo.getTimestamp(), 32));
+        }
+
         return builder.build();
     }
 

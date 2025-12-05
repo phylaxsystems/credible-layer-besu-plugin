@@ -398,9 +398,9 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
 
             // Validates if the block is valid for sending it to the Credible Layer
             validateBlock(block);
-            
+
             log.debug("Processing new block - Hash: {}, Number: {}", blockHash, blockNumber);
-            
+
             // Get transaction information from the actual block
             int transactionCount = transactions.size();
             byte[] lastTxHash = null;
@@ -409,17 +409,28 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
                 lastTxHash = transactions.get(transactions.size() - 1).getHash().toArrayUnsafe();
             }
 
+            byte[] blockHashBytes = blockHeader.getBlockHash().toArrayUnsafe();
+
+            byte[] parentBeaconBlockRoot = blockHeader.getParentBeaconBlockRoot()
+                .map(root -> root.toArrayUnsafe())
+                .orElse(null);
+
+            long timestamp = blockHeader.getTimestamp();
+
             // NOTE: iterationId will be overwritten once sent
             CommitHead newHead = new CommitHead(
                 lastTxHash,
                 transactionCount,
                 blockNumber,
-                0L
+                0L,
+                blockHashBytes,
+                parentBeaconBlockRoot,
+                timestamp
             );
 
             this.strategy.setNewHead(blockHash, newHead);
             lastBlockSent = blockHash;
-            
+
             log.debug("Block Env sent, hash: {}", blockHash);
         } catch (Exception e) {
             log.error("Error handling sendBlockEnv {}", e.getMessage());
