@@ -5,7 +5,6 @@ import java.net.Socket;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
@@ -172,46 +171,72 @@ public class GrpcTransport implements ISidecarTransport {
 
     /**
      * Send an event through the StreamEvents stream with ack confirmation.
-     * Retries up to MAX_RETRIES times if ack is not received within ACK_TIMEOUT_MS.
+     * Sends the event immediately and schedules async retries in the background if needed.
+     * This method returns immediately after the first send attempt.
      */
     private void sendEvent(Sidecar.Event event) {
-        for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-            StreamObserver<Sidecar.Event> stream = getOrCreateEventStream();
+        StreamObserver<Sidecar.Event> stream = getOrCreateEventStream();
 
-            // Generate unique event_id and rebuild event with it
-            long eventId = eventIdCounter.incrementAndGet();
-            Sidecar.Event eventWithId = event.toBuilder().setEventId(eventId).build();
+        // Generate unique event_id and rebuild event with it
+        long eventId = eventIdCounter.incrementAndGet();
+        Sidecar.Event eventWithId = event.toBuilder().setEventId(eventId).build();
 
-            CompletableFuture<Sidecar.StreamAck> ackFuture = new CompletableFuture<>();
-            pendingAcks.put(eventId, ackFuture);
+        CompletableFuture<Sidecar.StreamAck> ackFuture = new CompletableFuture<>();
+        pendingAcks.put(eventId, ackFuture);
 
-            try {
-                stream.onNext(eventWithId);
+        try {
+            stream.onNext(eventWithId);
+        } catch (Exception e) {
+            pendingAcks.remove(eventId);
+            log.error("Error sending event: {}", e.getMessage(), e);
+            streamConnected = false;
+            eventStreamRef.set(null);
+            throw new RuntimeException("Failed to send event", e);
+        }
 
-                // Wait for ack with timeout
-                Sidecar.StreamAck ack = ackFuture.get(ACK_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-                if (ack.getSuccess()) {
-                    return; // Successfully sent and acked
-                } else {
-                    log.warn("StreamAck returned failure on attempt {}: {}", attempt + 1, ack.getMessage());
+        // Schedule async ack handling with retries in background (even if the first attempt throws)
+        scheduleAckHandling(event, eventId, ackFuture, 0);
+    }
+
+    /**
+     * Handles ack waiting and retries asynchronously in the background.
+     * Does not block the caller. Uses a single ackFuture that stays in pendingAcks
+     * until success or all retries exhausted.
+     */
+    private void scheduleAckHandling(Sidecar.Event event, long eventId, CompletableFuture<Sidecar.StreamAck> ackFuture, int attempt) {
+        CompletableFuture.delayedExecutor(ACK_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            .execute(() -> {
+                if (!ackFuture.isDone()) {
+                    // Timeout - ack not received in time
+                    if (attempt < MAX_RETRIES) {
+                        log.debug("Ack timeout on attempt {} for event_id={}, retrying event async", attempt + 1, eventId);
+                        retryEventAsync(event, eventId, ackFuture, attempt + 1);
+                    } else {
+                        log.warn("Ack timeout after {} retries for event_id={}, proceeding without confirmation", MAX_RETRIES + 1, eventId);
+                        pendingAcks.remove(eventId);
+                    }
                 }
-            } catch (TimeoutException e) {
-                // Remove the pending ack since we're giving up on it
-                
-                if (attempt < MAX_RETRIES) {
-                    log.debug("Ack timeout on attempt {} for event_id={}, retrying event", attempt + 1, eventId);
-                } else {
-                    log.warn("Ack timeout after {} retries for event_id={}, proceeding without confirmation", MAX_RETRIES + 1, eventId);
-                    return; // Give up but don't fail - event may still be processed
-                }
-            } catch (Exception e) {
-                log.error("Error sending event: {}", e.getMessage(), e);
-                streamConnected = false;
-                eventStreamRef.set(null);
-                throw new RuntimeException("Failed to send event", e);
-            } finally {
-                pendingAcks.remove(eventId);
-            }
+            });
+    }
+
+    /**
+     * Retry sending an event asynchronously, reusing the same eventId and ackFuture.
+     */
+    private void retryEventAsync(Sidecar.Event event, long eventId, CompletableFuture<Sidecar.StreamAck> ackFuture, int attempt) {
+        StreamObserver<Sidecar.Event> stream = getOrCreateEventStream();
+
+        // Reuse the same event_id for retries
+        Sidecar.Event eventWithId = event.toBuilder().setEventId(eventId).build();
+
+        try {
+            stream.onNext(eventWithId);
+            // Schedule next timeout check for this retry
+            scheduleAckHandling(event, eventId, ackFuture, attempt);
+        } catch (Exception e) {
+            pendingAcks.remove(eventId);
+            log.error("Error retrying event on attempt {}: {}", attempt + 1, e.getMessage(), e);
+            streamConnected = false;
+            eventStreamRef.set(null);
         }
     }
 
