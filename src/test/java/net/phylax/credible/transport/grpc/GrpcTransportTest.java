@@ -41,6 +41,28 @@ public class GrpcTransportTest {
         }
         return bytes;
     }
+
+    private static ByteString longToByteString(long value) {
+        byte[] bytes = new byte[32];
+        for (int i = 31; i >= 24; i--) {
+            bytes[i] = (byte) (value & 0xFF);
+            value >>= 8;
+        }
+        return ByteString.copyFrom(bytes);
+    }
+
+    private static long byteStringToLong(ByteString byteString) {
+        if (byteString == null || byteString.isEmpty()) {
+            return 0L;
+        }
+        byte[] bytes = byteString.toByteArray();
+        long result = 0;
+        int start = Math.max(0, bytes.length - 8);
+        for (int i = start; i < bytes.length; i++) {
+            result = (result << 8) | (bytes[i] & 0xFF);
+        }
+        return result;
+    }
     private GrpcTransport transport;
     private TestSidecarService testService;
     private final GrpcCleanupRule grpcCleanup = new GrpcCleanupRule();
@@ -212,7 +234,7 @@ public class GrpcTransportTest {
 
         Sidecar.CommitHead receivedCommitHead = event.getCommitHead();
         assertEquals(10, receivedCommitHead.getNTransactions());
-        assertEquals(12345L, receivedCommitHead.getBlockNumber());
+        assertEquals(12345L, byteStringToLong(receivedCommitHead.getBlockNumber()));
         assertEquals(1L, receivedCommitHead.getSelectedIterationId());
     }
 
@@ -285,7 +307,7 @@ public class GrpcTransportTest {
         testService.transactionResults.add(
             Sidecar.TransactionResult.newBuilder()
                 .setTxExecutionId(Sidecar.TxExecutionId.newBuilder()
-                    .setBlockNumber(0L)
+                    .setBlockNumber(longToByteString(0L))
                     .setIterationId(0L)
                     .setTxHash(hexToByteString("0xaabbccdd11223344"))
                     .build())
@@ -327,7 +349,7 @@ public class GrpcTransportTest {
         testService.transactionResults.add(
             Sidecar.TransactionResult.newBuilder()
                 .setTxExecutionId(Sidecar.TxExecutionId.newBuilder()
-                    .setBlockNumber(0L)
+                    .setBlockNumber(longToByteString(0L))
                     .setIterationId(0L)
                     .setTxHash(hexToByteString("0xaabbccdd11223344"))
                     .build())
@@ -377,7 +399,7 @@ public class GrpcTransportTest {
         assertFalse(testService.receivedEvents.isEmpty());
         Sidecar.Event event = testService.receivedEvents.get(0);
         assertTrue(event.hasReorg());
-        assertEquals(12345L, event.getReorg().getTxExecutionId().getBlockNumber());
+        assertEquals(12345L, byteStringToLong(event.getReorg().getTxExecutionId().getBlockNumber()));
         assertEquals(1L, event.getReorg().getTxExecutionId().getIterationId());
     }
 
@@ -412,7 +434,7 @@ public class GrpcTransportTest {
         Sidecar.Event receivedEvent = testService.receivedEvents.get(0);
         assertTrue(receivedEvent.hasCommitHead());
         assertEquals(commitHead.getNTransactions().intValue(), receivedEvent.getCommitHead().getNTransactions());
-        assertEquals(commitHead.getBlockNumber().longValue(), receivedEvent.getCommitHead().getBlockNumber());
+        assertEquals(commitHead.getBlockNumber().longValue(), byteStringToLong(receivedEvent.getCommitHead().getBlockNumber()));
     }
 
     @Test
@@ -440,7 +462,7 @@ public class GrpcTransportTest {
         // Send a result from the server
         Sidecar.TransactionResult protoResult = Sidecar.TransactionResult.newBuilder()
             .setTxExecutionId(Sidecar.TxExecutionId.newBuilder()
-                .setBlockNumber(1000L)
+                .setBlockNumber(longToByteString(1000L))
                 .setIterationId(1L)
                 .setTxHash(hexToByteString("0xaabbccdd11223344556677889900aabbccdd11223344556677889900aabbccdd"))
                 .setIndex(0)
