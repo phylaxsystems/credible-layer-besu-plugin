@@ -29,9 +29,9 @@ public class GrpcModelConverter {
         }
 
         Sidecar.BlockEnv.Builder builder = Sidecar.BlockEnv.newBuilder()
-            .setNumber(blockEnv.getNumber())
+            .setNumber(longToByteString(blockEnv.getNumber(), 32))
             .setBeneficiary(bytesToByteString(blockEnv.getBeneficiary()))
-            .setTimestamp(blockEnv.getTimestamp())
+            .setTimestamp(longToByteString(blockEnv.getTimestamp(), 32))
             .setGasLimit(blockEnv.getGasLimit())
             .setBasefee(blockEnv.getBaseFee())
             .setDifficulty(bytesToByteStringPadded(blockEnv.getDifficulty(), 32));
@@ -83,7 +83,7 @@ public class GrpcModelConverter {
         }
 
         return Sidecar.TxExecutionId.newBuilder()
-            .setBlockNumber(pojo.getBlockNumber())
+            .setBlockNumber(longToByteString(pojo.getBlockNumber(), 32))
             .setIterationId(pojo.getIterationId())
             .setTxHash(bytesToByteString(pojo.getTxHash()))
             .setIndex(pojo.getIndex())
@@ -196,7 +196,7 @@ public class GrpcModelConverter {
      */
     public static Sidecar.GetTransactionRequest toProtoGetTransactionRequest(SidecarApiModels.GetTransactionRequest request) {
         var txExecId = Sidecar.TxExecutionId.newBuilder()
-            .setBlockNumber(request.getBlockNumber())
+            .setBlockNumber(longToByteString(request.getBlockNumber(), 32))
             .setIterationId(request.getIterationId())
             .setTxHash(bytesToByteString(request.getTxHash()))
             .setIndex(request.getIndex());
@@ -250,7 +250,7 @@ public class GrpcModelConverter {
      */
     private static Sidecar.CommitHead toProtoCommitHead(SidecarApiModels.CommitHead pojo) {
         Sidecar.CommitHead.Builder builder = Sidecar.CommitHead.newBuilder()
-            .setBlockNumber(pojo.getBlockNumber())
+            .setBlockNumber(longToByteString(pojo.getBlockNumber(), 32))
             .setNTransactions(pojo.getNTransactions());
 
         if (pojo.getLastTxHash() != null && pojo.getLastTxHash().length > 0) {
@@ -371,7 +371,7 @@ public class GrpcModelConverter {
             Sidecar.TxExecutionId proto) {
         // Convert ByteString txHash directly to byte[]
         return new SidecarApiModels.TxExecutionId(
-            proto.getBlockNumber(),
+            byteStringToLong(proto.getBlockNumber()),
             proto.getIterationId(),
             proto.getTxHash().toByteArray(),
             proto.getIndex()
@@ -429,5 +429,23 @@ public class GrpcModelConverter {
         }
         // Upper bytes are zero for values that fit in long
         return ByteString.copyFrom(bytes);
+    }
+
+    /**
+     * Convert ByteString (big-endian) to long.
+     * @param byteString the ByteString to convert
+     * @return the long value
+     */
+    private static Long byteStringToLong(ByteString byteString) {
+        if (byteString == null || byteString.isEmpty()) {
+            return 0L;
+        }
+        byte[] bytes = byteString.toByteArray();
+        long result = 0;
+        int start = Math.max(0, bytes.length - 8);
+        for (int i = start; i < bytes.length; i++) {
+            result = (result << 8) | (bytes[i] & 0xFF);
+        }
+        return result;
     }
 }
