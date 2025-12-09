@@ -51,8 +51,11 @@ public class GrpcTransport implements ISidecarTransport {
 
     // Ack tracking for event stream - map event_id to pending ack futures
     private final ConcurrentHashMap<Long, CompletableFuture<Sidecar.StreamAck>> pendingAcks = new ConcurrentHashMap<>();
+    // Track send times for ack latency measurement - map event_id to send time in nanos
+    private final ConcurrentHashMap<Long, Long> eventSendTimes = new ConcurrentHashMap<>();
     private final AtomicLong eventIdCounter = new AtomicLong(0);
-    private static final long ACK_TIMEOUT_MS = 1;
+    private static final long ACK_TIMEOUT_BASE_MS = 3;
+    private static final long ACK_TIMEOUT_MAX_MS = 100;
     private static final int MAX_RETRIES = 3;
 
     // Stream management for SubscribeResults
@@ -131,6 +134,13 @@ public class GrpcTransport implements ISidecarTransport {
                         log.trace("Received ack for unknown event_id={}", eventId);
                     }
 
+                    // Record ack latency metric
+                    Long sendTimeNanos = eventSendTimes.remove(eventId);
+                    if (sendTimeNanos != null && metricsRegistry != null) {
+                        double latencySeconds = (System.nanoTime() - sendTimeNanos) / 1_000_000_000.0;
+                        metricsRegistry.getStreamAckLatency().labels().observe(latencySeconds);
+                    }
+
                     if (ack.getSuccess()) {
                         log.trace("StreamAck received: event_id={}, events_processed={}, message={}",
                             eventId, ack.getEventsProcessed(), ack.getMessage());
@@ -147,6 +157,7 @@ public class GrpcTransport implements ISidecarTransport {
                     // Fail all pending acks
                     pendingAcks.values().forEach(future -> future.completeExceptionally(t));
                     pendingAcks.clear();
+                    eventSendTimes.clear();
                 }
 
                 @Override
@@ -158,6 +169,7 @@ public class GrpcTransport implements ISidecarTransport {
                     pendingAcks.values().forEach(future ->
                         future.completeExceptionally(new RuntimeException("Stream completed")));
                     pendingAcks.clear();
+                    eventSendTimes.clear();
                 }
             };
 
@@ -184,10 +196,16 @@ public class GrpcTransport implements ISidecarTransport {
         CompletableFuture<Sidecar.StreamAck> ackFuture = new CompletableFuture<>();
         pendingAcks.put(eventId, ackFuture);
 
+        log.trace("SendEvent dispatched: event_id={}, event_type={}", eventId, event.getEventCase());
+
+        // Record send time for latency measurement
+        eventSendTimes.put(eventId, System.nanoTime());
+
         try {
             stream.onNext(eventWithId);
         } catch (Exception e) {
             pendingAcks.remove(eventId);
+            eventSendTimes.remove(eventId);
             log.error("Error sending event: {}", e.getMessage(), e);
             streamConnected = false;
             eventStreamRef.set(null);
@@ -202,9 +220,11 @@ public class GrpcTransport implements ISidecarTransport {
      * Handles ack waiting and retries asynchronously in the background.
      * Does not block the caller. Uses a single ackFuture that stays in pendingAcks
      * until success or all retries exhausted.
+     * Uses exponential backoff: timeout = min(base * 2^attempt, max)
      */
     private void scheduleAckHandling(Sidecar.Event event, long eventId, CompletableFuture<Sidecar.StreamAck> ackFuture, int attempt) {
-        CompletableFuture.delayedExecutor(ACK_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        long timeoutMs = Math.min(ACK_TIMEOUT_BASE_MS * (1L << attempt), ACK_TIMEOUT_MAX_MS);
+        CompletableFuture.delayedExecutor(timeoutMs, TimeUnit.MILLISECONDS)
             .execute(() -> {
                 if (!ackFuture.isDone()) {
                     // Timeout - ack not received in time
@@ -214,6 +234,7 @@ public class GrpcTransport implements ISidecarTransport {
                     } else {
                         log.warn("Ack timeout after {} retries for event_id={}, proceeding without confirmation", MAX_RETRIES + 1, eventId);
                         pendingAcks.remove(eventId);
+                        eventSendTimes.remove(eventId);
                     }
                 }
             });
@@ -224,6 +245,10 @@ public class GrpcTransport implements ISidecarTransport {
      */
     private void retryEventAsync(Sidecar.Event event, long eventId, CompletableFuture<Sidecar.StreamAck> ackFuture, int attempt) {
         StreamObserver<Sidecar.Event> stream = getOrCreateEventStream();
+
+        if (metricsRegistry != null) {
+            metricsRegistry.getStreamAckRetryCounter().labels().inc();
+        }
 
         // Reuse the same event_id for retries
         Sidecar.Event eventWithId = event.toBuilder().setEventId(eventId).build();
@@ -277,7 +302,7 @@ public class GrpcTransport implements ISidecarTransport {
             Sidecar.GetTransactionsRequest request =
                 GrpcModelConverter.toProtoGetTransactionsRequest(txRequest);
 
-            log.trace("Getting {} transactions via gRPC", txRequest.getTxExecutionIds().size());
+            log.trace("Calling GetTransactions with {} transactions via gRPC", txRequest.getTxExecutionIds().size());
 
             // Make async gRPC call with deadline using round-robin channel
             getStub()
@@ -317,6 +342,8 @@ public class GrpcTransport implements ISidecarTransport {
             Sidecar.GetTransactionRequest request =
                 GrpcModelConverter.toProtoGetTransactionRequest(txRequest);
 
+            log.trace("Calling GetTransaction on {}", txRequest);
+
             // Make async gRPC call with deadline using round-robin polling channel
             getStub()
                 .withDeadlineAfter(deadlineMillis, TimeUnit.MILLISECONDS)
@@ -335,7 +362,7 @@ public class GrpcTransport implements ISidecarTransport {
 
                     @Override
                     public void onCompleted() {
-                        log.trace("GetTransaction gRPC call completed");
+                        log.trace("GetTransaction for {} gRPC call completed", txRequest);
                     }
                 });
         } catch (Exception e) {
@@ -356,10 +383,7 @@ public class GrpcTransport implements ISidecarTransport {
             ReorgEventReqItem reorgItem = new ReorgEventReqItem(reorgEvent);
             Sidecar.Event event = GrpcModelConverter.toProtoEvent(reorgItem);
 
-            log.trace("Sending reorg via stream: blockNumber={}, iterationId={}, txHash={}",
-                reorgRequest.getBlockNumber(),
-                reorgRequest.getIterationId(),
-                reorgRequest.getTxHash());
+            log.trace("Sending reorg via stream: {}", reorgRequest);
 
             sendEvent(event);
 
