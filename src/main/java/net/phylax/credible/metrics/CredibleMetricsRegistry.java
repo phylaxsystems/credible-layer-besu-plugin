@@ -22,6 +22,7 @@ public class CredibleMetricsRegistry {
     private final LabelledMetric<Counter> invalidationCounter;
     private final LabelledMetric<Counter> reorgRequestCounter;
     private final LabelledMetric<Counter> sidecarRpcCounter;
+    private final LabelledMetric<Counter> streamAckRetryCounter;
 
     // Transport request duration histograms
     private final LabelledMetric<Histogram> transportRequestDuration;
@@ -85,6 +86,12 @@ public class CredibleMetricsRegistry {
             "Total RPC calls made to the Credible sidecar",
             "method");
 
+        streamAckRetryCounter = metricsSystem.createLabelledCounter(
+            CredibleMetricsCategory.PLUGIN,
+            "stream_ack_retry_total",
+            "Number of stream event retries due to ack timeout"
+        );
+
         // Transport request duration with fine-grained buckets in seconds
         // Buckets: 0.05ms, 0.1ms, 0.5ms, 1ms, 2ms, 5ms, 10ms, 20ms, 50ms, 100ms, 200ms, 500ms
         transportRequestDuration = metricsSystem.createLabelledHistogram(
@@ -140,6 +147,10 @@ public class CredibleMetricsRegistry {
 
     public LabelledMetric<Counter> getSidecarRpcCounter() {
         return sidecarRpcCounter;
+    }
+
+    public LabelledMetric<Counter> getStreamAckRetryCounter() {
+        return streamAckRetryCounter;
     }
 
     public LabelledMetric<Histogram> getTransportRequestDuration() {

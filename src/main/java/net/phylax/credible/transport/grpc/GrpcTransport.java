@@ -230,6 +230,10 @@ public class GrpcTransport implements ISidecarTransport {
     private void retryEventAsync(Sidecar.Event event, long eventId, CompletableFuture<Sidecar.StreamAck> ackFuture, int attempt) {
         StreamObserver<Sidecar.Event> stream = getOrCreateEventStream();
 
+        if (metricsRegistry != null) {
+            metricsRegistry.getStreamAckRetryCounter().labels().inc();
+        }
+
         // Reuse the same event_id for retries
         Sidecar.Event eventWithId = event.toBuilder().setEventId(eventId).build();
 
