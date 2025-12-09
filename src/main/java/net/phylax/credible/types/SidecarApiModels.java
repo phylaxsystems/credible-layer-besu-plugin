@@ -641,6 +641,12 @@ public class SidecarApiModels {
 
         public long getIndex() { return index; }
         public void setIndex(long index) { this.index = index; }
+
+        @Override
+        public String toString() {
+            return String.format("ReorgRequest{blockNumber=%d, iterationId=%d, txHash='%s', index=%d}",
+                blockNumber, iterationId, bytesToHex(txHash), index);
+        }
     }
 
     /**
@@ -992,8 +998,8 @@ public class SidecarApiModels {
 
         @Override
         public String toString() {
-            return String.format("GetTransactionRequest{blockNumber=%d, iterationId=%d, txHash='%s'}",
-                blockNumber, iterationId, bytesToHex(txHash));
+            return String.format("GetTransactionRequest{blockNumber=%d, iterationId=%d, txHash='%s', index=%d}",
+                blockNumber, iterationId, bytesToHex(txHash), index);
         }
 
         public static GetTransactionRequest fromTxExecutionId(TxExecutionId txExecutionId) {
