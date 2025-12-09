@@ -51,6 +51,8 @@ public class GrpcTransport implements ISidecarTransport {
 
     // Ack tracking for event stream - map event_id to pending ack futures
     private final ConcurrentHashMap<Long, CompletableFuture<Sidecar.StreamAck>> pendingAcks = new ConcurrentHashMap<>();
+    // Track send times for ack latency measurement - map event_id to send time in nanos
+    private final ConcurrentHashMap<Long, Long> eventSendTimes = new ConcurrentHashMap<>();
     private final AtomicLong eventIdCounter = new AtomicLong(0);
     private static final long ACK_TIMEOUT_BASE_MS = 3;
     private static final long ACK_TIMEOUT_MAX_MS = 100;
@@ -132,6 +134,13 @@ public class GrpcTransport implements ISidecarTransport {
                         log.trace("Received ack for unknown event_id={}", eventId);
                     }
 
+                    // Record ack latency metric
+                    Long sendTimeNanos = eventSendTimes.remove(eventId);
+                    if (sendTimeNanos != null && metricsRegistry != null) {
+                        double latencySeconds = (System.nanoTime() - sendTimeNanos) / 1_000_000_000.0;
+                        metricsRegistry.getStreamAckLatency().labels().observe(latencySeconds);
+                    }
+
                     if (ack.getSuccess()) {
                         log.trace("StreamAck received: event_id={}, events_processed={}, message={}",
                             eventId, ack.getEventsProcessed(), ack.getMessage());
@@ -148,6 +157,7 @@ public class GrpcTransport implements ISidecarTransport {
                     // Fail all pending acks
                     pendingAcks.values().forEach(future -> future.completeExceptionally(t));
                     pendingAcks.clear();
+                    eventSendTimes.clear();
                 }
 
                 @Override
@@ -159,6 +169,7 @@ public class GrpcTransport implements ISidecarTransport {
                     pendingAcks.values().forEach(future ->
                         future.completeExceptionally(new RuntimeException("Stream completed")));
                     pendingAcks.clear();
+                    eventSendTimes.clear();
                 }
             };
 
@@ -184,13 +195,17 @@ public class GrpcTransport implements ISidecarTransport {
 
         CompletableFuture<Sidecar.StreamAck> ackFuture = new CompletableFuture<>();
         pendingAcks.put(eventId, ackFuture);
-        
+
         log.trace("SendEvent dispatched: event_id={}, event_type={}", eventId, event.getEventCase());
+
+        // Record send time for latency measurement
+        eventSendTimes.put(eventId, System.nanoTime());
 
         try {
             stream.onNext(eventWithId);
         } catch (Exception e) {
             pendingAcks.remove(eventId);
+            eventSendTimes.remove(eventId);
             log.error("Error sending event: {}", e.getMessage(), e);
             streamConnected = false;
             eventStreamRef.set(null);
@@ -219,6 +234,7 @@ public class GrpcTransport implements ISidecarTransport {
                     } else {
                         log.warn("Ack timeout after {} retries for event_id={}, proceeding without confirmation", MAX_RETRIES + 1, eventId);
                         pendingAcks.remove(eventId);
+                        eventSendTimes.remove(eventId);
                     }
                 }
             });
