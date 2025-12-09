@@ -201,15 +201,17 @@ public class GrpcTransport implements ISidecarTransport {
         // Record send time for latency measurement
         eventSendTimes.put(eventId, System.nanoTime());
 
-        try {
-            stream.onNext(eventWithId);
-        } catch (Exception e) {
-            pendingAcks.remove(eventId);
-            eventSendTimes.remove(eventId);
-            log.error("Error sending event: {}", e.getMessage(), e);
-            streamConnected = false;
-            eventStreamRef.set(null);
-            throw new RuntimeException("Failed to send event", e);
+        synchronized (streamLock) {
+            try {
+                stream.onNext(eventWithId);
+            } catch (Exception e) {
+                pendingAcks.remove(eventId);
+                eventSendTimes.remove(eventId);
+                log.error("Error sending event: {}", e.getMessage(), e);
+                streamConnected = false;
+                eventStreamRef.set(null);
+                throw new RuntimeException("Failed to send event", e);
+            }
         }
 
         // Schedule async ack handling with retries in background (even if the first attempt throws)
@@ -253,16 +255,19 @@ public class GrpcTransport implements ISidecarTransport {
         // Reuse the same event_id for retries
         Sidecar.Event eventWithId = event.toBuilder().setEventId(eventId).build();
 
-        try {
-            stream.onNext(eventWithId);
-            // Schedule next timeout check for this retry
-            scheduleAckHandling(event, eventId, ackFuture, attempt);
-        } catch (Exception e) {
-            pendingAcks.remove(eventId);
-            log.error("Error retrying event on attempt {}: {}", attempt + 1, e.getMessage(), e);
-            streamConnected = false;
-            eventStreamRef.set(null);
+        synchronized (streamLock) {
+            try {
+                stream.onNext(eventWithId);
+            } catch (Exception e) {
+                pendingAcks.remove(eventId);
+                eventSendTimes.remove(eventId);
+                log.error("Error retrying event on attempt {}: {}", attempt + 1, e.getMessage(), e);
+                streamConnected = false;
+                eventStreamRef.set(null);
+                return;
+            }
         }
+        scheduleAckHandling(event, eventId, ackFuture, attempt);
     }
 
     @Override
