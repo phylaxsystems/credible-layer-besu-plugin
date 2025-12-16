@@ -82,22 +82,26 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
     long txIndex = transactions.size();
     byte[] prevTxHash = getLastTxHash();
 
+    // Assemble the TxExecutionId
+    TxExecutionId txExecutionId = new TxExecutionId(blockNumber, iterationId, txHashBytes, txIndex);
+
     try {
         TxEnv txEnv = TransactionConverter.convertToTxEnv(tx);
         log.debug("Sending transaction for processing, hash: {}, iteration: {}, prevTxHash: {}, index: {}", transactionHash, iterationId, ByteUtils.toHex(prevTxHash), txIndex);
 
-        TxExecutionId txExecutionId = new TxExecutionId(blockNumber, iterationId, txHashBytes, txIndex);
         SendTransactionsRequest sendRequest = new SendTransactionsRequest();
         sendRequest.setTransactions(Collections.singletonList(new TransactionExecutionPayload(txExecutionId, txEnv, prevTxHash)));
 
         config.strategy.dispatchTransactions(sendRequest);
-        transactions.add(txExecutionId);
-
+        
         log.debug("Started async transaction processing for {}", transactionHash);
     } catch (Exception e) {
         log.error("Error in transaction preprocessing for {}: {}", transactionHash, e.getMessage());
         status = "error";
     } finally {
+        // We still add the tx execution to the internal list even if there was an error
+        // If the tx wasn't sent or some internal error happened, the timeout will trigger removing the correct transaction
+        transactions.add(txExecutionId);
         metricsRegistry.getPreProcessingDuration().labels(status).observe(getDurationSeconds(startTime));
         aggregatedTimeExecutionMicros += getDurationMicros(startTime);
     }
