@@ -42,6 +42,16 @@ public class GrpcTransportTest {
         return bytes;
     }
 
+    // Helper to convert long to 32-byte array (big-endian, left-padded with zeros)
+    private static byte[] longToBytes32(long value) {
+        byte[] bytes = new byte[32];
+        for (int i = 31; i >= 24; i--) {
+            bytes[i] = (byte) (value & 0xFF);
+            value >>= 8;
+        }
+        return bytes;
+    }
+
     private static ByteString longToByteString(long value) {
         byte[] bytes = new byte[32];
         for (int i = 31; i >= 24; i--) {
@@ -246,15 +256,15 @@ public class GrpcTransportTest {
         SidecarApiModels.TxEnv txEnv = new SidecarApiModels.TxEnv();
         txEnv.setCaller(hexToBytes("0xabcdef1234567890abcdef1234567890abcdef12"));
         txEnv.setGasLimit(21000L);
-        txEnv.setGasPrice(1_000_000_000L);
+        txEnv.setGasPrice(longToBytes32(1_000_000_000L));
         txEnv.setKind(hexToBytes("0xabcdef1234567890abcdef1234567890abcdef34"));
         txEnv.setValue(hexToBytes("0x1000000000000000000"));
         txEnv.setData(hexToBytes("0x"));
         txEnv.setNonce(0L);
         txEnv.setChainId(1L);
         txEnv.setTxType((byte) 2);
-        txEnv.setMaxFeePerBlobGas(25L);
-        txEnv.setGasPriorityFee(2L);
+        txEnv.setMaxFeePerBlobGas(longToBytes32(25L));
+        txEnv.setGasPriorityFee(longToBytes32(2L));
         txEnv.setBlobHashes(List.of(hexToBytes("0xabcdef1234567890")));
 
         SidecarApiModels.AccessListEntry accessListEntry = new SidecarApiModels.AccessListEntry(

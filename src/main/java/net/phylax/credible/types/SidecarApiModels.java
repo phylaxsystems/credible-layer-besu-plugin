@@ -42,7 +42,7 @@ public class SidecarApiModels {
         private Long gasLimit; // u64 -> Long
 
         @JsonIgnore
-        private Long gasPrice; // u64 -> Long
+        private byte[] gasPrice; // 32 bytes - U256 big-endian
 
         @JsonIgnore
         private byte[] kind; // 20 bytes or empty for contract creation
@@ -63,10 +63,10 @@ public class SidecarApiModels {
         private List<AccessListEntry> accessList; // AccessList
 
         @JsonIgnore
-        private Long maxFeePerBlobGas = 0L;
+        private byte[] maxFeePerBlobGas; // 32 bytes - U256 big-endian
 
         @JsonIgnore
-        private Long gasPriorityFee = null;
+        private byte[] gasPriorityFee; // 32 bytes - U256 big-endian
 
         @JsonIgnore
         private List<byte[]> blobHashes = new ArrayList<>();
@@ -79,11 +79,11 @@ public class SidecarApiModels {
             this.accessList = new ArrayList<>();
         }
 
-        public TxEnv(byte[] caller, Long gasLimit, Long gasPrice,
+        public TxEnv(byte[] caller, Long gasLimit, byte[] gasPrice,
             byte[] kind, byte[] value, byte[] data,
             Long nonce, Long chainId, List<AccessListEntry> accessList,
-            byte txType, Long maxFeePerBlobGas,
-            Long gasPriorityFee, List<byte[]> blobHashes,
+            byte txType, byte[] maxFeePerBlobGas,
+            byte[] gasPriorityFee, List<byte[]> blobHashes,
             List<AuthorizationListEntry> authorizationList) {
             this.caller = caller;
             this.gasLimit = gasLimit;
@@ -108,8 +108,8 @@ public class SidecarApiModels {
         public Long getGasLimit() { return gasLimit; }
         public void setGasLimit(Long gasLimit) { this.gasLimit = gasLimit; }
 
-        public Long getGasPrice() { return gasPrice; }
-        public void setGasPrice(Long gasPrice) { this.gasPrice = gasPrice; }
+        public byte[] getGasPrice() { return gasPrice; }
+        public void setGasPrice(byte[] gasPrice) { this.gasPrice = gasPrice; }
 
         public byte[] getKind() { return kind; }
         public void setKind(byte[] kind) { this.kind = kind; }
@@ -131,8 +131,8 @@ public class SidecarApiModels {
             this.accessList = accessList != null ? accessList : new ArrayList<>();
         }
 
-        public Long getGasPriorityFee() { return gasPriorityFee; }
-        public void setGasPriorityFee(Long gasPriorityFee) { this.gasPriorityFee = gasPriorityFee; }
+        public byte[] getGasPriorityFee() { return gasPriorityFee; }
+        public void setGasPriorityFee(byte[] gasPriorityFee) { this.gasPriorityFee = gasPriorityFee; }
 
         public List<byte[]> getBlobHashes() { return blobHashes; }
         public void setBlobHashes(List<byte[]> blobHashes) { this.blobHashes = blobHashes; }
@@ -140,16 +140,16 @@ public class SidecarApiModels {
         public byte getTxType() { return txType; }
         public void setTxType(byte txType) { this.txType = txType; }
 
-        public Long getMaxFeePerBlobGas() { return maxFeePerBlobGas; }
-        public void setMaxFeePerBlobGas(Long maxFeePerBlobGas) { this.maxFeePerBlobGas = maxFeePerBlobGas; }
+        public byte[] getMaxFeePerBlobGas() { return maxFeePerBlobGas; }
+        public void setMaxFeePerBlobGas(byte[] maxFeePerBlobGas) { this.maxFeePerBlobGas = maxFeePerBlobGas; }
 
         public List<AuthorizationListEntry> getAuthorizationList() { return authorizationList; }
         public void setAuthorizationList(List<AuthorizationListEntry> authorizationList) { this.authorizationList = authorizationList; }
 
         @Override
         public String toString() {
-            return String.format("TxEnv{caller='%s', gasLimit=%d, gasPrice=%d, kind='%s', value='%s', nonce=%d, chainId=%d}",
-                    bytesToHex(caller), gasLimit, gasPrice, bytesToHex(kind), bytesToHex(value), nonce, chainId);
+            return String.format("TxEnv{caller='%s', gasLimit=%d, gasPrice='%s', kind='%s', value='%s', nonce=%d, chainId=%d}",
+                    bytesToHex(caller), gasLimit, bytesToHex(gasPrice), bytesToHex(kind), bytesToHex(value), nonce, chainId);
         }
     }
     

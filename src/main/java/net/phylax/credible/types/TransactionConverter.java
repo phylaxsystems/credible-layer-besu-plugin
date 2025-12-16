@@ -36,17 +36,17 @@ public class TransactionConverter {
         if (supportsEip1559(transaction.getType())) {
             // EIP-1559: Use maxFeePerGas as gasPrice
             transaction.getMaxFeePerGas().ifPresent(maxFee ->
-                txEnv.setGasPrice(maxFee.getAsBigInteger().longValue()));
+                txEnv.setGasPrice(bigIntegerToBytes32(maxFee.getAsBigInteger())));
             transaction.getMaxPriorityFeePerGas().ifPresent(maxPriorityFee ->
-                txEnv.setGasPriorityFee(maxPriorityFee.getAsBigInteger().longValue()));
+                txEnv.setGasPriorityFee(bigIntegerToBytes32(maxPriorityFee.getAsBigInteger())));
         } else {
             // Legacy: Use gasPrice
             transaction.getGasPrice().ifPresent(gasPrice ->
-                txEnv.setGasPrice(gasPrice.getAsBigInteger().longValue()));
+                txEnv.setGasPrice(bigIntegerToBytes32(gasPrice.getAsBigInteger())));
         }
 
         transaction.getMaxFeePerBlobGas().ifPresent(maxFeePerBlobGas ->
-            txEnv.setMaxFeePerBlobGas(maxFeePerBlobGas.getAsBigInteger().longValue()));
+            txEnv.setMaxFeePerBlobGas(bigIntegerToBytes32(maxFeePerBlobGas.getAsBigInteger())));
 
         // Blob hashes - 32 bytes each
         transaction.getVersionedHashes().ifPresent(versionedHashes ->
@@ -223,9 +223,9 @@ public class TransactionConverter {
 
             // Handle gas price safely
             if (transaction.getGasPrice().isPresent()) {
-                fallbackTxEnv.setGasPrice(transaction.getGasPrice().get().getAsBigInteger().longValue());
+                fallbackTxEnv.setGasPrice(bigIntegerToBytes32(transaction.getGasPrice().get().getAsBigInteger()));
             } else {
-                fallbackTxEnv.setGasPrice(0L);
+                fallbackTxEnv.setGasPrice(new byte[32]);
             }
 
             // Handle destination and data safely
