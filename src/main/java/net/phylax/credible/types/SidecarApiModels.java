@@ -636,7 +636,7 @@ public class SidecarApiModels {
         }
 
         public TxExecutionId toTxExecutionId() {
-            return new TxExecutionId(blockNumber, iterationId, txHash, 0);
+            return new TxExecutionId(blockNumber, iterationId, txHash, index);
         }
 
         public long getIndex() { return index; }
@@ -944,12 +944,15 @@ public class SidecarApiModels {
             if (o == null || getClass() != o.getClass()) return false;
 
             TxExecutionId tx = (TxExecutionId) o;
-            return blockNumber.equals(tx.blockNumber) && iterationId.equals(tx.iterationId) && java.util.Arrays.equals(txHash, tx.txHash);
+            return blockNumber.equals(tx.blockNumber)
+                && iterationId.equals(tx.iterationId)
+                && java.util.Arrays.equals(txHash, tx.txHash)
+                && index == tx.index;
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(blockNumber, iterationId, java.util.Arrays.hashCode(txHash));
+            return Objects.hash(blockNumber, iterationId, java.util.Arrays.hashCode(txHash), index);
         }
     }
 
@@ -1007,7 +1010,7 @@ public class SidecarApiModels {
         }
 
         public TxExecutionId toTxExecutionId() {
-            return new TxExecutionId(blockNumber, iterationId, txHash, 0);
+            return new TxExecutionId(blockNumber, iterationId, txHash, index);
         }
     }
 
