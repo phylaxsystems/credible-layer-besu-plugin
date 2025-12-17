@@ -226,9 +226,11 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
                 config.getProcessingTimeout());
         }
 
-        serviceManager
+        besuEvents = serviceManager
             .getService(BesuEvents.class)
-            .ifPresentOrElse(this::startEvents, () -> log.error("BesuEvents service not available"));
+            .orElseThrow(() -> new RuntimeException("BesuEvents service not available"));
+
+        startEvents(besuEvents);
 
         // Initialize the metrics system
         this.metricsSystem = serviceManager.getService(MetricsSystem.class)
@@ -371,9 +373,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
 
     @Override
     public void stop() {
-        serviceManager
-            .getService(BesuEvents.class)
-            .ifPresentOrElse(this::stopEvents, () -> log.error("Error retrieving BesuEvents service"));
+        stopEvents(besuEvents);
     }
         
     @Override
