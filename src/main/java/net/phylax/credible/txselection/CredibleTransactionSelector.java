@@ -100,7 +100,7 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
         status = "error";
     } finally {
         // We still add the tx execution to the internal list even if there was an error
-        // If the tx wasn't sent or some internal error happened, the timeout will trigger removing the correct transaction
+        // If the tx wasn't sent or some internal error happened, the strategy will handle the error
         transactions.add(txExecutionId);
         metricsRegistry.getPreProcessingDuration().labels(status).observe(getDurationSeconds(startTime));
         aggregatedTimeExecutionMicros += getDurationMicros(startTime);
