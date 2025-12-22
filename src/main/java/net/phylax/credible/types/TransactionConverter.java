@@ -21,7 +21,7 @@ public class TransactionConverter {
      * Convert Besu Transaction to TxEnv.
      * Binary fields are passed directly as byte[] to avoid unnecessary hex string conversions.
      */
-    public static TxEnv convertToTxEnv(Transaction transaction) {
+    public static TxEnv convertToTxEnv(Transaction transaction) throws IllegalArgumentException {
         SidecarApiModels.TxEnv txEnv = new SidecarApiModels.TxEnv();
 
         txEnv.setTxType(convertType(transaction.getType()));
@@ -130,15 +130,14 @@ public class TransactionConverter {
         }
     }
 
-    private static byte convertType(TransactionType type) {
+    private static byte convertType(TransactionType type) throws IllegalArgumentException {
         switch(type) {
             case FRONTIER: return 0;
             case ACCESS_LIST: return 1;
             case EIP1559: return 2;
             case BLOB: return 3;
             case DELEGATE_CODE: return 4;
-            // TODO: default behavior expected
-            default: return -1;
+            default: throw new IllegalArgumentException("Unknown transaction type: " + type);
         }
     }
 
@@ -254,64 +253,5 @@ public class TransactionConverter {
 
             return fallbackTxEnv;
         }
-    }
-    
-    /**
-     * Convert with additional metadata
-     */
-    public static class TxEnvWithMetadata {
-        private final TxEnv txEnv;
-        private final String transactionHash;
-        private final String typeName;
-        private final int typeCode;
-        private final boolean isContractCreation;
-        
-        public TxEnvWithMetadata(TxEnv txEnv, String transactionHash, 
-                               String typeName, int typeCode, boolean isContractCreation) {
-            this.txEnv = txEnv;
-            this.transactionHash = transactionHash;
-            this.typeName = typeName;
-            this.typeCode = typeCode;
-            this.isContractCreation = isContractCreation;
-        }
-        
-        // Getters
-        public TxEnv getTxEnv() { return txEnv; }
-        public String getTransactionHash() { return transactionHash; }
-        public String getTypeName() { return typeName; }
-        public int getTypeCode() { return typeCode; }
-        public boolean isContractCreation() { return isContractCreation; }
-        
-        @Override
-        public String toString() {
-            return String.format("TxEnvWithMetadata{hash='%s', type='%s'(%d), isCreate=%b, txEnv=%s}",
-                transactionHash, typeName, typeCode, isContractCreation, txEnv);
-        }
-    }
-    
-    /**
-     * Convert transaction with metadata
-     */
-    public static TxEnvWithMetadata convertWithMetadata(Transaction transaction) {
-        TxEnv txEnv = convertToTxEnv(transaction);
-        String hash = transaction.getHash().toHexString();
-        String typeName = getTransactionTypeName(transaction);
-        int typeCode = getTransactionTypeAsInt(transaction);
-        boolean isCreate = transaction.getTo().isEmpty();
-        
-        return new TxEnvWithMetadata(txEnv, hash, typeName, typeCode, isCreate);
-    }
-    
-    /**
-     * Safe convert with metadata
-     */
-    public static TxEnvWithMetadata safeConvertWithMetadata(Transaction transaction) {
-        TxEnv txEnv = safeConvertToTxEnv(transaction);
-        String hash = transaction.getHash().toHexString();
-        String typeName = getTransactionTypeName(transaction);
-        int typeCode = getTransactionTypeAsInt(transaction);
-        boolean isCreate = transaction.getTo().isEmpty();
-        
-        return new TxEnvWithMetadata(txEnv, hash, typeName, typeCode, isCreate);
     }
 }
