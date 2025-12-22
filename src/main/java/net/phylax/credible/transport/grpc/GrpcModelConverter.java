@@ -101,19 +101,19 @@ public class GrpcModelConverter {
             .setTxType(Byte.toUnsignedInt(pojo.getTxType()))
             .setCaller(bytesToByteString(pojo.getCaller()))
             .setGasLimit(pojo.getGasLimit())
-            .setGasPrice(longToByteString(pojo.getGasPrice(), 16))
+            .setGasPrice(bytesToByteStringPadded(pojo.getGasPrice(), 32))
             .setTransactTo(bytesToByteString(pojo.getKind()))
             .setValue(bytesToByteStringPadded(pojo.getValue(), 32))
             .setData(bytesToByteString(pojo.getData()))
             .setNonce(pojo.getNonce())
-            .setMaxFeePerBlobGas(longToByteString(pojo.getMaxFeePerBlobGas(), 16));
+            .setMaxFeePerBlobGas(bytesToByteStringPadded(pojo.getMaxFeePerBlobGas(), 32));
 
         if (pojo.getChainId() != null) {
             builder.setChainId(pojo.getChainId());
         }
 
         if (pojo.getGasPriorityFee() != null) {
-            builder.setGasPriorityFee(longToByteString(pojo.getGasPriorityFee(), 16));
+            builder.setGasPriorityFee(bytesToByteStringPadded(pojo.getGasPriorityFee(), 32));
         }
 
         if (pojo.getBlobHashes() != null && !pojo.getBlobHashes().isEmpty()) {
