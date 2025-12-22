@@ -184,9 +184,22 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                 this::onTransactionResult,
                 error -> {
                     log.error("Results subscription error: {}", error.getMessage());
-                    activeTransports.remove(transport);
+                    removeTransport(transport);
                 }
             );
+        }
+    }
+
+    /**
+     * Remove transport from the list of active transports. This method centralizes managing active state,
+     * metrics and transport list.
+     * @param transport Transport to remove
+     */
+    private void removeTransport(ISidecarTransport transport) {
+        activeTransports.remove(transport);
+        metricsRegistry.registerActiveTransportsGauge(activeTransports::size);
+        if (activeTransports.isEmpty()) {
+            isActive.set(false);
         }
     }
 
@@ -221,7 +234,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                     ex.getMessage(),
                     ex.getCause() != null ? ex.getCause().getMessage() : "");
                 metricsRegistry.getErrorCounter().labels().inc();
-                activeTransports.remove(transport);
+                removeTransport(transport);
                 long latency = System.currentTimeMillis() - startTime;
                 return new TransportResponse(transport, false, ex.getMessage(), latency);
             });
@@ -256,7 +269,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                             ex.getMessage(),
                             ex.getCause() != null ? ex.getCause().getMessage() : "");
                         metricsRegistry.getErrorCounter().labels().inc();
-                        activeTransports.remove(transport);
+                        removeTransport(transport);
                     } else {
                         log.debug("SendTransactions response: count - {}, message - {}",
                             result.getRequestCount(),
@@ -365,7 +378,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                 return transport.sendReorg(reorgRequest)
                     .exceptionally(ex -> {
                         // Safe to remove with CopyOnWriteArrayList
-                        activeTransports.remove(transport);
+                        removeTransport(transport);
                         log.debug("Exception sending reorg request to transport {}: {}",
                             transport.toString(), ex.getMessage());
                         metricsRegistry.getErrorCounter().labels().inc();

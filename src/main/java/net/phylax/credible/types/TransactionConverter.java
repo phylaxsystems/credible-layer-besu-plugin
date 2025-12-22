@@ -2,6 +2,7 @@ package net.phylax.credible.types;
 
 import java.math.BigInteger;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -13,7 +14,7 @@ import org.hyperledger.besu.datatypes.VersionedHash;
 import net.phylax.credible.types.SidecarApiModels.TxEnv;
 
 public class TransactionConverter {
-    private static final List<SidecarApiModels.AccessListEntry> EMPTY_LIST = new ArrayList<>();
+    private static final List<SidecarApiModels.AccessListEntry> EMPTY_LIST = Collections.emptyList();
     private static final byte[] EMPTY_BYTES = new byte[0];
 
     /**
