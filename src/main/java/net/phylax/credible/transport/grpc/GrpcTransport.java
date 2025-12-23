@@ -23,6 +23,7 @@ import net.phylax.credible.types.SidecarApiModels;
 import net.phylax.credible.types.SidecarApiModels.ReorgEvent;
 import net.phylax.credible.types.SidecarApiModels.ReorgEventReqItem;
 import net.phylax.credible.types.SidecarApiModels.SendEventsRequest;
+import net.phylax.credible.types.SidecarApiModels.SendEventsRequestItem;
 import net.phylax.credible.types.SidecarApiModels.SendEventsResponse;
 import net.phylax.credible.types.SidecarApiModels.TransactionReqItem;
 import net.phylax.credible.types.SidecarApiModels.TransactionResult;
@@ -305,6 +306,14 @@ public class GrpcTransport implements ISidecarTransport {
         }
 
         return future;
+    }
+
+    @Override
+    public CompletableFuture<Boolean> sendEvent(SendEventsRequestItem event) {
+        return sendEvent(GrpcModelConverter.toProtoEvent(event))
+            .thenApply(ack -> {
+                return ack.getSuccess();
+            });
     }
 
     @Override
@@ -599,20 +608,6 @@ public class GrpcTransport implements ISidecarTransport {
 
             return channelBuilder.build();
         }
-    }
-
-    @Override
-    public CompletableFuture<Boolean> sendCommitHead(SidecarApiModels.CommitHead commitHead) {
-        SidecarApiModels.CommitHeadReqItem commitHeadItem = new SidecarApiModels.CommitHeadReqItem(commitHead);
-        Sidecar.Event event = GrpcModelConverter.toProtoEvent(commitHeadItem);
-
-        log.debug("Sending CommitHead for block {} with {} transactions",
-            commitHead.getBlockNumber(), commitHead.getNTransactions());
-
-        return sendEvent(event)
-            .thenApply(ack -> {
-                return ack.getSuccess();
-            });
     }
 
     @Override

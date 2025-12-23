@@ -22,8 +22,6 @@ import com.fasterxml.jackson.databind.json.JsonMapper;
 
 import lombok.extern.slf4j.Slf4j;
 import net.phylax.credible.transport.ISidecarTransport;
-import net.phylax.credible.types.SidecarApiModels.CommitHead;
-import net.phylax.credible.types.SidecarApiModels.CommitHeadReqItem;
 import net.phylax.credible.types.SidecarApiModels.CredibleLayerMethods;
 import net.phylax.credible.types.SidecarApiModels.GetTransactionRequest;
 import net.phylax.credible.types.SidecarApiModels.GetTransactionResponse;
@@ -32,6 +30,7 @@ import net.phylax.credible.types.SidecarApiModels.GetTransactionsResponse;
 import net.phylax.credible.types.SidecarApiModels.ReorgRequest;
 import net.phylax.credible.types.SidecarApiModels.ReorgResponse;
 import net.phylax.credible.types.SidecarApiModels.SendEventsRequest;
+import net.phylax.credible.types.SidecarApiModels.SendEventsRequestItem;
 import net.phylax.credible.types.SidecarApiModels.SendEventsResponse;
 import net.phylax.credible.types.SidecarApiModels.SendTransactionsRequest;
 import net.phylax.credible.types.SidecarApiModels.SendTransactionsResponse;
@@ -545,14 +544,14 @@ public class JsonRpcTransport implements ISidecarTransport {
     }
 
     @Override
-    public CompletableFuture<Boolean> sendCommitHead(CommitHead commitHead) {
+    public CompletableFuture<Boolean> sendEvent(SendEventsRequestItem event) {
         SendEventsRequest request = new SendEventsRequest();
-        request.getEvents().add(new CommitHeadReqItem(commitHead));
+        request.getEvents().add(event);
 
         return sendEvents(request)
             .thenApply(response -> "accepted".equals(response.getStatus()))
             .exceptionally(ex -> {
-                log.error("CommitHead failed for block {}: {}", commitHead.getBlockNumber(), ex.getMessage());
+                log.error("sendEvent failed: {}", ex.getMessage());
                 return false;
             });
     }
