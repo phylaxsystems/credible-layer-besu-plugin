@@ -23,7 +23,6 @@ import net.phylax.credible.types.SidecarApiModels.GetTransactionResponse;
 import net.phylax.credible.types.SidecarApiModels.NewIteration;
 import net.phylax.credible.types.SidecarApiModels.NewIterationReqItem;
 import net.phylax.credible.types.SidecarApiModels.CommitHead;
-import net.phylax.credible.types.SidecarApiModels.CommitHeadReqItem;
 import net.phylax.credible.types.SidecarApiModels.ReorgRequest;
 import net.phylax.credible.types.SidecarApiModels.ReorgResponse;
 import net.phylax.credible.types.SidecarApiModels.SendEventsRequest;
@@ -175,12 +174,10 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         long startTime = System.currentTimeMillis();
         metricsRegistry.getSidecarRpcCounter().labels(CredibleLayerMethods.SEND_EVENTS).inc();
 
-        var events = new SendEventsRequest();
-        events.getEvents().addLast(new CommitHeadReqItem(commitHead));
-        return transport.sendEvents(events)
-            .thenApply(sendEventsResponse -> {
+        return transport.sendCommitHead(commitHead)
+            .thenApply(status -> {
                 long latency = System.currentTimeMillis() - startTime;
-                return new TransportResponse(transport, "accepted".equals(sendEventsResponse.getStatus()), "Success", latency);
+                return new TransportResponse(transport, status, "Success", latency);
             })
             .exceptionally(ex -> {
                 log.debug("NewIteration error: {} - {}",
