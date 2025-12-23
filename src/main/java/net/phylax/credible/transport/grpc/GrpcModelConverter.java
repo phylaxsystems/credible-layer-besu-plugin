@@ -101,19 +101,19 @@ public class GrpcModelConverter {
             .setTxType(Byte.toUnsignedInt(pojo.getTxType()))
             .setCaller(bytesToByteString(pojo.getCaller()))
             .setGasLimit(pojo.getGasLimit())
-            .setGasPrice(bytesToByteStringPadded(pojo.getGasPrice(), 32))
+            .setGasPrice(bytesToByteStringPadded(pojo.getGasPrice(), 16))  // u128 = 16 bytes
             .setTransactTo(bytesToByteString(pojo.getKind()))
-            .setValue(bytesToByteStringPadded(pojo.getValue(), 32))
+            .setValue(bytesToByteStringPadded(pojo.getValue(), 32))  // U256 = 32 bytes
             .setData(bytesToByteString(pojo.getData()))
             .setNonce(pojo.getNonce())
-            .setMaxFeePerBlobGas(bytesToByteStringPadded(pojo.getMaxFeePerBlobGas(), 32));
+            .setMaxFeePerBlobGas(bytesToByteStringPadded(pojo.getMaxFeePerBlobGas(), 16));  // u128 = 16 bytes
 
         if (pojo.getChainId() != null) {
             builder.setChainId(pojo.getChainId());
         }
 
         if (pojo.getGasPriorityFee() != null) {
-            builder.setGasPriorityFee(bytesToByteStringPadded(pojo.getGasPriorityFee(), 32));
+            builder.setGasPriorityFee(bytesToByteStringPadded(pojo.getGasPriorityFee(), 16));  // u128 = 16 bytes
         }
 
         if (pojo.getBlobHashes() != null && !pojo.getBlobHashes().isEmpty()) {
@@ -390,24 +390,34 @@ public class GrpcModelConverter {
     }
 
     /**
-     * Convert byte array to ByteString with left-padding to specified length.
-     * Used for fixed-size fields like addresses (20 bytes), hashes (32 bytes), etc.
-     * @param bytes the source byte array
-     * @param targetLength target byte length for left-padding with zeros
+     * Convert byte array to ByteString with left-padding or truncation to specified length.
+     * Used for fixed-size fields like addresses (20 bytes), hashes (32 bytes), u128 (16 bytes), etc.
+     * For big-endian numeric values, this correctly handles both padding (adding leading zeros)
+     * and truncation (removing leading zeros when the value fits in fewer bytes).
+     * @param bytes the source byte array (big-endian)
+     * @param targetLength target byte length
      */
     private static ByteString bytesToByteStringPadded(byte[] bytes, int targetLength) {
         if (bytes == null || bytes.length == 0) {
             return ByteString.copyFrom(new byte[targetLength]);
         }
-        if (bytes.length >= targetLength) {
-            // Already at or exceeds target length, use as-is
+        if (bytes.length == targetLength) {
+            // Exact match, use as-is
             return ByteString.copyFrom(bytes);
         }
-        // Need to left-pad with zeros
-        byte[] padded = new byte[targetLength];
-        int offset = targetLength - bytes.length;
-        System.arraycopy(bytes, 0, padded, offset, bytes.length);
-        return ByteString.copyFrom(padded);
+        if (bytes.length < targetLength) {
+            // Need to left-pad with zeros
+            byte[] padded = new byte[targetLength];
+            int offset = targetLength - bytes.length;
+            System.arraycopy(bytes, 0, padded, offset, bytes.length);
+            return ByteString.copyFrom(padded);
+        }
+        // bytes.length > targetLength: take rightmost targetLength bytes (big-endian truncation)
+        // This is safe for numeric values where leading zeros don't change the value
+        byte[] truncated = new byte[targetLength];
+        int srcOffset = bytes.length - targetLength;
+        System.arraycopy(bytes, srcOffset, truncated, 0, targetLength);
+        return ByteString.copyFrom(truncated);
     }
 
     /**
