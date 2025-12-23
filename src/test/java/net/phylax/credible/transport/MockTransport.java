@@ -150,13 +150,13 @@ public class MockTransport implements ISidecarTransport {
     }
 
     @Override
-    public CompletableFuture<Boolean> sendCommitHead(CommitHead commitHead) {
+    public CompletableFuture<Boolean> sendEvent(SendEventsRequestItem event) {
         Executor delayedExecutor = CompletableFuture.delayedExecutor(
             processingLatency, TimeUnit.MILLISECONDS);
 
         return CompletableFuture.supplyAsync(() -> {
             if (throwOnSendEvents) {
-                throw new RuntimeException("SendCommitHead failed");
+                throw new RuntimeException("SendEvent failed");
             }
             return true;
         }, delayedExecutor);
