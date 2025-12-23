@@ -31,6 +31,39 @@ public class CredibleTransactionSelectorTest {
         }
         return bytes;
     }
+
+    // Helper to generate a CommitHead with realistic test values
+    private static CommitHead generateCommitHead(long blockNumber, int nTransactions, long iterationId) {
+        // Generate a deterministic last tx hash based on block number
+        byte[] lastTxHash = new byte[32];
+        for (int i = 0; i < 32; i++) {
+            lastTxHash[i] = (byte) ((blockNumber + i) & 0xFF);
+        }
+
+        // Generate a deterministic block hash
+        byte[] blockHash = new byte[32];
+        for (int i = 0; i < 32; i++) {
+            blockHash[i] = (byte) ((blockNumber * 2 + i) & 0xFF);
+        }
+
+        // Generate a deterministic parent beacon block root
+        byte[] parentBeaconBlockRoot = new byte[32];
+        for (int i = 0; i < 32; i++) {
+            parentBeaconBlockRoot[i] = (byte) ((blockNumber * 3 + i) & 0xFF);
+        }
+
+        long timestamp = 1700000000L + blockNumber * 12; // ~12 seconds per block
+
+        return new CommitHead(
+            lastTxHash,
+            nTransactions,
+            blockNumber,
+            iterationId,
+            blockHash,
+            parentBeaconBlockRoot,
+            timestamp
+        );
+    }
     private CredibleTransactionSelectorFactory factory = null;
     private MockTransport mockTransport = null;
     private ISidecarStrategy strategy = null;
@@ -74,6 +107,7 @@ public class CredibleTransactionSelectorTest {
         for(int i = 0; i < 10; i++) {
             var selector = factory.create(new SelectorsStateManager());
             final var operationTracer = selector.getOperationTracer();
+            strategy.commitHead(generateCommitHead(Long.valueOf(i), i, Long.valueOf(i + 1)), 100);
             operationTracer.traceStartBlock(new MockWorldView(), new MockProcessableBlockHeader(Long.valueOf(i)), null);
 
             var evaluationContext = new MockTransactionEvaluationContext("0x1");
@@ -112,7 +146,7 @@ public class CredibleTransactionSelectorTest {
         {
             var selector = (CredibleTransactionSelector) factoryWithTimeout.create(new SelectorsStateManager());
             var operationTracer = selector.getOperationTracer();
-            testStrategy.setNewHead("0x00000001", new CommitHead());
+            testStrategy.commitHead(generateCommitHead(1L, 0, 1L), 100);
             operationTracer.traceStartBlock(new MockWorldView(), new MockProcessableBlockHeader(1L), null);
 
             var evaluationContext = new MockTransactionEvaluationContext("0x1");
@@ -130,7 +164,7 @@ public class CredibleTransactionSelectorTest {
         {
             var selector = (CredibleTransactionSelector) factoryWithTimeout.create(new SelectorsStateManager());
             var operationTracer = selector.getOperationTracer();
-            testStrategy.setNewHead("0x00000002", new CommitHead());
+            testStrategy.commitHead(generateCommitHead(2L, 1, 2L), 100);
             operationTracer.traceStartBlock(new MockWorldView(), new MockProcessableBlockHeader(2L), null);
 
             // First transaction - should succeed (uses ~120ms of the 100ms budget, triggering timeout)
@@ -175,7 +209,7 @@ public class CredibleTransactionSelectorTest {
         {
             var selector = (CredibleTransactionSelector) factoryWithTimeout.create(new SelectorsStateManager());
             var operationTracer = selector.getOperationTracer();
-            testStrategy.setNewHead("0x00000003", new CommitHead());
+            testStrategy.commitHead(generateCommitHead(3L, 4, 3L), 100);
             operationTracer.traceStartBlock(new MockWorldView(), new MockProcessableBlockHeader(3L), null);
 
             var evaluationContext = new MockTransactionEvaluationContext("0x1");
@@ -194,7 +228,7 @@ public class CredibleTransactionSelectorTest {
     public void shouldUpdateIndexCorrectly() {
         var selector = (CredibleTransactionSelector) factory.create(new SelectorsStateManager());
         final var operationTracer = selector.getOperationTracer();
-        strategy.setNewHead("0x00000002", new CommitHead());
+        strategy.commitHead(generateCommitHead(1L, 0, 1L), 100);
         mockTransport.addFailingTx(hexToBytes("0x3"));
         
         operationTracer.traceStartBlock(new MockWorldView(), new MockProcessableBlockHeader(1L), null);

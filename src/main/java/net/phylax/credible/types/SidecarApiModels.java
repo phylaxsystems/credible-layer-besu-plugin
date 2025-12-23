@@ -272,18 +272,6 @@ public class SidecarApiModels {
             byte[] lastTxHash,
             Integer nTransactions,
             Long blockNumber,
-            Long selectedIterationId
-        ) {
-            this.lastTxHash = lastTxHash;
-            this.nTransactions = nTransactions;
-            this.blockNumber = blockNumber;
-            this.selectedIterationId = selectedIterationId;
-        }
-
-        public CommitHead(
-            byte[] lastTxHash,
-            Integer nTransactions,
-            Long blockNumber,
             Long selectedIterationId,
             byte[] blockHash,
             byte[] parentBeaconBlockRoot,

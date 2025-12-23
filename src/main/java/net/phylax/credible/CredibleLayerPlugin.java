@@ -427,8 +427,8 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
                 parentBeaconBlockRoot,
                 timestamp
             );
-
-            this.strategy.setNewHead(blockHash, newHead);
+        
+            this.strategy.commitHead(newHead, 100);
             lastBlockSent = blockHash;
 
             log.debug("Block Env sent, hash: {}", blockHash);

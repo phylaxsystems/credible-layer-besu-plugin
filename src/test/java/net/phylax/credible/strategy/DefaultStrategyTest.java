@@ -53,7 +53,10 @@ public class DefaultStrategyTest {
     }
 
     CommitHead generateNewCommitHead() {
-        return new CommitHead(hexToBytes("0x0000000000000000000000000000000000000001"), 1, 1L, 1L);
+        byte[] lastTxHash = hexToBytes("0x0000000000000000000000000000000000000001");
+        byte[] blockHash = hexToBytes("0x0000000000000000000000000000000000000002");
+        byte[] parentBeaconBlockRoot = hexToBytes("0x0000000000000000000000000000000000000003");
+        return new CommitHead(lastTxHash, 1, 1L, 1L, blockHash, parentBeaconBlockRoot, System.currentTimeMillis() / 1000);
     }
 
     SendTransactionsRequest generateTransactionRequest(byte[] hash) {
@@ -81,7 +84,7 @@ public class DefaultStrategyTest {
 
         var newIteration = generateNewIteration();
         var commitHead = generateNewCommitHead();
-        assertDoesNotThrow(() -> strategy.setNewHead("0x0000000000000000000000000000000000000001", commitHead));
+        assertDoesNotThrow(() -> strategy.commitHead(commitHead, 1000));
         assertDoesNotThrow(() -> strategy.newIteration(newIteration).join());
 
         return strategy;
@@ -272,7 +275,7 @@ public class DefaultStrategyTest {
         assertTrue(response.getFailure() == CredibleRejectionReason.NO_ACTIVE_TRANSPORT);
 
         // New block, activate again
-        strategy.setNewHead("0x0000000000000000000000000000000000000001", generateNewCommitHead());
+        strategy.commitHead(generateNewCommitHead(), 1000);
         strategy.newIteration(generateNewIteration()).join();
 
         response = sendTransaction(strategy);
