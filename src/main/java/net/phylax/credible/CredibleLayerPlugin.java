@@ -131,6 +131,13 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         private int aggregatedTimeout = 2000;
 
         @CommandLine.Option(
+            names = {"--plugin-credible-sidecar-commit-head-timeout-ms"},
+            description = "Timeout in ms for the sidecar when waiting for the processing of commitHead",
+            defaultValue = "50"
+        )
+        private int commitHeadTimeout = 50;
+
+        @CommandLine.Option(
             names = {"--plugin-credible-sidecar-grpc-endpoints"},
             description = "List of gRPC endpoints (format: host:port) - mutually exclusive with rpc-endpoints",
             paramLabel = "<host:port>",
@@ -162,6 +169,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         public int getWriteTimeout() { return writeTimeout; }
         public TransportType getTransportType() { return transportType; }
         public String getOtelEndpoint() { return otelEndpoint; }
+        public int getCommitHeadTimeout() { return commitHeadTimeout; }
     }
 
     private static CrediblePluginConfiguration config = null;
@@ -428,7 +436,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
                 timestamp
             );
         
-            this.strategy.commitHead(newHead, 100);
+            this.strategy.commitHead(newHead, config.getCommitHeadTimeout());
             lastBlockSent = blockHash;
 
             log.debug("Block Env sent, hash: {}", blockHash);
