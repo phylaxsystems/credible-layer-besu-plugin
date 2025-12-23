@@ -22,6 +22,8 @@ import com.fasterxml.jackson.databind.json.JsonMapper;
 
 import lombok.extern.slf4j.Slf4j;
 import net.phylax.credible.transport.ISidecarTransport;
+import net.phylax.credible.types.SidecarApiModels.CommitHead;
+import net.phylax.credible.types.SidecarApiModels.CommitHeadReqItem;
 import net.phylax.credible.types.SidecarApiModels.CredibleLayerMethods;
 import net.phylax.credible.types.SidecarApiModels.GetTransactionRequest;
 import net.phylax.credible.types.SidecarApiModels.GetTransactionResponse;
@@ -540,5 +542,18 @@ public class JsonRpcTransport implements ISidecarTransport {
             events,
             SendEventsResponse.class
         );
+    }
+
+    @Override
+    public CompletableFuture<Boolean> sendCommitHead(CommitHead commitHead) {
+        SendEventsRequest request = new SendEventsRequest();
+        request.getEvents().add(new CommitHeadReqItem(commitHead));
+
+        return sendEvents(request)
+            .thenApply(response -> "accepted".equals(response.getStatus()))
+            .exceptionally(ex -> {
+                log.error("CommitHead failed for block {}: {}", commitHead.getBlockNumber(), ex.getMessage());
+                return false;
+            });
     }
 }

@@ -11,6 +11,7 @@ public interface ISidecarTransport {
     CompletableFuture<GetTransactionResponse> getTransaction(GetTransactionRequest transactions);
     CompletableFuture<ReorgResponse> sendReorg(ReorgRequest reorgRequest);
     CompletableFuture<SendEventsResponse> sendEvents(SendEventsRequest events);
+    CompletableFuture<Boolean> sendCommitHead(CommitHead commitHead);
 
     /**
      * Subscribe to transaction results stream.
