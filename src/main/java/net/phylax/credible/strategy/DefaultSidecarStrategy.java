@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -40,7 +39,6 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
     private List<ISidecarTransport> activeTransports;
     private List<ISidecarTransport> fallbackTransports;
     // Future that holds the last block env sent to the sidecars
-    private Optional<CommitHead> maybeNewHead = Optional.empty();
 
     private AtomicBoolean isActive = new AtomicBoolean(false);
     private final Map<String, Long> blockHashToIterationId = new ConcurrentHashMap<>();
@@ -91,69 +89,21 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
     
     @Override
     public CompletableFuture<Void> newIteration(NewIteration iteration) {
-        Optional<CommitHead> commitHead = maybeNewHead;
         var sendEvents = assembleNewIterationRequest(iteration);
-        maybeNewHead = Optional.empty();
 
-        List<CompletableFuture<TransportResponse>> primaryFutures = primaryTransports.stream()
-            .map(transport -> sendIterationToTransport(sendEvents, transport))
-            .collect(Collectors.toList());
+        activeTransports.parallelStream()
+            .forEach(transport -> {
+                log.debug("Sending iteration {} for block number {}",
+                    iteration.getIterationId(),
+                    iteration.getBlockEnv().getNumber());
+                transport.sendEvents(sendEvents);
+            });
 
-        List<CompletableFuture<TransportResponse>> fallbackFutures = fallbackTransports.stream()
-            .map(transport -> sendIterationToTransport(sendEvents, transport))
-            .collect(Collectors.toList());
-
-        commitHead.ifPresent(head -> {
-            log.debug("Sending commit_head {} with {} transactions and iteration {} for block number {}",
-                head.getBlockNumber(),
-                head.getNTransactions(),
-                iteration.getIterationId(),
-                iteration.getBlockEnv().getNumber());
-        });
-
-        log.debug("Sending iteration {} for block number {} to {} primaries and {} fallbacks",
-            iteration.getIterationId(),
-            iteration.getBlockEnv().getNumber(),
-            primaryFutures.size(),
-            fallbackFutures.size());
-
-        CompletableFuture<Void> combinedFutures = CompletableFuture.allOf(
-            Stream.concat(primaryFutures.stream(), fallbackFutures.stream()).toArray(CompletableFuture[]::new));
-
-        if (commitHead.isEmpty()) {
-            return CompletableFuture.completedFuture(null);
-        }
-    
-        // Else send the new head and recalculate active transports
-        combinedFutures
-            .whenComplete((voidResult, exception) -> {
-                List<ISidecarTransport> successfulPrimaries = extractSuccessfulTransports(primaryFutures);
-                List<ISidecarTransport> successfulFallbacks = extractSuccessfulTransports(fallbackFutures);
-
-                if (!successfulPrimaries.isEmpty()) {
-                    updateActiveTransports(successfulPrimaries);
-                } else if (!successfulFallbacks.isEmpty()) {
-                    if (!primaryFutures.isEmpty()) {
-                        log.warn("Sending CommitHead to primary sidecars failed, using fallbacks");
-                    }
-                    updateActiveTransports(successfulFallbacks);
-                } else {
-                    log.warn("Sending CommitHead failed for all sidecars");
-                    isActive.set(false);
-                    activeTransports.clear();
-                    pendingTxRequests.clear();
-                }
-        }).join();
         return CompletableFuture.completedFuture(null);
     }
 
     private SendEventsRequest assembleNewIterationRequest(NewIteration iteration) {
         var sendEvents = new SendEventsRequest();
-
-        if (maybeNewHead.isPresent()) {
-            var newHead = new CommitHeadReqItem(maybeNewHead.get());
-            sendEvents.getEvents().addLast(newHead);
-        }
 
         var newIteration = new NewIterationReqItem(iteration);
         sendEvents.getEvents().addLast(newIteration);
@@ -221,13 +171,14 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         }
     }
     
-    private CompletableFuture<TransportResponse> sendIterationToTransport(SendEventsRequest events, ISidecarTransport transport) {
+    private CompletableFuture<TransportResponse> sendCommitHeadToTransport(CommitHead commitHead, ISidecarTransport transport) {
         long startTime = System.currentTimeMillis();
         metricsRegistry.getSidecarRpcCounter().labels(CredibleLayerMethods.SEND_EVENTS).inc();
-        return transport.sendEvents(events)
-            .thenApply(sendEventsResponse -> {
+
+        return transport.sendEvent(new CommitHeadReqItem(commitHead))
+            .thenApply(status -> {
                 long latency = System.currentTimeMillis() - startTime;
-                return new TransportResponse(transport, "accepted".equals(sendEventsResponse.getStatus()), "Success", latency);
+                return new TransportResponse(transport, status, "Success", latency);
             })
             .exceptionally(ex -> {
                 log.debug("NewIteration error: {} - {}",
@@ -406,14 +357,57 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
     }
 
     @Override
-    public void setNewHead(String blockhash, CommitHead newHead) {
-        var iterationId = blockHashToIterationId.get(blockhash);
-        if (iterationId == null) {
-            log.warn("No iteration id found for blockhash {}", blockhash);
+    public boolean commitHead(CommitHead commitHead, long timeoutMs) {
+        if (commitHead == null || commitHead.getBlockHash() == null) {
+            log.error("CommitHead not present!");
+            return false;
         }
+
+        // Fetch the iteration that maps to the commit head
+        String blockHashHex = ByteUtils.toHex(commitHead.getBlockHash());
+
+        if (blockHashHex == null) {
+            log.error("Block hash isn't in hex string format!");
+            return false;
+        }
+
+        var iterationId = blockHashToIterationId.get(blockHashHex);
         blockHashToIterationId.clear();
-        newHead.setSelectedIterationId(iterationId);
-        maybeNewHead = Optional.of(newHead);
+        commitHead.setSelectedIterationId(iterationId);
+
+        List<CompletableFuture<TransportResponse>> primaryFutures = primaryTransports.stream()
+            .map(transport -> sendCommitHeadToTransport(commitHead, transport))
+            .collect(Collectors.toList());
+
+        List<CompletableFuture<TransportResponse>> fallbackFutures = fallbackTransports.stream()
+            .map(transport -> sendCommitHeadToTransport(commitHead, transport))
+            .collect(Collectors.toList());
+
+        CompletableFuture<Void> combinedFutures = CompletableFuture.allOf(
+            Stream.concat(primaryFutures.stream(), fallbackFutures.stream()).toArray(CompletableFuture[]::new));
+    
+        // Else send the new head and recalculate active transports
+        combinedFutures
+            .whenComplete((voidResult, exception) -> {
+                List<ISidecarTransport> successfulPrimaries = extractSuccessfulTransports(primaryFutures);
+                List<ISidecarTransport> successfulFallbacks = extractSuccessfulTransports(fallbackFutures);
+
+                if (!successfulPrimaries.isEmpty()) {
+                    updateActiveTransports(successfulPrimaries);
+                } else if (!successfulFallbacks.isEmpty()) {
+                    if (!primaryFutures.isEmpty()) {
+                        log.warn("Sending CommitHead to primary sidecars failed, using fallbacks");
+                    }
+                    updateActiveTransports(successfulFallbacks);
+                } else {
+                    log.warn("Sending CommitHead failed for all sidecars");
+                    isActive.set(false);
+                    activeTransports.clear();
+                    pendingTxRequests.clear();
+                }
+        }).join();
+
+        return true;
     }
 
     @Override

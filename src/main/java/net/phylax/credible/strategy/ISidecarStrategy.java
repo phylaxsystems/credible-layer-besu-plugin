@@ -9,11 +9,15 @@ import net.phylax.credible.utils.Result;
 
 public interface ISidecarStrategy {
     /**
-     * When a new head is detected, this method is called to set the new head inside the strategy.
-     * @param blockHash
-     * @param newHead
+     * Sends a CommitHead to all transports and waits for acknowledgment.
+     * This method blocks until at least one transport acknowledges the commit head
+     * or all transports fail/timeout.
+     *
+     * @param commitHead the CommitHead to send
+     * @param timeoutMs maximum time to wait for acknowledgment in milliseconds
+     * @return true if at least one transport acknowledged successfully, false otherwise
      */
-    void setNewHead(String blockHash, CommitHead newHead);
+    boolean commitHead(CommitHead commitHead, long timeoutMs);
 
     /**
      * This method should be called when all transactions for an iteration are dispatched. It's marking

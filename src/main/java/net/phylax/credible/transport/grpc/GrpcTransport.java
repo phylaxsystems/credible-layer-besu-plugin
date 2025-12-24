@@ -5,6 +5,7 @@ import java.net.Socket;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
@@ -22,6 +23,7 @@ import net.phylax.credible.types.SidecarApiModels;
 import net.phylax.credible.types.SidecarApiModels.ReorgEvent;
 import net.phylax.credible.types.SidecarApiModels.ReorgEventReqItem;
 import net.phylax.credible.types.SidecarApiModels.SendEventsRequest;
+import net.phylax.credible.types.SidecarApiModels.SendEventsRequestItem;
 import net.phylax.credible.types.SidecarApiModels.SendEventsResponse;
 import net.phylax.credible.types.SidecarApiModels.TransactionReqItem;
 import net.phylax.credible.types.SidecarApiModels.TransactionResult;
@@ -184,9 +186,12 @@ public class GrpcTransport implements ISidecarTransport {
     /**
      * Send an event through the StreamEvents stream with ack confirmation.
      * Sends the event immediately and schedules async retries in the background if needed.
-     * This method returns immediately after the first send attempt.
+     * Returns a CompletableFuture that completes when the ack is received or fails after retries.
+     *
+     * @param event The event to send
+     * @return CompletableFuture that completes with StreamAck on success, or exceptionally on failure/timeout
      */
-    private void sendEvent(Sidecar.Event event) {
+    private CompletableFuture<Sidecar.StreamAck> sendEvent(Sidecar.Event event) {
         StreamObserver<Sidecar.Event> stream = getOrCreateEventStream();
 
         // Generate unique event_id and rebuild event with it
@@ -210,12 +215,15 @@ public class GrpcTransport implements ISidecarTransport {
                 log.error("Error sending event: {}", e.getMessage(), e);
                 streamConnected = false;
                 eventStreamRef.set(null);
-                throw new RuntimeException("Failed to send event", e);
+                ackFuture.completeExceptionally(new RuntimeException("Failed to send event", e));
+                return ackFuture;
             }
         }
 
-        // Schedule async ack handling with retries in background (even if the first attempt throws)
+        // Schedule async ack handling with retries in background
         scheduleAckHandling(event, eventId, ackFuture, 0);
+
+        return ackFuture;
     }
 
     /**
@@ -234,9 +242,11 @@ public class GrpcTransport implements ISidecarTransport {
                         log.debug("Ack timeout on attempt {} for event_id={}, retrying event async", attempt + 1, eventId);
                         retryEventAsync(event, eventId, ackFuture, attempt + 1);
                     } else {
-                        log.warn("Ack timeout after {} retries for event_id={}, proceeding without confirmation", MAX_RETRIES + 1, eventId);
+                        log.warn("Ack timeout after {} retries for event_id={}, completing exceptionally", MAX_RETRIES + 1, eventId);
                         pendingAcks.remove(eventId);
                         eventSendTimes.remove(eventId);
+                        ackFuture.completeExceptionally(
+                            new TimeoutException("Ack not received after " + (MAX_RETRIES + 1) + " attempts for event_id=" + eventId));
                     }
                 }
             });
@@ -296,6 +306,14 @@ public class GrpcTransport implements ISidecarTransport {
         }
 
         return future;
+    }
+
+    @Override
+    public CompletableFuture<Boolean> sendEvent(SendEventsRequestItem event) {
+        return sendEvent(GrpcModelConverter.toProtoEvent(event))
+            .thenApply(ack -> {
+                return ack.getSuccess();
+            });
     }
 
     @Override

@@ -149,6 +149,19 @@ public class MockTransport implements ISidecarTransport {
         }, delayedExecutor);
     }
 
+    @Override
+    public CompletableFuture<Boolean> sendEvent(SendEventsRequestItem event) {
+        Executor delayedExecutor = CompletableFuture.delayedExecutor(
+            processingLatency, TimeUnit.MILLISECONDS);
+
+        return CompletableFuture.supplyAsync(() -> {
+            if (throwOnSendEvents) {
+                throw new RuntimeException("SendEvent failed");
+            }
+            return true;
+        }, delayedExecutor);
+    }
+
     public void setSendTxStatus(String sendTxStatus) {
         this.sendTxStatus = sendTxStatus;
     }

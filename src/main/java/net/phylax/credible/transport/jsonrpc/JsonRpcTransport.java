@@ -30,6 +30,7 @@ import net.phylax.credible.types.SidecarApiModels.GetTransactionsResponse;
 import net.phylax.credible.types.SidecarApiModels.ReorgRequest;
 import net.phylax.credible.types.SidecarApiModels.ReorgResponse;
 import net.phylax.credible.types.SidecarApiModels.SendEventsRequest;
+import net.phylax.credible.types.SidecarApiModels.SendEventsRequestItem;
 import net.phylax.credible.types.SidecarApiModels.SendEventsResponse;
 import net.phylax.credible.types.SidecarApiModels.SendTransactionsRequest;
 import net.phylax.credible.types.SidecarApiModels.SendTransactionsResponse;
@@ -540,5 +541,18 @@ public class JsonRpcTransport implements ISidecarTransport {
             events,
             SendEventsResponse.class
         );
+    }
+
+    @Override
+    public CompletableFuture<Boolean> sendEvent(SendEventsRequestItem event) {
+        SendEventsRequest request = new SendEventsRequest();
+        request.getEvents().add(event);
+
+        return sendEvents(request)
+            .thenApply(response -> "accepted".equals(response.getStatus()))
+            .exceptionally(ex -> {
+                log.error("sendEvent failed: {}", ex.getMessage());
+                return false;
+            });
     }
 }

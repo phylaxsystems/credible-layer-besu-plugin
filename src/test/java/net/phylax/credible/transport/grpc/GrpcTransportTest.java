@@ -215,7 +215,10 @@ public class GrpcTransportTest {
             hexToBytes("0xabcdef1234567890"),  // lastTxHash
             10,                     // nTransactions
             12345L,                 // blockNumber
-            1L                      // selectedIterationId
+            1L,                     // selectedIterationId
+            hexToBytes("0x1234567890abcdef"),  // blockHash
+            hexToBytes("0xfedcba0987654321"),  // parentBeaconBlockRoot
+            1700000000L             // timestamp
         );
 
         SidecarApiModels.CommitHeadReqItem commitHeadItem =
@@ -417,7 +420,13 @@ public class GrpcTransportTest {
     public void testModelConversionsAreReversible() throws Exception {
         // Test that converting POJO → Proto → POJO maintains data integrity for SendEvents
         SidecarApiModels.CommitHead commitHead = new SidecarApiModels.CommitHead(
-            hexToBytes("0xaabbccdd11223344"), 5, 99999L, 1L
+            hexToBytes("0xaabbccdd11223344"),  // lastTxHash
+            5,                                  // nTransactions
+            99999L,                             // blockNumber
+            1L,                                 // selectedIterationId
+            hexToBytes("0x1122334455667788"),  // blockHash
+            hexToBytes("0x8877665544332211"),  // parentBeaconBlockRoot
+            1700000000L                         // timestamp
         );
 
         SidecarApiModels.CommitHeadReqItem commitHeadItem =

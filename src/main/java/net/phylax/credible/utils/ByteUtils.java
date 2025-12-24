@@ -20,7 +20,7 @@ public final class ByteUtils {
      */
     public static String toHex(byte[] bytes) {
         if (bytes == null) {
-            return "null";
+            return null;
         }
         if (bytes.length == 0) {
             return "0x";
