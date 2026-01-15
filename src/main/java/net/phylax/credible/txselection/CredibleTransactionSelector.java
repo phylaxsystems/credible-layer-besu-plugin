@@ -179,7 +179,7 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
     long blockNumber = evaluationContext.getPendingBlockHeader().getNumber();
 
     // Tx unselected due to rollback in a bundle
-    if ("SELETED_ROLLBACK".equals(reason)) {
+    if ("SELECTED_ROLLBACK".equals(reason)) {
       log.debug("Transaction {} is selected for rollback due to: {}", txHashHex, reason);
       rollbackBundledTxCounter += 1;
       return;

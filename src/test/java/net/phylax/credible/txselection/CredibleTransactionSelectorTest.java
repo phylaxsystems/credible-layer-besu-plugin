@@ -17,6 +17,8 @@ import org.hyperledger.besu.plugin.data.TransactionSelectionResult;
 import org.hyperledger.besu.plugin.services.txselection.SelectorsStateManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 public class CredibleTransactionSelectorTest {
 
@@ -306,6 +308,116 @@ public class CredibleTransactionSelectorTest {
         
 
         
+        operationTracer.traceEndBlock(new MockBlockHeader(1L), new MockBlockBody(1));
+    }
+
+    @Test
+    public void shouldSendReorgOnTransactionNotSelected() throws InterruptedException {
+        var selector = (CredibleTransactionSelector) factory.create(new SelectorsStateManager());
+        final var operationTracer = selector.getOperationTracer();
+        strategy.commitHead(generateCommitHead(1L, 0, 1L), 100);
+        mockTransport.clearReorgRequests();
+
+        operationTracer.traceStartBlock(new MockWorldView(), new MockProcessableBlockHeader(1L), null);
+
+        // TX1 - success
+        {
+            var evaluationContext = new MockTransactionEvaluationContext("0x1");
+            var preResult = simulatePreProcessing(selector, evaluationContext);
+            assertEquals(TransactionSelectionResult.SELECTED, preResult);
+            var postResult = simulatePostProcessing(selector, evaluationContext);
+            assertEquals(TransactionSelectionResult.SELECTED, postResult);
+        }
+
+        // TX2 - success
+        {
+            var evaluationContext = new MockTransactionEvaluationContext("0x2");
+            var preResult = simulatePreProcessing(selector, evaluationContext);
+            assertEquals(TransactionSelectionResult.SELECTED, preResult);
+            var postResult = simulatePostProcessing(selector, evaluationContext);
+            assertEquals(TransactionSelectionResult.SELECTED, postResult);
+        }
+
+        // TX3 - manually trigger reorg by calling onTransactionNotSelected
+        {
+            var evaluationContext = new MockTransactionEvaluationContext("0x3");
+            var preResult = simulatePreProcessing(selector, evaluationContext);
+            assertEquals(TransactionSelectionResult.SELECTED, preResult);
+            assertEquals(3, selector.getCurrentIndex());
+
+            // Directly call onTransactionNotSelected to trigger reorg
+            selector.onTransactionNotSelected(evaluationContext, TransactionSelectionResult.invalid("TX rejected"));
+        }
+
+        // Wait for async reorg request to be sent
+        Thread.sleep(100);
+
+        // Verify reorg was sent
+        var reorgRequests = mockTransport.getReorgRequests();
+        assertEquals(1, reorgRequests.size());
+
+        operationTracer.traceEndBlock(new MockBlockHeader(1L), new MockBlockBody(1));
+    }
+
+    @Test
+    public void shouldReorgBundleTransactions() throws InterruptedException {
+        var selector = (CredibleTransactionSelector) factory.create(new SelectorsStateManager());
+        final var operationTracer = selector.getOperationTracer();
+        strategy.commitHead(generateCommitHead(1L, 0, 1L), 100);
+        mockTransport.clearReorgRequests();
+
+        operationTracer.traceStartBlock(new MockWorldView(), new MockProcessableBlockHeader(1L), null);
+
+        // TX1 - success
+        {
+            var evaluationContext = new MockTransactionEvaluationContext("0x1");
+            var preResult = simulatePreProcessing(selector, evaluationContext);
+            assertEquals(TransactionSelectionResult.SELECTED, preResult);
+            var postResult = simulatePostProcessing(selector, evaluationContext);
+            assertEquals(TransactionSelectionResult.SELECTED, postResult);
+        }
+
+        // TX2 - success
+        {
+            var evaluationContext = new MockTransactionEvaluationContext("0x2a");
+            var preResult = simulatePreProcessing(selector, evaluationContext);
+            assertEquals(TransactionSelectionResult.SELECTED, preResult);
+            var postResult = simulatePostProcessing(selector, evaluationContext);
+            assertEquals(TransactionSelectionResult.SELECTED, postResult);
+        }
+
+        // TX3 - first 
+        {
+            var evaluationContext = new MockTransactionEvaluationContext("0x2b");
+            var preResult = simulatePreProcessing(selector, evaluationContext);
+            assertEquals(TransactionSelectionResult.SELECTED, preResult);
+            var postResult = simulatePostProcessing(selector, evaluationContext);
+            assertEquals(TransactionSelectionResult.SELECTED, postResult);
+        }
+
+        // TX4 - first 
+        {
+            var evaluationContext = new MockTransactionEvaluationContext("0x2c");
+            var preResult = simulatePreProcessing(selector, evaluationContext);
+            assertEquals(TransactionSelectionResult.SELECTED, preResult);
+            var postResult = simulatePostProcessing(selector, evaluationContext);
+            assertEquals(TransactionSelectionResult.SELECTED, postResult);
+        }
+
+        TransactionSelectionResult rollbackResult = mock(TransactionSelectionResult.class);
+        when(rollbackResult.toString()).thenReturn("SELECTED_ROLLBACK");
+        selector.onTransactionNotSelected(new MockTransactionEvaluationContext("0x2a"), rollbackResult);
+        selector.onTransactionNotSelected(new MockTransactionEvaluationContext("0x2b"), rollbackResult);
+        selector.onTransactionNotSelected(new MockTransactionEvaluationContext("0x2c"), TransactionSelectionResult.invalid("tx rejected"));
+        
+
+        // Wait for async reorg request to be sent
+        Thread.sleep(100);
+
+        // Verify reorg was sent
+        var reorgRequests = mockTransport.getReorgRequests();
+        assertEquals(1, reorgRequests.size());
+
         operationTracer.traceEndBlock(new MockBlockHeader(1L), new MockBlockBody(1));
     }
 }

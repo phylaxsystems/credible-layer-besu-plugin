@@ -8,7 +8,9 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
+import net.phylax.credible.types.SidecarApiModels;
 import net.phylax.credible.types.SidecarApiModels.*;
+import net.phylax.credible.utils.ByteUtils;
 
 public class MockTransport implements ISidecarTransport {
     private int processingLatency;
@@ -29,6 +31,9 @@ public class MockTransport implements ISidecarTransport {
 
     // List of tx hashes that return assertion_failed (stored as byte[])
     private List<byte[]> failingTransactions = new ArrayList<>();
+
+    // Track reorg requests for test verification
+    private List<String> reorgHashes = new ArrayList<>();
 
     // Helper to check if a byte[] matches any in the failing list
     private boolean isFailingTransaction(byte[] txHash) {
@@ -129,6 +134,7 @@ public class MockTransport implements ISidecarTransport {
 
     @Override
     public CompletableFuture<ReorgResponse> sendReorg(ReorgRequest reorgRequest) {
+        reorgHashes.add(ByteUtils.toHex(reorgRequest.getTxHash()));
         return CompletableFuture.completedFuture(new ReorgResponse(reorgSuccess, ""));
     }
 
@@ -137,6 +143,16 @@ public class MockTransport implements ISidecarTransport {
     public CompletableFuture<SendEventsResponse> sendEvents(SendEventsRequest events) {
         Executor delayedExecutor = CompletableFuture.delayedExecutor(
             processingLatency, TimeUnit.MILLISECONDS);
+
+        for(SendEventsRequestItem event : events.getEvents()) {
+           if (event instanceof SidecarApiModels.ReorgEventReqItem) {
+            ReorgEvent reorgEvent = ((SidecarApiModels.ReorgEventReqItem)event).getReorg();
+            reorgHashes.add(ByteUtils.toHex(reorgEvent.getTxExecutionId().getTxHash()));
+            for(var hash : reorgEvent.getTxHashes()) {
+                reorgHashes.add(ByteUtils.toHex(hash));
+            }
+           }
+        }
 
         return CompletableFuture.supplyAsync(() -> {
             if (throwOnSendEvents) {
@@ -208,6 +224,14 @@ public class MockTransport implements ISidecarTransport {
 
     public void addFailingTx(byte[] failingTx) {
         failingTransactions.add(failingTx);
+    }
+
+    public List<String> getReorgRequests() {
+        return reorgHashes;
+    }
+
+    public void clearReorgRequests() {
+        reorgHashes.clear();
     }
 
     @Override

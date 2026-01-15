@@ -105,9 +105,9 @@ repositories {
 
 dependencies {
     // Besu Plugin API and core dependencies
-    compileOnly 'org.hyperledger.besu:besu-plugin-api:25.11.0'
-    compileOnly 'org.hyperledger.besu:besu-evm:25.11.0'
-    compileOnly 'org.hyperledger.besu:besu-datatypes:25.11.0'
+    compileOnly 'org.hyperledger.besu:besu-plugin-api:25.12.0'
+    compileOnly 'org.hyperledger.besu:besu-evm:25.12.0'
+    compileOnly 'org.hyperledger.besu:besu-datatypes:25.12.0'
 
     implementation 'io.consensys.tuweni:tuweni-units:2.7.1'
     
@@ -141,9 +141,9 @@ dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.9.2'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.8.2'
     testImplementation 'org.mockito:mockito-core:5.+'
-    testImplementation 'org.hyperledger.besu:besu-plugin-api:25.9.0'
-    testImplementation 'org.hyperledger.besu:besu-evm:25.9.0'
-    testImplementation 'org.hyperledger.besu:besu-datatypes:25.9.0'
+    testImplementation 'org.hyperledger.besu:besu-plugin-api:25.12.0'
+    testImplementation 'org.hyperledger.besu:besu-evm:25.12.0'
+    testImplementation 'org.hyperledger.besu:besu-datatypes:25.12.0'
     testImplementation 'org.apache.logging.log4j:log4j-slf4j-impl:2.20.0'
     testImplementation 'io.grpc:grpc-testing:1.75.0'
     testImplementation 'io.grpc:grpc-inprocess:1.75.0'
