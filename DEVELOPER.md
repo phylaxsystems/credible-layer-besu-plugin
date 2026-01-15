@@ -23,7 +23,6 @@ Plugins are loaded by the Besu node at startup and registered in the plugin mana
 
 For more information on the BesuPlugin mechanism, refer to the [Besu Plugin API documentation](https://besu.hyperledger.org/public-networks/reference/plugin-api-interfaces).
 
-
 ## Terminology
 
 - `Transaction selection` - the process inside of the block builder to include or exclude a transaction from the block that's currently built
