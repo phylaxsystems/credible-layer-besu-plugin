@@ -201,6 +201,9 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
     for(int i = 0; i < rollbackBundledTxCounter; i++) {
       reorgTxHashes.addFirst(transactions.removeLast().getTxHash());
     }
+
+    // Add the tx that triggered the reorg
+    reorgTxHashes.add(txHashBytes);
     
     try {
       log.debug("Sending reorg request for transaction {} due to: {}, reorgHashes: {}", txHashHex, reason, reorgTxHashes);

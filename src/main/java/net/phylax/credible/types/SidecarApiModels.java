@@ -521,7 +521,7 @@ public class SidecarApiModels {
                 request.getIterationId(),
                 request.getTxHash(),
                 request.getIndex()
-            ), new ArrayList<>());
+            ), request.txHashes);
         }
 
         public TxExecutionId getTxExecutionId() { return txExecutionId; }
