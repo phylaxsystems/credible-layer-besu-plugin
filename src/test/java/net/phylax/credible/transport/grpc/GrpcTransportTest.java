@@ -395,7 +395,7 @@ public class GrpcTransportTest {
     public void testSendReorg() throws Exception {
         // Create reorg request with TxExecutionId
         SidecarApiModels.ReorgRequest request =
-            new SidecarApiModels.ReorgRequest(12345L, 1L, hexToBytes("0xaabbccdd112233445566778899aabbccddeeff00"), 0);
+            new SidecarApiModels.ReorgRequest(12345L, 1L, hexToBytes("0xaabbccdd112233445566778899aabbccddeeff00"), 0, new ArrayList<>());
 
         // Send the request
         CompletableFuture<SidecarApiModels.ReorgResponse> future = transport.sendReorg(request);
