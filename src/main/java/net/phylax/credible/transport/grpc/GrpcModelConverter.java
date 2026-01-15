@@ -238,9 +238,17 @@ public class GrpcModelConverter {
      * Convert ReorgEvent POJO to ReorgEvent protobuf
      */
     private static Sidecar.ReorgEvent toProtoReorgEvent(SidecarApiModels.ReorgEvent reorg) {
-        return Sidecar.ReorgEvent.newBuilder()
-            .setTxExecutionId(toProtoTxExecutionId(reorg.getTxExecutionId()))
-            .build();
+        Sidecar.ReorgEvent.Builder builder = Sidecar.ReorgEvent.newBuilder()
+            .setTxExecutionId(toProtoTxExecutionId(reorg.getTxExecutionId()));
+
+        if (reorg.getTxHashes() != null && !reorg.getTxHashes().isEmpty()) {
+            List<ByteString> txHashes = reorg.getTxHashes().stream()
+                .map(h -> bytesToByteString(h))
+                .collect(Collectors.toList());
+            builder.addAllTxHashes(txHashes);
+        }
+
+        return builder.build();
     }
 
     /**
