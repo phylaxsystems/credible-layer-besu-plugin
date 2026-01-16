@@ -206,7 +206,7 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
     reorgTxHashes.add(txHashBytes);
     
     try {
-      log.debug("Sending reorg request for transaction {} due to: {}, reorgHashes: {}", txHashHex, reason, reorgTxHashes);
+      log.debug("Sending reorg request for transaction {} due to: {}, reorgHashes: {}", txHashHex, reason, reorgTxHashes.stream().map(ByteUtils::toHex).toList());
 
       // Create TxExecutionId with block number, iteration ID, and transaction hash (as byte[])
       ReorgRequest reorgRequest = new ReorgRequest(blockNumber, iterationId, txHashBytes, index, reorgTxHashes);
