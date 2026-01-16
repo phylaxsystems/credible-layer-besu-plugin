@@ -51,6 +51,8 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
   private List<TxExecutionId> transactions = new ArrayList<>();
   // Aggregated time for pre and post processing within a single iteration
   private long aggregatedTimeExecutionMicros = 0;
+  // Keeps track of the transactions in a bundle that have been selected but rollbacked
+  private long rollbackBundledTxCounter = 0;
 
   public CredibleTransactionSelector(
     final Config config,
@@ -176,6 +178,13 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
     String reason = transactionSelectionResult.toString();
     long blockNumber = evaluationContext.getPendingBlockHeader().getNumber();
 
+    // Tx unselected due to rollback in a bundle
+    if ("SELECTED_ROLLBACK".equals(reason)) {
+      log.debug("Transaction {} is selected for rollback due to: {}", txHashHex, reason);
+      rollbackBundledTxCounter += 1;
+      return;
+    }
+
     // If we didn't process the tx, nothing to do
     byte[] lastTxHash = getLastTxHash();
     if (lastTxHash == null || !java.util.Arrays.equals(txHashBytes, lastTxHash)) {
@@ -183,26 +192,36 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
       return;
     }
 
+    // remove last rollbackTxCounter + 1 transactions
     transactions.remove(transactions.size() - 1);
     long index = transactions.size();
 
+    // List of tx hashes that need to be reorged
+    List<byte[]> reorgTxHashes = new ArrayList<>();
+    for(int i = 0; i < rollbackBundledTxCounter; i++) {
+      reorgTxHashes.addFirst(transactions.removeLast().getTxHash());
+    }
+
+    // Add the tx that triggered the reorg
+    reorgTxHashes.add(txHashBytes);
+    
     try {
-        log.debug("Sending reorg request for transaction {} due to: {}", txHashHex, reason);
+      log.debug("Sending reorg request for transaction {} due to: {}, reorgHashes: {}", txHashHex, reason, reorgTxHashes.stream().map(ByteUtils::toHex).toList());
 
-        // Create TxExecutionId with block number, iteration ID, and transaction hash (as byte[])
-        ReorgRequest reorgRequest = new ReorgRequest(blockNumber, iterationId, txHashBytes, index);
-        config.strategy.sendReorgRequest(reorgRequest)
-          .whenComplete((res, ex) -> {
-            if (ex != null) {
-              log.error("Failed to send reorg request for transaction {}: {}", txHashHex, ex.getMessage(), ex);
-              return;
-            }
-            log.debug("Reorg request successful for transaction {}, got {} responses", txHashHex, res.size());
-          });
-
-
+      // Create TxExecutionId with block number, iteration ID, and transaction hash (as byte[])
+      ReorgRequest reorgRequest = new ReorgRequest(blockNumber, iterationId, txHashBytes, index, reorgTxHashes);
+      config.strategy.sendReorgRequest(reorgRequest)
+        .whenComplete((res, ex) -> {
+          if (ex != null) {
+            log.error("Failed to send reorg request for transaction {}: {}", txHashHex, ex.getMessage(), ex);
+            return;
+          }
+          log.debug("Reorg request successful for transaction {}, got {} responses", txHashHex, res.size());
+        });
     } catch (Exception e) {
         log.error("Failed to send reorg request for transaction {}: {}", txHashHex, e.getMessage(), e);
+    } finally {
+      rollbackBundledTxCounter = 0;
     }
   }
 

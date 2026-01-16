@@ -12,6 +12,7 @@ import net.phylax.credible.utils.ByteUtils;
 import java.util.List;
 import java.util.Objects;
 import java.util.ArrayList;
+import java.util.Arrays;
 
 public class SidecarApiModels {
 
@@ -501,11 +502,17 @@ public class SidecarApiModels {
         @JsonProperty("tx_execution_id")
         private TxExecutionId txExecutionId;
 
+        @JsonProperty("tx_hashes")
+        private List<byte[]> txHashes;
+
         public ReorgEvent() {}
 
         @JsonCreator
-        public ReorgEvent(@JsonProperty("tx_execution_id") TxExecutionId txExecutionId) {
+        public ReorgEvent(
+                @JsonProperty("tx_execution_id") TxExecutionId txExecutionId,
+                @JsonProperty("tx_hashes") List<byte[]> txHashes) {
             this.txExecutionId = txExecutionId;
+            this.txHashes = txHashes;
         }
 
         public static ReorgEvent fromReorgRequest(ReorgRequest request) {
@@ -514,11 +521,14 @@ public class SidecarApiModels {
                 request.getIterationId(),
                 request.getTxHash(),
                 request.getIndex()
-            ));
+            ), request.txHashes);
         }
 
         public TxExecutionId getTxExecutionId() { return txExecutionId; }
         public void setTxExecutionId(TxExecutionId txExecutionId) { this.txExecutionId = txExecutionId; }
+
+        public List<byte[]> getTxHashes() { return txHashes; }
+        public void setTxHashes(List<byte[]> txHashes) { this.txHashes = txHashes; }
     }
 
     /**
@@ -576,18 +586,23 @@ public class SidecarApiModels {
         @JsonIgnore
         private long index;
 
+        @JsonIgnore
+        private List<byte[]> txHashes;
+
         public ReorgRequest() {}
 
         public ReorgRequest(
             Long blockNumber,
             Long iterationId,
             byte[] txHash,
-            long index
+            long index,
+            List<byte[]> txHashes
         ) {
             this.blockNumber = blockNumber;
             this.iterationId = iterationId;
             this.txHash = txHash;
             this.index = index;
+            this.txHashes = txHashes;
         }
 
         public static ReorgRequest fromTxExecutionId(TxExecutionId txExecutionId) {
@@ -595,7 +610,8 @@ public class SidecarApiModels {
                 txExecutionId.getBlockNumber(),
                 txExecutionId.getIterationId(),
                 txExecutionId.getTxHash(),
-                txExecutionId.getIndex()
+                txExecutionId.getIndex(),
+                new ArrayList<>()
             );
         }
 
