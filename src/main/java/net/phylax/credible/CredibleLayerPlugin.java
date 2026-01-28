@@ -1,9 +1,7 @@
 package net.phylax.credible;
 
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -26,7 +24,6 @@ import net.phylax.credible.strategy.DefaultSidecarStrategy;
 import net.phylax.credible.strategy.ISidecarStrategy;
 import net.phylax.credible.transport.ISidecarTransport;
 import net.phylax.credible.transport.grpc.GrpcTransport;
-import net.phylax.credible.transport.jsonrpc.JsonRpcTransport;
 import net.phylax.credible.txselection.CredibleTransactionSelector;
 import net.phylax.credible.txselection.CredibleTransactionSelectorFactory;
 import net.phylax.credible.types.SidecarApiModels.CommitHead;
@@ -57,51 +54,6 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         mixinStandardHelpOptions = false
     )
     public static class CrediblePluginConfiguration {
-        public enum TransportType {
-            HTTP,
-            GRPC
-        }
-
-        @CommandLine.Option(
-            names = {"--plugin-credible-sidecar-transport-type"},
-            description = "Transport type for the Credible sidecar (http, grpc)",
-            defaultValue = "http",
-            converter = TransportTypeConverter.class
-        )
-        private TransportType transportType = TransportType.HTTP;
-
-        static class TransportTypeConverter implements CommandLine.ITypeConverter<TransportType> {
-            @Override
-            public TransportType convert(String value) {
-                if (value == null) {
-                    throw new CommandLine.TypeConversionException("Transport type cannot be null");
-                }
-
-                try {
-                    return TransportType.valueOf(value.trim().toUpperCase(Locale.ROOT));
-                } catch (IllegalArgumentException ex) {
-                    throw new CommandLine.TypeConversionException(
-                        "Invalid transport type '" + value + "'. Expected one of: http, grpc.");
-                }
-            }
-        }
-
-        @CommandLine.Option(
-            names = {"--plugin-credible-sidecar-rpc-endpoints"},
-            description = "List of RPC endpoints to connect to the Credible sidecars",
-            paramLabel = "<url>",
-            split = ","
-        )
-        private List<String> rpcEndpoints;
-
-        @CommandLine.Option(
-            names = {"--plugin-credible-sidecar-rpc-fallback-endpoints"},
-            description = "List of fallback RPC endpoints",
-            paramLabel = "<url>",
-            split = ","
-        )
-        private List<String> fallbackEndpoints;
-
         @CommandLine.Option(
             names = {"--plugin-credible-sidecar-read-timeout-ms"},
             description = "Request timeout in ms for any request to the Sidecar RPC",
@@ -139,7 +91,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
 
         @CommandLine.Option(
             names = {"--plugin-credible-sidecar-grpc-endpoints"},
-            description = "List of gRPC endpoints (format: host:port) - mutually exclusive with rpc-endpoints",
+            description = "List of gRPC endpoints (format: host:port)",
             paramLabel = "<host:port>",
             split = ","
         )
@@ -159,15 +111,12 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         )
         private String otelEndpoint = null;
 
-        public List<String> getRpcEndpoints() { return rpcEndpoints; }
-        public List<String> getFallbackEndpoints() { return fallbackEndpoints; }
         public List<String> getGrpcEndpoints() { return grpcEndpoints; }
         public List<String> getGrpcFallbackEndpoints() { return grpcFallbackEndpoints; }
         public int getProcessingTimeout() { return processingTimeout; }
         public int getAggregatedTimeout() { return aggregatedTimeout; }
         public int getReadTimeout() { return readTimeout; }
         public int getWriteTimeout() { return writeTimeout; }
-        public TransportType getTransportType() { return transportType; }
         public String getOtelEndpoint() { return otelEndpoint; }
         public int getCommitHeadTimeout() { return commitHeadTimeout; }
     }
@@ -212,27 +161,14 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         
     @Override
     public void start() {
-        // Validate configuration: the selected transport must be configured
+        // Validate configuration: gRPC endpoints must be configured
         validateTransportConfiguration();
 
-        // Determine which transport type should be used
-        var transportType = config.getTransportType();
-        boolean isJsonRpc = transportType == CrediblePluginConfiguration.TransportType.HTTP;
-
-        if (isJsonRpc) {
-            log.info(
-                "Starting plugin with JSON-RPC transport to {}: readTimeout {}, writeTimeout {}, processingTimeout {}",
-                String.join(", ", config.getRpcEndpoints()),
-                config.getReadTimeout(),
-                config.getWriteTimeout(),
-                config.getProcessingTimeout());
-        } else {
-            log.info(
-                "Starting plugin with gRPC transport to {}: deadlineTimeout {}, processingTimeout {}",
-                String.join(", ", config.getGrpcEndpoints()),
-                config.getReadTimeout(),
-                config.getProcessingTimeout());
-        }
+        log.info(
+            "Starting plugin with gRPC transport to {}: deadlineTimeout {}, processingTimeout {}",
+            String.join(", ", config.getGrpcEndpoints()),
+            config.getReadTimeout(),
+            config.getProcessingTimeout());
 
         besuEvents = serviceManager
             .getService(BesuEvents.class)
@@ -252,13 +188,8 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         List<ISidecarTransport> primaryTransports;
         List<ISidecarTransport> fallbackTransports;
 
-        if (isJsonRpc) {
-            primaryTransports = createJsonRpcTransports(config.getRpcEndpoints());
-            fallbackTransports = createJsonRpcTransports(config.getFallbackEndpoints());
-        } else {
-            primaryTransports = createGrpcTransports(config.getGrpcEndpoints());
-            fallbackTransports = createGrpcTransports(config.getGrpcFallbackEndpoints());
-        }
+        primaryTransports = createGrpcTransports(config.getGrpcEndpoints());
+        fallbackTransports = createGrpcTransports(config.getGrpcFallbackEndpoints());
 
         strategy = new DefaultSidecarStrategy(primaryTransports, fallbackTransports, config.getProcessingTimeout(), metricsRegistry);
 
@@ -270,60 +201,15 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
     }
 
     /**
-     * Validate that the selected transport type has the required endpoints configured.
+     * Validate that gRPC endpoints are configured.
      */
     private void validateTransportConfiguration() {
-        boolean hasJsonRpc = isNotEmpty(config.getRpcEndpoints());
-        boolean hasGrpc = isNotEmpty(config.getGrpcEndpoints());
-        var transportType = config.getTransportType();
-
-        switch (transportType) {
-            case HTTP:
-                if (!hasJsonRpc) {
-                    throw new IllegalStateException(
-                        "Transport type HTTP selected but no RPC endpoints configured. Please specify:\n" +
-                        "  --plugin-credible-sidecar-rpc-endpoints"
-                    );
-                }
-                if (hasGrpc) {
-                    log.warn("gRPC endpoints are configured but transport type is HTTP; the gRPC endpoints will be ignored");
-                }
-                break;
-            case GRPC:
-                if (!hasGrpc) {
-                    throw new IllegalStateException(
-                        "Transport type gRPC selected but no gRPC endpoints configured. Please specify:\n" +
-                        "  --plugin-credible-sidecar-grpc-endpoints"
-                    );
-                }
-                if (hasJsonRpc) {
-                    log.warn("JSON-RPC endpoints are configured but transport type is gRPC; the JSON-RPC endpoints will be ignored");
-                }
-                break;
-            default:
-                log.warn("No transport type has been selected!");
+        if (!isNotEmpty(config.getGrpcEndpoints())) {
+            throw new IllegalStateException(
+                "No gRPC endpoints configured. Please specify:\n" +
+                "  --plugin-credible-sidecar-grpc-endpoints"
+            );
         }
-
-        if (!hasJsonRpc && !hasGrpc) {
-            log.warn("No transport endpoints configured, plugin will be disabled.");
-        }
-    }
-
-    /**
-     * Create JSON-RPC transports from endpoint URLs
-     */
-    private List<ISidecarTransport> createJsonRpcTransports(List<String> endpoints) {
-        if (endpoints == null || endpoints.isEmpty()) {
-            return List.of();
-        }
-        return endpoints.stream()
-            .map(endpoint -> new JsonRpcTransport.Builder()
-                    .readTimeout(Duration.ofMillis(config.getReadTimeout()))
-                    .writeTimeout(Duration.ofMillis(config.getWriteTimeout()))
-                    .metricsRegistry(metricsRegistry)
-                    .baseUrl(endpoint)
-                    .build())
-            .collect(Collectors.toList());
     }
 
     /**
