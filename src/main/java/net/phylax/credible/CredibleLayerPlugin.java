@@ -2,7 +2,6 @@ package net.phylax.credible;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -55,33 +54,6 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         mixinStandardHelpOptions = false
     )
     public static class CrediblePluginConfiguration {
-        public enum TransportType {
-            GRPC
-        }
-
-        @CommandLine.Option(
-            names = {"--plugin-credible-sidecar-transport-type"},
-            description = "Transport type for the Credible sidecar (grpc)",
-            defaultValue = "grpc",
-            converter = TransportTypeConverter.class
-        )
-        private TransportType transportType = TransportType.GRPC;
-        static class TransportTypeConverter implements CommandLine.ITypeConverter<TransportType> {
-            @Override
-            public TransportType convert(String value) {
-                if (value == null) {
-                    throw new CommandLine.TypeConversionException("Transport type cannot be null");
-                }
-
-                try {
-                    return TransportType.valueOf(value.trim().toUpperCase(Locale.ROOT));
-                } catch (IllegalArgumentException ex) {
-                    throw new CommandLine.TypeConversionException(
-                        "Invalid transport type '" + value + "'. Expected one of: grpc.");
-                }
-            }
-        }
-
         @CommandLine.Option(
             names = {"--plugin-credible-sidecar-read-timeout-ms"},
             description = "Request timeout in ms for any request to the Sidecar RPC",
@@ -145,7 +117,6 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         public int getAggregatedTimeout() { return aggregatedTimeout; }
         public int getReadTimeout() { return readTimeout; }
         public int getWriteTimeout() { return writeTimeout; }
-        public TransportType getTransportType() { return transportType; }
         public String getOtelEndpoint() { return otelEndpoint; }
         public int getCommitHeadTimeout() { return commitHeadTimeout; }
     }
@@ -190,11 +161,9 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         
     @Override
     public void start() {
-        // Validate configuration: the selected transport must be configured
+        // Validate configuration: gRPC endpoints must be configured
         validateTransportConfiguration();
 
-        // Determine which transport type should be used
-        var transportType = config.getTransportType();
         log.info(
             "Starting plugin with gRPC transport to {}: deadlineTimeout {}, processingTimeout {}",
             String.join(", ", config.getGrpcEndpoints()),
@@ -232,27 +201,14 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
     }
 
     /**
-     * Validate that the selected transport type has the required endpoints configured.
+     * Validate that gRPC endpoints are configured.
      */
     private void validateTransportConfiguration() {
-        boolean hasGrpc = isNotEmpty(config.getGrpcEndpoints());
-        var transportType = config.getTransportType();
-
-        switch (transportType) {
-            case GRPC:
-                if (!hasGrpc) {
-                    throw new IllegalStateException(
-                        "Transport type gRPC selected but no gRPC endpoints configured. Please specify:\n" +
-                        "  --plugin-credible-sidecar-grpc-endpoints"
-                    );
-                }
-                break;
-            default:
-                log.warn("No transport type has been selected!");
-        }
-
-        if (!hasGrpc) {
-            log.warn("No transport endpoints configured, plugin will be disabled.");
+        if (!isNotEmpty(config.getGrpcEndpoints())) {
+            throw new IllegalStateException(
+                "No gRPC endpoints configured. Please specify:\n" +
+                "  --plugin-credible-sidecar-grpc-endpoints"
+            );
         }
     }
 
