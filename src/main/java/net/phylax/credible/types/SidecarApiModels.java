@@ -1,12 +1,5 @@
 package net.phylax.credible.types;
 
-import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.annotation.JsonSubTypes;
-import com.fasterxml.jackson.annotation.JsonTypeInfo;
-
 import net.phylax.credible.utils.ByteUtils;
 
 import java.util.List;
@@ -30,49 +23,34 @@ public class SidecarApiModels {
      * Updated to match API specification field names.
      * Binary fields (addresses, hashes, values) use byte[] to avoid unnecessary hex string conversions.
      */
-    @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class TxEnv {
 
-        @JsonIgnore
         private byte txType; // u8 -> byte
 
-        @JsonIgnore
         private byte[] caller; // 20 bytes - sender address
 
-        @JsonIgnore
         private Long gasLimit; // u64 -> Long
 
-        @JsonIgnore
         private byte[] gasPrice; // 32 bytes - U256 big-endian
 
-        @JsonIgnore
         private byte[] kind; // 20 bytes or empty for contract creation
 
-        @JsonIgnore
         private byte[] value; // 32 bytes - U256 big-endian
 
-        @JsonIgnore
         private byte[] data; // calldata bytes (variable length)
 
-        @JsonIgnore
         private Long nonce; // u64 -> Long
 
-        @JsonIgnore
         private Long chainId; // u64 -> Long
 
-        @JsonIgnore
         private List<AccessListEntry> accessList; // AccessList
 
-        @JsonIgnore
         private byte[] maxFeePerBlobGas; // 32 bytes - U256 big-endian
 
-        @JsonIgnore
         private byte[] gasPriorityFee; // 32 bytes - U256 big-endian
 
-        @JsonIgnore
         private List<byte[]> blobHashes = new ArrayList<>();
 
-        @JsonIgnore
         private List<AuthorizationListEntry> authorizationList = new ArrayList<>();
 
         // Constructors
@@ -155,24 +133,17 @@ public class SidecarApiModels {
     }
     
     // AuthorizationList Entry - EIP-7702 authorization
-    @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class AuthorizationListEntry {
-        @JsonIgnore
         private Long chainId;
 
-        @JsonIgnore
         private Long nonce;
 
-        @JsonIgnore
         private byte[] address; // 20 bytes - authorized address
 
-        @JsonIgnore
         private byte v;
 
-        @JsonIgnore
         private byte[] r; // 32 bytes - signature r
 
-        @JsonIgnore
         private byte[] s; // 32 bytes - signature s
 
         public AuthorizationListEntry() {}
@@ -213,12 +184,9 @@ public class SidecarApiModels {
     }
 
     // AccessList Entry - EIP-2930 access list item
-    @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class AccessListEntry {
-        @JsonIgnore
         private byte[] address; // 20 bytes - account address
 
-        @JsonIgnore
         private List<byte[]> storageKeys; // 32 bytes each - storage slot keys
 
         public AccessListEntry() {}
@@ -244,27 +212,19 @@ public class SidecarApiModels {
 
     // ==================== REQUEST MODELS ====================
 
-    @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class CommitHead {
-        @JsonIgnore
         private byte[] lastTxHash; // 32 bytes - last TX hash
 
-        @JsonIgnore
         private Integer nTransactions;
 
-        @JsonIgnore
         private Long blockNumber;
 
-        @JsonIgnore
         private Long selectedIterationId;
 
-        @JsonIgnore
         private byte[] blockHash;
 
-        @JsonIgnore
         private byte[] parentBeaconBlockRoot;
 
-        @JsonIgnore
         private Long timestamp;
 
         public CommitHead() {}
@@ -312,30 +272,21 @@ public class SidecarApiModels {
     /**
      * Block environment data
      */
-    @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class BlockEnv {
-        @JsonIgnore
         private Long number;
 
-        @JsonIgnore
         private byte[] beneficiary; // 20 bytes - coinbase address
 
-        @JsonIgnore
         private Long timestamp;
 
-        @JsonIgnore
         private Long gasLimit;
 
-        @JsonIgnore
         private Long baseFee;
 
-        @JsonIgnore
         private byte[] difficulty; // 32 bytes - U256 big-endian
 
-        @JsonIgnore
         private byte[] prevrandao; // 32 bytes - prevrandao hash
 
-        @JsonIgnore
         private BlobExcessGasAndPrice blobExcessGasAndPrice;
 
         public BlockEnv() {}
@@ -388,18 +339,14 @@ public class SidecarApiModels {
         }
     }
 
-    @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class NewIteration {
-        @JsonProperty("iteration_id")
         private Long iterationId;
 
-        @JsonProperty("block_env")
         private BlockEnv blockEnv;
-        
+
         public NewIteration() {}
-        
-        @JsonCreator
-        public NewIteration(@JsonProperty("iteration_id") Long iterationId, @JsonProperty("block_env") BlockEnv blockEnv) {
+
+        public NewIteration(Long iterationId, BlockEnv blockEnv) {
             this.blockEnv = blockEnv;
             this.iterationId = iterationId;
         }
@@ -411,15 +358,12 @@ public class SidecarApiModels {
         public void setBlockEnv(BlockEnv blockEnv) { this.blockEnv = blockEnv; }
     }
 
-    @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class SendEventsRequest {
-        @JsonProperty("events")
         private List<SendEventsRequestItem> events = new ArrayList<>();
-        
+
         public SendEventsRequest() {}
-        
-        @JsonCreator
-        public SendEventsRequest(@JsonProperty("events") List<SendEventsRequestItem> events) {
+
+        public SendEventsRequest(List<SendEventsRequestItem> events) {
             this.events = events;
         }
         
@@ -427,24 +371,14 @@ public class SidecarApiModels {
         public void setEvents(List<SendEventsRequestItem> events) { this.events = events; }
     }
 
-    @JsonTypeInfo(
-        use = JsonTypeInfo.Id.DEDUCTION
-    )
-    @JsonSubTypes({
-        @JsonSubTypes.Type(value = CommitHeadReqItem.class),
-        @JsonSubTypes.Type(value = NewIterationReqItem.class),
-        @JsonSubTypes.Type(value = TransactionReqItem.class),
-        @JsonSubTypes.Type(value = ReorgEventReqItem.class)
-    })
     public static class SendEventsRequestItem {}
 
     public static class CommitHeadReqItem extends SendEventsRequestItem {
-        @JsonProperty("commit_head")
         private CommitHead commitHead;
 
         public CommitHeadReqItem() {}
 
-        public CommitHeadReqItem(@JsonProperty("commit_head") CommitHead commitHead) {
+        public CommitHeadReqItem(CommitHead commitHead) {
             this.commitHead = commitHead;
         }
 
@@ -453,12 +387,11 @@ public class SidecarApiModels {
     }
 
     public static class NewIterationReqItem extends SendEventsRequestItem {
-        @JsonProperty("new_iteration")
         private NewIteration newIteration;
 
         public NewIterationReqItem() {}
 
-        public NewIterationReqItem(@JsonProperty("new_iteration") NewIteration newIteration) {
+        public NewIterationReqItem(NewIteration newIteration) {
             this.newIteration = newIteration;
         }
 
@@ -467,12 +400,11 @@ public class SidecarApiModels {
     }
 
     public static class TransactionReqItem extends SendEventsRequestItem {
-        @JsonProperty("transaction")
         private TransactionExecutionPayload transaction;
 
         public TransactionReqItem() {}
 
-        public TransactionReqItem(@JsonProperty("transaction") TransactionExecutionPayload transaction) {
+        public TransactionReqItem(TransactionExecutionPayload transaction) {
             this.transaction = transaction;
         }
 
@@ -481,12 +413,11 @@ public class SidecarApiModels {
     }
 
     public static class ReorgEventReqItem extends SendEventsRequestItem {
-        @JsonProperty("reorg")
         private ReorgEvent reorg;
 
         public ReorgEventReqItem() {}
 
-        public ReorgEventReqItem(@JsonProperty("reorg") ReorgEvent reorg) {
+        public ReorgEventReqItem(ReorgEvent reorg) {
             this.reorg = reorg;
         }
 
@@ -497,20 +428,14 @@ public class SidecarApiModels {
     /**
      * Reorg event for streaming - signals a chain reorganization.
      */
-    @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class ReorgEvent {
-        @JsonProperty("tx_execution_id")
         private TxExecutionId txExecutionId;
 
-        @JsonProperty("tx_hashes")
         private List<byte[]> txHashes;
 
         public ReorgEvent() {}
 
-        @JsonCreator
-        public ReorgEvent(
-                @JsonProperty("tx_execution_id") TxExecutionId txExecutionId,
-                @JsonProperty("tx_hashes") List<byte[]> txHashes) {
+        public ReorgEvent(TxExecutionId txExecutionId, List<byte[]> txHashes) {
             this.txExecutionId = txExecutionId;
             this.txHashes = txHashes;
         }
@@ -534,15 +459,12 @@ public class SidecarApiModels {
     /**
      * Request model for sendTransactions endpoint
      */
-    @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class SendTransactionsRequest {
-        @JsonProperty("transactions")
         private List<TransactionExecutionPayload> transactions;
-        
+
         public SendTransactionsRequest() {}
-        
-        @JsonCreator
-        public SendTransactionsRequest(@JsonProperty("transactions") List<TransactionExecutionPayload> transactions) {
+
+        public SendTransactionsRequest(List<TransactionExecutionPayload> transactions) {
             this.transactions = transactions;
         }
         
@@ -553,15 +475,12 @@ public class SidecarApiModels {
     /**
      * Request model for getTransactions endpoint
      */
-    @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class GetTransactionsRequest {
-        @JsonProperty("tx_execution_ids")
         private List<TxExecutionId> txExecutionIds;
-        
+
         public GetTransactionsRequest() {}
-        
-        @JsonCreator
-        public GetTransactionsRequest(@JsonProperty("tx_execution_ids") List<TxExecutionId> txExecutionIds) {
+
+        public GetTransactionsRequest(List<TxExecutionId> txExecutionIds) {
             this.txExecutionIds = txExecutionIds;
         }
         
@@ -572,21 +491,15 @@ public class SidecarApiModels {
     /**
     * Request model for reorg endpoint
     */
-    @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class ReorgRequest {
-        @JsonIgnore
         private Long blockNumber;
 
-        @JsonIgnore
         private Long iterationId;
 
-        @JsonIgnore
         private byte[] txHash; // 32 bytes - transaction hash
 
-        @JsonIgnore
         private long index;
 
-        @JsonIgnore
         private List<byte[]> txHashes;
 
         public ReorgRequest() {}
@@ -656,28 +569,22 @@ public class SidecarApiModels {
     /**
      * Request model for sendBlockEnv endpoint
      */
-    @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class SendBlockEnvRequest {
-        @JsonProperty("block_env")
         private BlockEnv blockEnv;
 
-        @JsonProperty("last_tx_hash")
         private String lastTxHash;
 
-        @JsonProperty("n_transactions")
         private Integer nTransactions;
 
-        @JsonProperty("selected_iteration_id")
         private Long selectedIterationId;
 
         public SendBlockEnvRequest() {}
 
-        @JsonCreator
         public SendBlockEnvRequest(
-            @JsonProperty("block_env") BlockEnv blockEnv,
-            @JsonProperty("last_tx_hash") String lastTxHash,
-            @JsonProperty("n_transactions") Integer nTransactions,
-            @JsonProperty("selected_iteration_id") Long selectedIterationId
+            BlockEnv blockEnv,
+            String lastTxHash,
+            Integer nTransactions,
+            Long selectedIterationId
         ) {
             this.blockEnv = blockEnv;
             this.lastTxHash = lastTxHash;
@@ -699,18 +606,14 @@ public class SidecarApiModels {
         public void setSelectedIterationId(Long selectedIterationId) { this.selectedIterationId = selectedIterationId; }
     }
 
-    @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class BlobExcessGasAndPrice {
-        @JsonProperty("excess_blob_gas")
         private Long excessBlobGas;
-        
-        @JsonProperty("blob_gasprice")
+
         private Long blobGasPrice;
-        
+
         public BlobExcessGasAndPrice() {}
-        
-        @JsonCreator
-        public BlobExcessGasAndPrice(@JsonProperty("excess_blob_gas") Long excessBlobGas, @JsonProperty("blob_gasprice") Long blobGasPrice) {
+
+        public BlobExcessGasAndPrice(Long excessBlobGas, Long blobGasPrice) {
             this.excessBlobGas = excessBlobGas;
             this.blobGasPrice = blobGasPrice;
         }
@@ -732,20 +635,14 @@ public class SidecarApiModels {
     /**
      * Response model for sendTransactions endpoint
      */
-    @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class SendTransactionsResponse {
-        @JsonProperty("status")
         private String status;
-        
-        @JsonProperty("message")
+
         private String message;
 
-        @JsonProperty("request_count")
         private Long requestCount;
-        
-        @JsonCreator
-        public SendTransactionsResponse(@JsonProperty("status") String status, @JsonProperty("message") String message,
-            @JsonProperty("request_count") Long requestCount) {
+
+        public SendTransactionsResponse(String status, String message, Long requestCount) {
             this.status = status;
             this.message = message;
             this.requestCount = requestCount;
@@ -757,20 +654,14 @@ public class SidecarApiModels {
         public Long getRequestCount() { return requestCount; }
     }
 
-    @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class SendEventsResponse {
-        @JsonProperty("status")
         private String status;
-        
-        @JsonProperty("message")
+
         private String message;
 
-        @JsonProperty("request_count")
         private Long requestCount;
-        
-        @JsonCreator
-        public SendEventsResponse(@JsonProperty("status") String status, @JsonProperty("message") String message,
-            @JsonProperty("request_count") Long requestCount) {
+
+        public SendEventsResponse(String status, String message, Long requestCount) {
             this.status = status;
             this.message = message;
             this.requestCount = requestCount;
@@ -785,12 +676,9 @@ public class SidecarApiModels {
     /**
      * Response model for getTransactions endpoint
      */
-    @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class GetTransactionsResponse {
-        @JsonIgnore
         private List<TransactionResult> results = new ArrayList<>();
 
-        @JsonIgnore
         private List<byte[]> notFound = new ArrayList<>(); // 32-byte hashes not found
 
         public GetTransactionsResponse() {}
@@ -807,15 +695,12 @@ public class SidecarApiModels {
         public void setNotFound(List<byte[]> notFound) { this.notFound = notFound; }
     }
 
-    @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class GetTransactionResponse {
-        @JsonProperty("result")
         private TransactionResult result;
 
         public GetTransactionResponse() {}
-        
-        @JsonCreator
-        public GetTransactionResponse(@JsonProperty("result") TransactionResult result) {
+
+        public GetTransactionResponse(TransactionResult result) {
             this.result = result;
         }
         
@@ -827,24 +712,16 @@ public class SidecarApiModels {
     /**
      * Response model for sendBlockEnv endpoint
      */
-    @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class SendBlockEnvResponse {
-        @JsonProperty("status")
         private String status;
-        
-        @JsonProperty("request_count")
+
         private Long requestCount;
 
-        @JsonProperty("message")
         private String message;
-        
+
         public SendBlockEnvResponse() {}
 
-        @JsonCreator
-        public SendBlockEnvResponse(@JsonProperty("status") String status,
-            @JsonProperty("request_count") Long requestCount,
-            @JsonProperty("message") String message
-        ) {
+        public SendBlockEnvResponse(String status, Long requestCount, String message) {
             this.status = status;
             this.message = message;
             this.requestCount = requestCount;
@@ -859,27 +736,22 @@ public class SidecarApiModels {
         public Long getRequestCount() { return requestCount; }
         public void setRequestCount(Long requestCount) { this.requestCount = requestCount; }
 
-        @JsonIgnore
         public boolean getSuccess() {
             return "accepted".equalsIgnoreCase(status);
         }
     }
 
     /**
-     * Response model for sendBlockEnv endpoint
+     * Response model for reorg endpoint
      */
-    @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class ReorgResponse {
-        @JsonProperty("success")
         private Boolean success;
 
-        @JsonProperty("error")
         private String error;
 
         public ReorgResponse() {}
 
-        @JsonCreator
-        public ReorgResponse(@JsonProperty("success") Boolean success, @JsonProperty("error") String error) {
+        public ReorgResponse(Boolean success, String error) {
             this.success = success;
             this.error = error;
         }
@@ -896,18 +768,13 @@ public class SidecarApiModels {
     /**
      * Transaction execution identifier
      */
-    @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class TxExecutionId {
-        @JsonIgnore
         private Long blockNumber;
 
-        @JsonIgnore
         private Long iterationId;
 
-        @JsonIgnore
         private byte[] txHash; // 32 bytes - transaction hash
 
-        @JsonIgnore
         private long index;
 
         public TxExecutionId() {}
@@ -963,18 +830,13 @@ public class SidecarApiModels {
     /**
      * GetTransactionRequest
      */
-    @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class GetTransactionRequest {
-        @JsonIgnore
         private Long blockNumber;
 
-        @JsonIgnore
         private Long iterationId;
 
-        @JsonIgnore
         private byte[] txHash; // 32 bytes - transaction hash
 
-        @JsonIgnore
         private long index;
 
         public GetTransactionRequest() {}
@@ -1021,25 +883,18 @@ public class SidecarApiModels {
     /**
      * Individual transaction result in getTransactions response
      */
-    @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class TransactionResult {
-        @JsonProperty("tx_execution_id")
         private TxExecutionId txExecutionId;
-        
-        @JsonProperty("status")
+
         private String status; // "success", "assertion_failed", "failed"
-        
-        @JsonProperty("gas_used")
+
         private Long gasUsed;
-        
-        @JsonProperty("error")
+
         private String error;
-        
+
         public TransactionResult() {}
-        
-        @JsonCreator
-        public TransactionResult(@JsonProperty("tx_execution_id") TxExecutionId txExecutionId, @JsonProperty("status") String status,
-            @JsonProperty("gas_used") Long gasUsed, @JsonProperty("error") String error) {
+
+        public TransactionResult(TxExecutionId txExecutionId, String status, Long gasUsed, String error) {
             this.txExecutionId = txExecutionId;
             this.status = status;
             this.gasUsed = gasUsed;
@@ -1062,15 +917,11 @@ public class SidecarApiModels {
     /**
      * Transaction payload for sidecar processing
      */
-    @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class TransactionExecutionPayload {
-        @JsonIgnore
         private TxExecutionId txExecutionId;
 
-        @JsonIgnore
         private TxEnv txEnv;
 
-        @JsonIgnore
         private byte[] prevTxHash; // 32 bytes - previous TX hash for ordering
 
         public TransactionExecutionPayload(
