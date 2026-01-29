@@ -117,11 +117,6 @@ dependencies {
     // HTTP Client
     implementation 'com.squareup.okhttp3:okhttp:5.1.0'
 
-    // JSON Processing (including JDK8 support)
-    implementation 'com.fasterxml.jackson.core:jackson-databind:2.18.2'
-    implementation 'com.fasterxml.jackson.core:jackson-annotations:2.18.2'
-    implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jdk8:2.18.2'
-
     // gRPC and Protobuf
     implementation 'io.grpc:grpc-okhttp:1.77.0'
     implementation 'io.grpc:grpc-protobuf:1.77.0'
