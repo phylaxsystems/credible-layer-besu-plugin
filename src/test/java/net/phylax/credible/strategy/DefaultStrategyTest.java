@@ -70,8 +70,7 @@ public class DefaultStrategyTest {
     ISidecarStrategy initStrategy(
         List<ISidecarTransport> primaryTransports,
         List<ISidecarTransport> fallbackTransports,
-        int processingTimeout,
-        boolean shouldSendBlockEnv
+        int processingTimeout
     ) {
         var metricsSystem = new SimpleMockMetricsSystem();
         var metrics = new CredibleMetricsRegistry(metricsSystem);
@@ -93,14 +92,12 @@ public class DefaultStrategyTest {
     ISidecarStrategy initStrategy(
         ISidecarTransport primaryTransport,
         ISidecarTransport fallbackTransport,
-        int processingTimeout,
-        boolean shouldSendBlockEnv
+        int processingTimeout
     ) {
         return initStrategy(
             primaryTransport == null ? new ArrayList<>() : Arrays.asList(primaryTransport),
             fallbackTransport == null ? new ArrayList<>() : Arrays.asList(fallbackTransport),
-            processingTimeout,
-            shouldSendBlockEnv);
+            processingTimeout);
     }
 
     /**
@@ -120,7 +117,7 @@ public class DefaultStrategyTest {
     @Test
     void shouldProcessTransactions() {
         var mockTransport = new MockTransport(200);
-        var strategy = initStrategy(mockTransport, null, 500, true);
+        var strategy = initStrategy(mockTransport, null, 500);
 
         byte[] hash1 = hexToBytes("0x1");
         assertDoesNotThrow(() -> strategy.dispatchTransactions(generateTransactionRequest(hash1)));
@@ -145,7 +142,7 @@ public class DefaultStrategyTest {
     void shouldNotProcessDueToTimeout() {
         var mockTransport = new MockTransport(800);
         var mockTransportFallback = new MockTransport(800);
-        var strategy = initStrategy(mockTransport, mockTransportFallback, 500, true);
+        var strategy = initStrategy(mockTransport, mockTransportFallback, 500);
 
         var response = sendTransaction(strategy);
         assertEquals(response.getFailure(), CredibleRejectionReason.PROCESSING_TIMEOUT);
@@ -155,7 +152,7 @@ public class DefaultStrategyTest {
     void shouldProcessFromSidecarThatDoesntTimeout() {
         var mockTransport = new MockTransport(800);
         var mockTransport2 = new MockTransport(200);
-        var strategy = initStrategy(Arrays.asList(mockTransport, mockTransport2), null, 500, true);
+        var strategy = initStrategy(Arrays.asList(mockTransport, mockTransport2), null, 500);
 
         var response = sendTransaction(strategy);
         assertNotNull(response.getSuccess().getResult());
@@ -168,7 +165,7 @@ public class DefaultStrategyTest {
         mockTransport.setThrowOnSendTx(true);
 
         var mockTransport2 = new MockTransport(500);
-        var strategy = initStrategy(Arrays.asList(mockTransport, mockTransport2), null, 800, false);
+        var strategy = initStrategy(Arrays.asList(mockTransport, mockTransport2), null, 800);
 
         strategy.newIteration(generateNewIteration());
         var response = sendTransaction(strategy);
@@ -198,8 +195,7 @@ public class DefaultStrategyTest {
         var strategy = initStrategy(
             Arrays.asList(mockTransport, mockTransport2),
             Arrays.asList(mockTransportFallback),
-            processingTimeout,
-            false
+            processingTimeout
         );
 
         strategy.newIteration(generateNewIteration()).join();
@@ -217,7 +213,7 @@ public class DefaultStrategyTest {
 
     @Test
     void shouldCheckIfActiveAfterAllTransportsTimeout() {
-        // Primary sidecars throw on sendBlockEnv
+        // Primary sidecars timeout
         var mockTransport = new MockTransport(100);
         var mockTransport2 = new MockTransport(100);
         var mockTransport3 = new MockTransport(100);
@@ -227,8 +223,7 @@ public class DefaultStrategyTest {
         var strategy = initStrategy(
             Arrays.asList(mockTransport, mockTransport2, mockTransport3),
             Arrays.asList(mockTransportFallback),
-            300,
-            false
+            300
         );
 
         strategy.newIteration(generateNewIteration()).join();
@@ -289,7 +284,7 @@ public class DefaultStrategyTest {
         var mockTransport = new MockTransport(200);
         mockTransport.setSendEventsLatency(1000);
 
-        var strategy = initStrategy(Arrays.asList(mockTransport), null, 800, false);
+        var strategy = initStrategy(Arrays.asList(mockTransport), null, 800);
 
         strategy.newIteration(generateNewIteration());
         // It should return an empty list (same as when transports aren't active)
@@ -303,14 +298,14 @@ public class DefaultStrategyTest {
     }
 
     @Test
-    void shouldProcessFromSidecarThatDoesntTimeoutOnSendBlockEnv() {
+    void shouldProcessFromSidecarThatDoesntTimeoutOnSendEvents() {
         // First transport throws on sendTransactions
         var mockTransport = new MockTransport(200);
 
         var mockTransport2 = new MockTransport(200);
         mockTransport.setSendEventsLatency(1000);
 
-        var strategy = initStrategy(Arrays.asList(mockTransport, mockTransport2), null, 800, false);
+        var strategy = initStrategy(Arrays.asList(mockTransport, mockTransport2), null, 800);
 
         strategy.newIteration(generateNewIteration());
         var response = sendTransaction(strategy);
@@ -329,7 +324,7 @@ public class DefaultStrategyTest {
         var mockTransport = new MockTransport(streamResultLatency);
         mockTransport.setGetTransactionLatency(fallbackLatency);
 
-        var strategy = initStrategy(mockTransport, null, processingTimeout, true);
+        var strategy = initStrategy(mockTransport, null, processingTimeout);
 
         Stopwatch stopwatch = Stopwatch.createStarted();
         var response = sendTransaction(strategy);
