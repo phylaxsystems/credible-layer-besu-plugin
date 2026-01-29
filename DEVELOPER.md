@@ -33,7 +33,7 @@ For more information on the BesuPlugin mechanism, refer to the [Besu Plugin API 
 
 ## Communication with the Credible Layer
 
-The Credible Layer Besu Plugin communicates with the Credible Layer using GRPC (configurable with the plugin args). It sends transaction data to the Credible Layer for evaluation and receives the evaluation results back.
+The Credible Layer Besu Plugin communicates with the Credible Layer using GRPC. It sends transaction data to the Credible Layer for evaluation and receives the evaluation results back.
 
 ## ISidecarTransport
 
