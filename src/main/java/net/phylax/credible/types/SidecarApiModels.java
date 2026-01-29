@@ -892,12 +892,7 @@ public class SidecarApiModels {
      */
     public static class CredibleLayerMethods {
         public static final String SEND_TRANSACTIONS = "sendTransactions";
-        public static final String GET_TRANSACTIONS = "getTransactions";
-        public static final String GET_TRANSACTION = "getTransaction";
-        public static final String SEND_BLOCK_ENV = "sendBlockEnv";
-        public static final String SEND_REORG = "reorg";
         public static final String SEND_EVENTS = "sendEvents";
-        public static final String NEW_ITERATION = "newIteration";
 
         private CredibleLayerMethods() {} // Utility class
     }
