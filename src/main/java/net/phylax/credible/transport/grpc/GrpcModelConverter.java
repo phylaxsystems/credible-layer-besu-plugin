@@ -286,10 +286,15 @@ public class GrpcModelConverter {
      * Convert NewIteration POJO to protobuf
      */
     private static Sidecar.NewIteration toProtoNewIteration(SidecarApiModels.NewIteration pojo) {
-        return Sidecar.NewIteration.newBuilder()
+        Sidecar.NewIteration.Builder builder = Sidecar.NewIteration.newBuilder()
             .setIterationId(pojo.getIterationId())
-            .setBlockEnv(toProtoBlockEnv(pojo.getBlockEnv()))
-            .build();
+            .setBlockEnv(toProtoBlockEnv(pojo.getBlockEnv()));
+
+        if (pojo.getParentBeaconBlockRoot() != null && pojo.getParentBeaconBlockRoot().length > 0) {
+            builder.setParentBeaconBlockRoot(bytesToByteStringPadded(pojo.getParentBeaconBlockRoot(), 32));
+        }
+
+        return builder.build();
     }
 
     // ==================== RESPONSE CONVERSIONS (Protobuf → POJO) ====================
