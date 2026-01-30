@@ -49,7 +49,10 @@ public class CredibleOperationTracer implements BlockAwareOperationTracer {
             processableBlockHeader.getPrevRandao().map(bytes32 -> bytes32.toArrayUnsafe()).orElse(null),  // 32 bytes
             new BlobExcessGasAndPrice(0L, 1L)
         );
-        NewIteration iteration = new NewIteration(currentIterationId.get(), blockEnv);
+        byte[] parentBeaconBlockRoot = processableBlockHeader.getParentBeaconBlockRoot()
+            .map(bytes32 -> bytes32.toArrayUnsafe())
+            .orElse(null);
+        NewIteration iteration = new NewIteration(currentIterationId.get(), blockEnv, parentBeaconBlockRoot);
 
         // traceStartBlock marks a new iteration of the block production process
         try {
