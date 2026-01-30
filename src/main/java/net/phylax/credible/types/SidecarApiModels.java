@@ -566,46 +566,6 @@ public class SidecarApiModels {
         }
     }
 
-    /**
-     * Request model for sendBlockEnv endpoint
-     */
-    public static class SendBlockEnvRequest {
-        private BlockEnv blockEnv;
-
-        private String lastTxHash;
-
-        private Integer nTransactions;
-
-        private Long selectedIterationId;
-
-        public SendBlockEnvRequest() {}
-
-        public SendBlockEnvRequest(
-            BlockEnv blockEnv,
-            String lastTxHash,
-            Integer nTransactions,
-            Long selectedIterationId
-        ) {
-            this.blockEnv = blockEnv;
-            this.lastTxHash = lastTxHash;
-            this.nTransactions = nTransactions;
-            this.selectedIterationId = selectedIterationId;
-        }
-
-        // Getters and setters
-        public BlockEnv getBlockEnv() { return blockEnv; }
-        public void setBlockEnv(BlockEnv blockEnv) { this.blockEnv = blockEnv; }
-
-        public String getLastTxHash() { return lastTxHash; }
-        public void setLastTxHash(String lastTxHash) { this.lastTxHash = lastTxHash; }
-
-        public Integer getNTransactions() { return nTransactions; }
-        public void setNTransactions(Integer nTransactions) { this.nTransactions = nTransactions; }
-
-        public Long getSelectedIterationId() { return selectedIterationId; }
-        public void setSelectedIterationId(Long selectedIterationId) { this.selectedIterationId = selectedIterationId; }
-    }
-
     public static class BlobExcessGasAndPrice {
         private Long excessBlobGas;
 
@@ -707,38 +667,6 @@ public class SidecarApiModels {
         public TransactionResult getResult() { return result; }
         public void setResults(TransactionResult result) { this.result = result; }
     
-    }
-
-    /**
-     * Response model for sendBlockEnv endpoint
-     */
-    public static class SendBlockEnvResponse {
-        private String status;
-
-        private Long requestCount;
-
-        private String message;
-
-        public SendBlockEnvResponse() {}
-
-        public SendBlockEnvResponse(String status, Long requestCount, String message) {
-            this.status = status;
-            this.message = message;
-            this.requestCount = requestCount;
-        }
-        
-        public String getStatus() { return status; }
-        public void setStatus(String status) { this.status = status; }
-
-        public String getMessage() { return message; }
-        public void setMessage(String message) { this.message = message; }
-        
-        public Long getRequestCount() { return requestCount; }
-        public void setRequestCount(Long requestCount) { this.requestCount = requestCount; }
-
-        public boolean getSuccess() {
-            return "accepted".equalsIgnoreCase(status);
-        }
     }
 
     /**
@@ -964,12 +892,7 @@ public class SidecarApiModels {
      */
     public static class CredibleLayerMethods {
         public static final String SEND_TRANSACTIONS = "sendTransactions";
-        public static final String GET_TRANSACTIONS = "getTransactions";
-        public static final String GET_TRANSACTION = "getTransaction";
-        public static final String SEND_BLOCK_ENV = "sendBlockEnv";
-        public static final String SEND_REORG = "reorg";
         public static final String SEND_EVENTS = "sendEvents";
-        public static final String NEW_ITERATION = "newIteration";
 
         private CredibleLayerMethods() {} // Utility class
     }

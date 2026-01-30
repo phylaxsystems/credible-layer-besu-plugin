@@ -327,7 +327,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
 
             log.debug("Block Env sent, hash: {}", blockHash);
         } catch (Exception e) {
-            log.error("Error handling sendBlockEnv {}", e.getMessage());
+            log.error("Error handling commitHead {}", e.getMessage());
         }
     }
 
