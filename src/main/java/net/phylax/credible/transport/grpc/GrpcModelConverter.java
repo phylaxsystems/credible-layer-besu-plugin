@@ -290,6 +290,10 @@ public class GrpcModelConverter {
             .setIterationId(pojo.getIterationId())
             .setBlockEnv(toProtoBlockEnv(pojo.getBlockEnv()));
 
+        if (pojo.getBlockHash() != null && pojo.getBlockHash().length > 0) {
+            builder.setBlockHash(bytesToByteStringPadded(pojo.getBlockHash(), 32));
+        }
+
         if (pojo.getParentBeaconBlockRoot() != null && pojo.getParentBeaconBlockRoot().length > 0) {
             builder.setParentBeaconBlockRoot(bytesToByteStringPadded(pojo.getParentBeaconBlockRoot(), 32));
         }

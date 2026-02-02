@@ -508,7 +508,8 @@ public class GrpcTransportTest {
 
     @Test
     public void testNewIterationWithParentBeaconBlockRoot() throws Exception {
-        // Create a NewIteration with parentBeaconBlockRoot for EIP-4788
+        // Create a NewIteration with blockHash for EIP-2935 and parentBeaconBlockRoot for EIP-4788
+        byte[] parentBlockHash = hexToBytes("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef");
         byte[] parentBeaconBlockRoot = hexToBytes("0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890");
 
         SidecarApiModels.BlockEnv blockEnv = new SidecarApiModels.BlockEnv(
@@ -525,6 +526,7 @@ public class GrpcTransportTest {
         SidecarApiModels.NewIteration newIteration = new SidecarApiModels.NewIteration(
             1L,                     // iterationId
             blockEnv,
+            parentBlockHash,        // blockHash for EIP-2935
             parentBeaconBlockRoot   // parentBeaconBlockRoot for EIP-4788
         );
 
@@ -554,17 +556,24 @@ public class GrpcTransportTest {
 
         Sidecar.NewIteration receivedNewIteration = event.getNewIteration();
         assertEquals(1L, receivedNewIteration.getIterationId());
+
+        // Verify EIP-2935 block hash
+        assertEquals(32, receivedNewIteration.getBlockHash().size());
+        byte[] receivedBlockHash = receivedNewIteration.getBlockHash().toByteArray();
+        assertArrayEquals(parentBlockHash, receivedBlockHash);
+
+        // Verify EIP-4788 parent beacon block root
         assertTrue(receivedNewIteration.hasParentBeaconBlockRoot());
         assertEquals(32, receivedNewIteration.getParentBeaconBlockRoot().size());
-
-        // Verify the bytes match
         byte[] receivedRoot = receivedNewIteration.getParentBeaconBlockRoot().toByteArray();
         assertArrayEquals(parentBeaconBlockRoot, receivedRoot);
     }
 
     @Test
     public void testNewIterationWithNullParentBeaconBlockRoot() throws Exception {
-        // Create a NewIteration without parentBeaconBlockRoot (pre-Cancun blocks)
+        // Create a NewIteration with blockHash but without parentBeaconBlockRoot (pre-Cancun blocks)
+        byte[] parentBlockHash = hexToBytes("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef");
+
         SidecarApiModels.BlockEnv blockEnv = new SidecarApiModels.BlockEnv(
             12345L,                                                     // number
             hexToBytes("0x0000000000000000000000000000000000000001"),   // beneficiary
@@ -579,6 +588,7 @@ public class GrpcTransportTest {
         SidecarApiModels.NewIteration newIteration = new SidecarApiModels.NewIteration(
             1L,                     // iterationId
             blockEnv,
+            parentBlockHash,        // blockHash for EIP-2935
             null                    // null parentBeaconBlockRoot for pre-Cancun
         );
 
@@ -609,7 +619,12 @@ public class GrpcTransportTest {
         Sidecar.NewIteration receivedNewIteration = event.getNewIteration();
         assertEquals(1L, receivedNewIteration.getIterationId());
 
-        // When null, the field should not be set
+        // Verify EIP-2935 block hash is set
+        assertEquals(32, receivedNewIteration.getBlockHash().size());
+        byte[] receivedBlockHash = receivedNewIteration.getBlockHash().toByteArray();
+        assertArrayEquals(parentBlockHash, receivedBlockHash);
+
+        // When null, the parentBeaconBlockRoot field should not be set
         assertFalse(receivedNewIteration.hasParentBeaconBlockRoot());
     }
 
