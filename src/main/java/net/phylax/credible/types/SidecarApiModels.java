@@ -344,18 +344,30 @@ public class SidecarApiModels {
 
         private BlockEnv blockEnv;
 
+        private byte[] parentBlockHash; // 32 bytes - parent block hash for EIP-2935
+
+        private byte[] parentBeaconBlockRoot; // 32 bytes - parent beacon block root for EIP-4788
+
         public NewIteration() {}
 
-        public NewIteration(Long iterationId, BlockEnv blockEnv) {
+        public NewIteration(Long iterationId, BlockEnv blockEnv, byte[] parentBlockHash, byte[] parentBeaconBlockRoot) {
             this.blockEnv = blockEnv;
             this.iterationId = iterationId;
+            this.parentBlockHash = parentBlockHash;
+            this.parentBeaconBlockRoot = parentBeaconBlockRoot;
         }
-        
+
         public Long getIterationId() { return iterationId; }
         public void setIterationId(Long iterationId) { this.iterationId = iterationId; }
 
         public BlockEnv getBlockEnv() { return blockEnv; }
         public void setBlockEnv(BlockEnv blockEnv) { this.blockEnv = blockEnv; }
+
+        public byte[] getParentBlockHash() { return parentBlockHash; }
+        public void setParentBlockHash(byte[] parentBlockHash) { this.parentBlockHash = parentBlockHash; }
+
+        public byte[] getParentBeaconBlockRoot() { return parentBeaconBlockRoot; }
+        public void setParentBeaconBlockRoot(byte[] parentBeaconBlockRoot) { this.parentBeaconBlockRoot = parentBeaconBlockRoot; }
     }
 
     public static class SendEventsRequest {

@@ -49,7 +49,9 @@ public class DefaultStrategyTest {
             hexToBytes("0x123123123123123123123123123123"),
             new BlobExcessGasAndPrice(1L, 1L)
         );
-        return new NewIteration(1L, blockEnvData);
+        byte[] parentBlockHash = hexToBytes("0x0000000000000000000000000000000000000002");
+        byte[] parentBeaconBlockRoot = hexToBytes("0x0000000000000000000000000000000000000003");
+        return new NewIteration(1L, blockEnvData, parentBlockHash, parentBeaconBlockRoot);
     }
 
     CommitHead generateNewCommitHead() {

@@ -506,6 +506,128 @@ public class GrpcTransportTest {
         assertEquals(1000L, result.getTxExecutionId().getBlockNumber());
     }
 
+    @Test
+    public void testNewIterationWithParentBeaconBlockRoot() throws Exception {
+        // Create a NewIteration with parentBlockHash for EIP-2935 and parentBeaconBlockRoot for EIP-4788
+        byte[] parentBlockHash = hexToBytes("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef");
+        byte[] parentBeaconBlockRoot = hexToBytes("0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890");
+
+        SidecarApiModels.BlockEnv blockEnv = new SidecarApiModels.BlockEnv(
+            12345L,                                                     // number
+            hexToBytes("0x0000000000000000000000000000000000000001"),   // beneficiary
+            1700000000L,                                                // timestamp
+            30000000L,                                                  // gasLimit
+            1000000000L,                                                // baseFee
+            hexToBytes("0x0000000000000000000000000000000000000000000000000000000000000000"), // difficulty
+            hexToBytes("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"), // prevrandao
+            new SidecarApiModels.BlobExcessGasAndPrice(0L, 1L)
+        );
+
+        SidecarApiModels.NewIteration newIteration = new SidecarApiModels.NewIteration(
+            1L,                     // iterationId
+            blockEnv,
+            parentBlockHash,        // parentBlockHash for EIP-2935
+            parentBeaconBlockRoot   // parentBeaconBlockRoot for EIP-4788
+        );
+
+        SidecarApiModels.NewIterationReqItem newIterationItem =
+            new SidecarApiModels.NewIterationReqItem(newIteration);
+
+        List<SidecarApiModels.SendEventsRequestItem> events = new ArrayList<>();
+        events.add(newIterationItem);
+
+        SidecarApiModels.SendEventsRequest request = new SidecarApiModels.SendEventsRequest(events);
+
+        // Send the request
+        CompletableFuture<SidecarApiModels.SendEventsResponse> future = transport.sendEvents(request);
+        SidecarApiModels.SendEventsResponse response = future.get();
+
+        // Verify the response
+        assertEquals("accepted", response.getStatus());
+
+        // Give some time for the stream to process
+        Thread.sleep(100);
+
+        // Verify the request was received correctly
+        assertFalse(testService.receivedEvents.isEmpty());
+
+        Sidecar.Event event = testService.receivedEvents.get(0);
+        assertTrue(event.hasNewIteration());
+
+        Sidecar.NewIteration receivedNewIteration = event.getNewIteration();
+        assertEquals(1L, receivedNewIteration.getIterationId());
+
+        // Verify EIP-2935 parent block hash
+        assertEquals(32, receivedNewIteration.getParentBlockHash().size());
+        byte[] receivedBlockHash = receivedNewIteration.getParentBlockHash().toByteArray();
+        assertArrayEquals(parentBlockHash, receivedBlockHash);
+
+        // Verify EIP-4788 parent beacon block root
+        assertTrue(receivedNewIteration.hasParentBeaconBlockRoot());
+        assertEquals(32, receivedNewIteration.getParentBeaconBlockRoot().size());
+        byte[] receivedRoot = receivedNewIteration.getParentBeaconBlockRoot().toByteArray();
+        assertArrayEquals(parentBeaconBlockRoot, receivedRoot);
+    }
+
+    @Test
+    public void testNewIterationWithNullParentBeaconBlockRoot() throws Exception {
+        // Create a NewIteration with parentBlockHash but without parentBeaconBlockRoot (pre-Cancun blocks)
+        byte[] parentBlockHash = hexToBytes("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef");
+
+        SidecarApiModels.BlockEnv blockEnv = new SidecarApiModels.BlockEnv(
+            12345L,                                                     // number
+            hexToBytes("0x0000000000000000000000000000000000000001"),   // beneficiary
+            1700000000L,                                                // timestamp
+            30000000L,                                                  // gasLimit
+            1000000000L,                                                // baseFee
+            hexToBytes("0x0000000000000000000000000000000000000000000000000000000000000000"), // difficulty
+            hexToBytes("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"), // prevrandao
+            new SidecarApiModels.BlobExcessGasAndPrice(0L, 1L)
+        );
+
+        SidecarApiModels.NewIteration newIteration = new SidecarApiModels.NewIteration(
+            1L,                     // iterationId
+            blockEnv,
+            parentBlockHash,        // parentBlockHash for EIP-2935
+            null                    // null parentBeaconBlockRoot for pre-Cancun
+        );
+
+        SidecarApiModels.NewIterationReqItem newIterationItem =
+            new SidecarApiModels.NewIterationReqItem(newIteration);
+
+        List<SidecarApiModels.SendEventsRequestItem> events = new ArrayList<>();
+        events.add(newIterationItem);
+
+        SidecarApiModels.SendEventsRequest request = new SidecarApiModels.SendEventsRequest(events);
+
+        // Send the request
+        CompletableFuture<SidecarApiModels.SendEventsResponse> future = transport.sendEvents(request);
+        SidecarApiModels.SendEventsResponse response = future.get();
+
+        // Verify the response
+        assertEquals("accepted", response.getStatus());
+
+        // Give some time for the stream to process
+        Thread.sleep(100);
+
+        // Verify the request was received correctly
+        assertFalse(testService.receivedEvents.isEmpty());
+
+        Sidecar.Event event = testService.receivedEvents.get(0);
+        assertTrue(event.hasNewIteration());
+
+        Sidecar.NewIteration receivedNewIteration = event.getNewIteration();
+        assertEquals(1L, receivedNewIteration.getIterationId());
+
+        // Verify EIP-2935 parent block hash is set
+        assertEquals(32, receivedNewIteration.getParentBlockHash().size());
+        byte[] receivedBlockHash = receivedNewIteration.getParentBlockHash().toByteArray();
+        assertArrayEquals(parentBlockHash, receivedBlockHash);
+
+        // When null, the parentBeaconBlockRoot field should not be set
+        assertFalse(receivedNewIteration.hasParentBeaconBlockRoot());
+    }
+
     /**
      * Helper method to convert hex string to ByteString
      */
