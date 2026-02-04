@@ -11,6 +11,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import javax.net.SocketFactory;
 
+import io.grpc.ConnectivityState;
 import io.grpc.ManagedChannel;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
@@ -122,7 +123,16 @@ public class GrpcTransport implements ISidecarTransport {
                 return existing;
             }
 
-            log.info("Creating new StreamEvents stream");
+            // Reset the channel's backoff to force immediate reconnection
+            channel.resetConnectBackoff();
+
+            ConnectivityState state = channel.getState(true);
+            log.info("Creating new StreamEvents stream, channel state: {}", state);
+
+            if (state == ConnectivityState.TRANSIENT_FAILURE) {
+                log.warn("Channel in TRANSIENT_FAILURE state, will retry on next event");
+                return null;
+            }
 
             StreamObserver<Sidecar.StreamAck> responseObserver = new StreamObserver<>() {
                 @Override
@@ -193,6 +203,14 @@ public class GrpcTransport implements ISidecarTransport {
      */
     private CompletableFuture<Sidecar.StreamAck> sendEvent(Sidecar.Event event) {
         StreamObserver<Sidecar.Event> stream = getOrCreateEventStream();
+
+        // If stream is null, channel is not ready - fail fast and let retry logic handle it
+        if (stream == null) {
+            CompletableFuture<Sidecar.StreamAck> failedFuture = new CompletableFuture<>();
+            failedFuture.completeExceptionally(
+                new StatusRuntimeException(Status.UNAVAILABLE.withDescription("Channel not ready")));
+            return failedFuture;
+        }
 
         // Generate unique event_id and rebuild event with it
         long eventId = eventIdCounter.incrementAndGet();
