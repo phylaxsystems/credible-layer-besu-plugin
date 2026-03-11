@@ -56,9 +56,6 @@ message VerifyTransactionResponse {
   bool denied = 1;
 }
 
-// Aeges service — called by the Besu plugin.
 service AegesService {
-  // Bidirectional stream: plugin sends transactions as they arrive,
-  // server responds with a denied/allowed verdict for each one.
   rpc VerifyTransaction(stream VerifyTransactionRequest) returns (stream VerifyTransactionResponse);
 }

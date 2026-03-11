@@ -19,8 +19,6 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * Base class for gRPC transports providing shared channel infrastructure,
  * lifecycle management, and utility methods.
- *
- * Subclasses implement protocol-specific logic (e.g., sidecar events, Aeges deny cache).
  */
 @Slf4j
 public abstract class BaseGrpcTransport {

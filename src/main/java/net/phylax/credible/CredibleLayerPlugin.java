@@ -12,17 +12,22 @@ import org.hyperledger.besu.plugin.data.AddedBlockContext.EventType;
 import org.hyperledger.besu.plugin.services.BesuEvents;
 import org.hyperledger.besu.plugin.services.MetricsSystem;
 import org.hyperledger.besu.plugin.services.PicoCLIOptions;
+import org.hyperledger.besu.plugin.services.TransactionPoolValidatorService;
 import org.hyperledger.besu.plugin.services.TransactionSelectionService;
 import org.hyperledger.besu.plugin.services.metrics.MetricCategoryRegistry;
 
 import com.google.auto.service.AutoService;
+import io.grpc.ManagedChannel;
 
 import lombok.extern.slf4j.Slf4j;
+import net.phylax.credible.aeges.AegesGrpcClient;
+import net.phylax.credible.aeges.AegesPoolValidatorFactory;
 import net.phylax.credible.metrics.CredibleMetricsCategory;
 import net.phylax.credible.metrics.CredibleMetricsRegistry;
 import net.phylax.credible.strategy.DefaultSidecarStrategy;
 import net.phylax.credible.strategy.ISidecarStrategy;
 import net.phylax.credible.transport.ISidecarTransport;
+import net.phylax.credible.transport.grpc.BaseGrpcTransport;
 import net.phylax.credible.transport.grpc.GrpcTransport;
 import net.phylax.credible.txselection.CredibleTransactionSelector;
 import net.phylax.credible.txselection.CredibleTransactionSelectorFactory;
@@ -41,10 +46,14 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
     private BesuEvents besuEvents;
     private MetricsSystem metricsSystem;
     private TransactionSelectionService transactionSelectionService;
+    private TransactionPoolValidatorService transactionPoolValidatorService;
     private ISidecarStrategy strategy;
 
     private CredibleMetricsRegistry metricsRegistry;
-    
+
+    // Aeges client (null if Aeges is not configured)
+    private AegesGrpcClient aegesClient;
+
     // Keeps track of the last (block_hash, block_number) sent
     private String lastBlockSent = "";
 
@@ -111,6 +120,22 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         )
         private String otelEndpoint = null;
 
+        // Aeges options
+        @CommandLine.Option(
+            names = {"--plugin-credible-aeges-grpc-endpoints"},
+            description = "Aeges gRPC endpoints (format: host:port). When set, enables the Aeges transaction pool validator.",
+            paramLabel = "<host:port>",
+            split = ","
+        )
+        private List<String> aegesGrpcEndpoints = new ArrayList<>();
+
+        @CommandLine.Option(
+            names = {"--plugin-credible-aeges-deadline-ms"},
+            description = "gRPC deadline in milliseconds for each Aeges verification call",
+            defaultValue = "500"
+        )
+        private long aegesDeadlineMillis = 500;
+
         public List<String> getGrpcEndpoints() { return grpcEndpoints; }
         public List<String> getGrpcFallbackEndpoints() { return grpcFallbackEndpoints; }
         public int getProcessingTimeout() { return processingTimeout; }
@@ -119,6 +144,8 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         public int getWriteTimeout() { return writeTimeout; }
         public String getOtelEndpoint() { return otelEndpoint; }
         public int getCommitHeadTimeout() { return commitHeadTimeout; }
+        public List<String> getAegesGrpcEndpoints() { return aegesGrpcEndpoints; }
+        public long getAegesDeadlineMillis() { return aegesDeadlineMillis; }
     }
 
     private static CrediblePluginConfiguration config = null;
@@ -136,6 +163,12 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
                     () ->
                         new RuntimeException(
                             "Failed to obtain TransactionSelectionService from the ServiceManager."));
+
+        // Obtain TransactionPoolValidatorService for Aeges (optional — only needed when Aeges is configured)
+        transactionPoolValidatorService =
+            serviceManager
+                .getService(TransactionPoolValidatorService.class)
+                .orElse(null);
 
         // Register metrics category
         var metricsCategoryRegistry = serviceManager.getService(MetricCategoryRegistry.class)
@@ -198,6 +231,9 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         transactionSelectionService.registerPluginTransactionSelectorFactory(
             new CredibleTransactionSelectorFactory(credibleTxConfig, metricsRegistry)
         );
+
+        // Start Aeges pool validator if configured
+        startAeges();
     }
 
     /**
@@ -249,6 +285,55 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
     }
 
     /**
+     * Start the Aeges pool validator if endpoints are configured.
+     */
+    private void startAeges() {
+        if (!isNotEmpty(config.getAegesGrpcEndpoints())) {
+            log.info("Aeges not configured, skipping pool validator registration");
+            return;
+        }
+
+        if (transactionPoolValidatorService == null) {
+            log.warn("Aeges endpoints configured but TransactionPoolValidatorService is not available, skipping");
+            return;
+        }
+
+        // Use the first configured endpoint
+        String endpoint = config.getAegesGrpcEndpoints().get(0);
+        String[] parts = endpoint.split(":");
+        if (parts.length != 2) {
+            throw new IllegalArgumentException(
+                "Invalid Aeges gRPC endpoint format: " + endpoint +
+                ". Expected format: host:port (e.g., localhost:50051)");
+        }
+
+        String host = parts[0];
+        int port;
+        try {
+            port = Integer.parseInt(parts[1]);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(
+                "Invalid port in Aeges gRPC endpoint: " + endpoint);
+        }
+
+        log.info("Starting Aeges pool validator with endpoint {}:{}, deadline {}ms",
+            host, port, config.getAegesDeadlineMillis());
+
+        ManagedChannel channel = new BaseGrpcTransport.ChannelBuilder()
+            .host(host)
+            .port(port)
+            .build();
+
+        aegesClient = new AegesGrpcClient(channel, config.getAegesDeadlineMillis());
+        aegesClient.connect();
+
+        transactionPoolValidatorService.registerPluginTransactionValidatorFactory(
+            new AegesPoolValidatorFactory(aegesClient));
+
+        log.info("Aeges pool validator registered");
+    }
+
+    /**
      * Helper to check if a list is not null and not empty
      */
     private boolean isNotEmpty(List<String> list) {
@@ -268,6 +353,12 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
     @Override
     public void stop() {
         stopEvents(besuEvents);
+
+        if (aegesClient != null) {
+            log.info("Stopping Aeges client");
+            aegesClient.close();
+            aegesClient = null;
+        }
     }
         
     @Override

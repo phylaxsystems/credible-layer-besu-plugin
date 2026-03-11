@@ -17,21 +17,17 @@ import aeges.v1.AegesServiceGrpc;
 
 
 /**
- * gRPC client for the Aeges deny-cache service.
- *
- * Manages a bidirectional stream where the plugin sends VerifyTransactionRequest
- * messages and receives VerifyTransactionResponse verdicts in order.
+ * gRPC client for the Aeges service.
  */
 @Slf4j
 public class AegesGrpcClient extends BaseGrpcTransport {
     private final AegesServiceGrpc.AegesServiceStub stub;
 
-    // Bidirectional stream management
+    // Stream management
     private final AtomicReference<StreamObserver<Aeges.VerifyTransactionRequest>> requestStreamRef = new AtomicReference<>();
     private final Object streamLock = new Object();
     private volatile boolean connected = false;
 
-    // FIFO queue of pending response futures — responses arrive in send order
     private final LinkedBlockingQueue<CompletableFuture<Aeges.VerifyTransactionResponse>> pendingResponses = new LinkedBlockingQueue<>();
 
     public AegesGrpcClient(ManagedChannel channel, long deadlineMillis) {
@@ -40,7 +36,7 @@ public class AegesGrpcClient extends BaseGrpcTransport {
     }
 
     /**
-     * Open (or reopen) the bidirectional VerifyTransaction stream.
+     * Open (or reopen) the VerifyTransaction stream.
      */
     public void connect() {
         synchronized (streamLock) {
@@ -88,9 +84,9 @@ public class AegesGrpcClient extends BaseGrpcTransport {
     }
 
     /**
-     * Send a transaction for verification and block until the verdict arrives.
+     * Send a transaction for verification.
      *
-     * @return the response, or null if the service is unavailable or times out (fail-open)
+     * @return the response, or null if the service is unavailable or times out
      */
     public Aeges.VerifyTransactionResponse verifyTransaction(Aeges.Transaction protoTx) {
         // Lazy reconnect
@@ -100,7 +96,7 @@ public class AegesGrpcClient extends BaseGrpcTransport {
 
         StreamObserver<Aeges.VerifyTransactionRequest> stream = requestStreamRef.get();
         if (stream == null) {
-            log.debug("Aeges stream not available, fail-open");
+            log.debug("Aeges stream not available");
             return null;
         }
 
@@ -126,8 +122,7 @@ public class AegesGrpcClient extends BaseGrpcTransport {
             return future.get(deadlineMillis, TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
             pendingResponses.remove(future);
-            log.warn("Aeges verification timed out after {}ms, fail-open. Reconnecting stream.", deadlineMillis);
-            // Tear down stream on timeout to prevent ordering misalignment
+            log.warn("Aeges verification timed out after {}ms, reconnecting stream.", deadlineMillis);
             tearDown(e);
             return null;
         } catch (Exception e) {

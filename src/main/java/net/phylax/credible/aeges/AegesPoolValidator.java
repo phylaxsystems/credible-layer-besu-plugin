@@ -10,11 +10,7 @@ import aeges.v1.Aeges;
 
 
 /**
- * Transaction pool validator that checks incoming transactions against the
- * Aeges deny cache via a bidirectional gRPC stream.
- *
- * Fail-open: if the Aeges service is unavailable or times out, transactions
- * are allowed through.
+ * Transaction pool validator powered by Aeges.
  */
 @Slf4j
 public class AegesPoolValidator implements PluginTransactionPoolValidator {
@@ -32,7 +28,7 @@ public class AegesPoolValidator implements PluginTransactionPoolValidator {
             Aeges.VerifyTransactionResponse response = client.verifyTransaction(protoTx);
 
             if (response == null) {
-                // Fail-open: service unavailable
+                // Service unavailable
                 return Optional.empty();
             }
 
@@ -44,7 +40,7 @@ public class AegesPoolValidator implements PluginTransactionPoolValidator {
             return Optional.empty();
         } catch (Exception e) {
             log.error("Error during Aeges validation for tx {}: {}", transaction.getHash(), e.getMessage(), e);
-            // Fail-open on any unexpected error
+            // Unexpected error
             return Optional.empty();
         }
     }
