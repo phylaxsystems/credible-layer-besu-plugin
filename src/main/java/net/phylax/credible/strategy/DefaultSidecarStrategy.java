@@ -308,6 +308,8 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                             if (resp != null && resp.getResult() != null && !resp.isNotFound()) {
                                 firstResult.complete(resp);
                             } else if (notFoundCount.incrementAndGet() >= totalTransports) {
+                                log.debug("All {} transports returned NotFound for tx: {}, will re-poll",
+                                    totalTransports, ByteUtils.toHex(txExecId.getTxHash()));
                                 firstResult.complete(null);
                             }
                         });
@@ -322,7 +324,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                             return Result.success(resp);
                         }
                     } catch (Exception waitEx) {
-                        // Timeout waiting for any transport — break out to PROCESSING_TIMEOUT
+                        log.debug("Fallback polling timed out waiting for transports: {}", waitEx.getMessage());
                         break;
                     }
 
