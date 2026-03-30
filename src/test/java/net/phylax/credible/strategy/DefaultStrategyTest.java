@@ -1,15 +1,18 @@
 package net.phylax.credible.strategy;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
+import java.util.concurrent.CompletableFuture;
 
 import org.junit.jupiter.api.Test;
 
@@ -100,6 +103,42 @@ public class DefaultStrategyTest {
             primaryTransport == null ? new ArrayList<>() : Arrays.asList(primaryTransport),
             fallbackTransport == null ? new ArrayList<>() : Arrays.asList(fallbackTransport),
             processingTimeout);
+    }
+
+    DefaultSidecarStrategy initDefaultStrategy(
+        List<ISidecarTransport> primaryTransports,
+        List<ISidecarTransport> fallbackTransports,
+        int processingTimeout
+    ) {
+        return (DefaultSidecarStrategy) initStrategy(primaryTransports, fallbackTransports, processingTimeout);
+    }
+
+    DefaultSidecarStrategy initDefaultStrategy(
+        ISidecarTransport primaryTransport,
+        ISidecarTransport fallbackTransport,
+        int processingTimeout
+    ) {
+        return (DefaultSidecarStrategy) initStrategy(primaryTransport, fallbackTransport, processingTimeout);
+    }
+
+    GetTransactionRequest dispatchSingleTransaction(ISidecarStrategy strategy, byte[] hash) {
+        List<CompletableFuture<GetTransactionResponse>> pendingResults =
+            strategy.dispatchTransactions(generateTransactionRequest(hash));
+        assertEquals(1, pendingResults.size());
+        return new GetTransactionRequest(0L, 1L, hash, 0);
+    }
+
+    @SuppressWarnings("unchecked")
+    int pendingRequestCount(DefaultSidecarStrategy strategy) {
+        try {
+            Field pendingField = DefaultSidecarStrategy.class.getDeclaredField("pendingTxRequests");
+            pendingField.setAccessible(true);
+            Map<TxExecutionId, CompletableFuture<GetTransactionResponse>> pendingRequests =
+                (Map<TxExecutionId, CompletableFuture<GetTransactionResponse>>) pendingField.get(strategy);
+            return pendingRequests.size();
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Unable to inspect pending request state", e);
+        }
     }
 
     /**
@@ -337,9 +376,114 @@ public class DefaultStrategyTest {
         assertNotNull(response.getSuccess().getResult());
 
         long elapsed = stopwatch.elapsed().toMillis();
-        assertTrue("Total time should be less than processingTimeout, was: " + elapsed,
-            elapsed < processingTimeout);
-        assertTrue("Should have waited for stream timeout (800ms), was: " + elapsed,
-            elapsed >= 800);
+        assertTrue(elapsed < processingTimeout,
+            "Total time should be less than processingTimeout, was: " + elapsed);
+        assertTrue(elapsed >= 800,
+            "Should have waited for stream timeout (800ms), was: " + elapsed);
+    }
+
+    @Test
+    void shouldKeepPendingRequestUntilStreamSuccessCompletes() {
+        byte[] hash = hexToBytes("0x101");
+        var mockTransport = new MockTransport(100);
+        var strategy = initDefaultStrategy(mockTransport, null, 500);
+
+        GetTransactionRequest transactionRequest = dispatchSingleTransaction(strategy, hash);
+        assertEquals(1, pendingRequestCount(strategy));
+
+        Result<GetTransactionResponse, CredibleRejectionReason> response =
+            strategy.getTransactionResult(transactionRequest);
+
+        assertTrue(response.isSuccess());
+        assertEquals(TransactionStatus.SUCCESS, response.getSuccess().getResult().getStatus());
+        assertEquals(0, mockTransport.getGetTransactionCalls());
+        assertEquals(0, pendingRequestCount(strategy));
+    }
+
+    @Test
+    void shouldUseUnaryFallbackAfterStreamSliceTimesOut() {
+        byte[] hash = hexToBytes("0x102");
+        var mockTransport = new MockTransport(900);
+        mockTransport.setEmitStreamResults(false);
+        mockTransport.setGetTransactionLatency(50);
+        mockTransport.setGetTxStatus(TransactionStatus.REVERTED);
+
+        var strategy = initDefaultStrategy(mockTransport, null, 500);
+
+        Result<GetTransactionResponse, CredibleRejectionReason> response =
+            strategy.getTransactionResult(dispatchSingleTransaction(strategy, hash));
+
+        assertTrue(response.isSuccess());
+        assertEquals(TransactionStatus.REVERTED, response.getSuccess().getResult().getStatus());
+        assertEquals(1, mockTransport.getGetTransactionCalls());
+        assertEquals(0, pendingRequestCount(strategy));
+    }
+
+    @Test
+    void shouldTimeoutOnlyAfterUnaryNotFoundExhaustsFullProcessingBudget() {
+        byte[] hash = hexToBytes("0x103");
+        var mockTransport = new MockTransport(900);
+        mockTransport.setEmitStreamResults(false);
+        mockTransport.setGetTransactionLatency(25);
+        mockTransport.setGetTransactionNotFound(true);
+
+        var strategy = initDefaultStrategy(mockTransport, null, 500);
+
+        Stopwatch stopwatch = Stopwatch.createStarted();
+        Result<GetTransactionResponse, CredibleRejectionReason> response =
+            strategy.getTransactionResult(dispatchSingleTransaction(strategy, hash));
+        stopwatch.stop();
+
+        assertFalse(response.isSuccess());
+        assertEquals(CredibleRejectionReason.PROCESSING_TIMEOUT, response.getFailure());
+        assertEquals(1, mockTransport.getGetTransactionCalls());
+        assertTrue(stopwatch.elapsed().toMillis() >= 450);
+        assertFalse(strategy.isActive());
+        assertEquals(0, pendingRequestCount(strategy));
+    }
+
+    @Test
+    void shouldAllowLateStreamResultToWinAfterFallbackStarts() {
+        byte[] hash = hexToBytes("0x104");
+        var mockTransport = new MockTransport(900);
+        mockTransport.setStreamResultLatency(425);
+        mockTransport.setStreamResultStatus(TransactionStatus.ASSERTION_FAILED);
+        mockTransport.setGetTransactionLatency(25);
+        mockTransport.setGetTransactionNotFound(true);
+
+        var strategy = initDefaultStrategy(mockTransport, null, 500);
+
+        Result<GetTransactionResponse, CredibleRejectionReason> response =
+            strategy.getTransactionResult(dispatchSingleTransaction(strategy, hash));
+
+        assertTrue(response.isSuccess());
+        assertEquals(TransactionStatus.ASSERTION_FAILED, response.getSuccess().getResult().getStatus());
+        assertEquals(1, mockTransport.getGetTransactionCalls());
+        assertEquals(0, pendingRequestCount(strategy));
+    }
+
+    @Test
+    void shouldReturnNoActiveTransportAfterTimeoutMarksStrategyInactive() {
+        byte[] timeoutHash = hexToBytes("0x105");
+        var mockTransport = new MockTransport(900);
+        mockTransport.setEmitStreamResults(false);
+        mockTransport.setGetTransactionLatency(25);
+        mockTransport.setGetTransactionNotFound(true);
+
+        var strategy = initDefaultStrategy(mockTransport, null, 500);
+
+        Result<GetTransactionResponse, CredibleRejectionReason> timeoutResponse =
+            strategy.getTransactionResult(dispatchSingleTransaction(strategy, timeoutHash));
+        assertEquals(CredibleRejectionReason.PROCESSING_TIMEOUT, timeoutResponse.getFailure());
+
+        List<CompletableFuture<GetTransactionResponse>> pendingResults =
+            strategy.dispatchTransactions(generateTransactionRequest(hexToBytes("0x106")));
+        assertTrue(pendingResults.isEmpty());
+
+        Result<GetTransactionResponse, CredibleRejectionReason> inactiveResponse =
+            strategy.getTransactionResult(new GetTransactionRequest(0L, 1L, hexToBytes("0x106"), 0));
+        assertFalse(inactiveResponse.isSuccess());
+        assertEquals(CredibleRejectionReason.NO_ACTIVE_TRANSPORT, inactiveResponse.getFailure());
+        assertEquals(0, pendingRequestCount(strategy));
     }
 }

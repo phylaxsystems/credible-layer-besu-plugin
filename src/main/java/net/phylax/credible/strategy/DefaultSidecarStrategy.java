@@ -9,6 +9,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -159,16 +160,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
      */
     private void onTransactionResult(TransactionResult result) {
         TxExecutionId txExecId = result.getTxExecutionId();
-        CompletableFuture<GetTransactionResponse> future = pendingTxRequests.get(txExecId);
-
-        if (future != null) {
-            log.debug("Received result for pending tx: hash={}, status={}",
-                ByteUtils.toHex(txExecId.getTxHash()), result.getStatus());
-            future.complete(new GetTransactionResponse(result));
-        } else {
-            log.trace("Received result for unknown/already-completed tx: hash={}",
-                ByteUtils.toHex(txExecId.getTxHash()));
-        }
+        completePendingRequest(txExecId, new GetTransactionResponse(result), "stream");
     }
     
     private CompletableFuture<TransportResponse> sendCommitHeadToTransport(CommitHead commitHead, ISidecarTransport transport) {
@@ -194,7 +186,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
     @Override
     public List<CompletableFuture<GetTransactionResponse>> dispatchTransactions(
         SendTransactionsRequest sendTxRequest) {
-        if (activeTransports.isEmpty()) {
+        if (!isActive.get() || activeTransports.isEmpty()) {
             log.warn("Active sidecars empty");
             return Collections.emptyList();
         }
@@ -203,12 +195,13 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
             .map(tx -> tx.getTxExecutionId())
             .collect(Collectors.toList());
 
-        // Create a future that will be completed when the result arrives via SubscribeResults stream
-        // NOTE: making the assumption that it's only 1 transaction per request
-        // which is implied with the TransactionSelectionPlugin
-        TxExecutionId txExecId = txExecutionIds.get(0);
-        CompletableFuture<GetTransactionResponse> resultFuture = new CompletableFuture<>();
-        pendingTxRequests.put(txExecId, resultFuture);
+        List<CompletableFuture<GetTransactionResponse>> resultFutures = txExecutionIds.stream()
+            .map(txExecutionId -> {
+                CompletableFuture<GetTransactionResponse> resultFuture = new CompletableFuture<>();
+                pendingTxRequests.put(txExecutionId, resultFuture);
+                return resultFuture;
+            })
+            .collect(Collectors.toList());
 
         // Send transactions to all active transports
         for (ISidecarTransport transport : activeTransports) {
@@ -229,15 +222,11 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                 });
         }
 
-        if (!isActive.get()) {
-            log.debug("Transports aren't active!");
-            return Collections.emptyList();
-        }
+        txExecutionIds.forEach(txExecId ->
+            log.debug("Dispatched transaction, waiting for result via stream: hash={}",
+                ByteUtils.toHex(txExecId.getTxHash())));
 
-        log.debug("Dispatched transaction, waiting for result via stream: hash={}", ByteUtils.toHex(txExecId.getTxHash()));
-
-        // Return a single-element list for compatibility with existing interface
-        return Collections.singletonList(resultFuture);
+        return resultFutures;
     }
     
     @Override
@@ -255,58 +244,40 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
 
         // Use futureTimeoutRatio percentage of timeout for stream, leave the rest for the fallback
         long streamTimeout = (long) (processingTimeout * futureTimeoutRatio);
-        long fallbackTimeout = processingTimeout - streamTimeout;
+        long startTime = System.nanoTime();
 
         try {
-            // Wait for result with timeout - result will be completed by onTransactionResult callback
-            GetTransactionResponse response = future
-                .orTimeout(streamTimeout, TimeUnit.MILLISECONDS)
-                .get();
+            GetTransactionResponse response = future.get(streamTimeout, TimeUnit.MILLISECONDS);
             return Result.success(response);
-        } catch (ExecutionException e) {
-            if (e.getCause() instanceof java.util.concurrent.TimeoutException) {
-                log.debug("Timeout waiting for transaction result via stream, falling back to getTransaction: {}", ByteUtils.toHex(txExecId.getTxHash()));
-                metricsRegistry.getTimeoutCounter().labels().inc();
+        } catch (TimeoutException timeoutException) {
+            log.debug("Timeout waiting for transaction result via stream, falling back to getTransaction: {}",
+                ByteUtils.toHex(txExecId.getTxHash()));
+            metricsRegistry.getTimeoutCounter().labels().inc();
+            dispatchFallbackLookup(transactionRequest);
 
-                // Fallback: dispatch getTransaction to all active transports in parallel
-                List<CompletableFuture<GetTransactionResponse>> fallbackFutures = activeTransports.stream()
-                    .map(transport -> transport.getTransaction(transactionRequest)
-                        .exceptionally(ex -> {
-                            log.debug("Fallback getTransaction failed for transport: {}", ex.getMessage());
-                            return null;
-                        }))
-                    .collect(Collectors.toList());
+            long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startTime);
+            long remainingTimeout = Math.max(0L, processingTimeout - elapsedMs);
 
-                // Wait for any successful response with remaining timeout
-                CompletableFuture<GetTransactionResponse> anySuccess = CompletableFuture.anyOf(
-                    fallbackFutures.stream()
-                        .map(f -> f.thenApply(resp -> {
-                            if (resp != null && resp.getResult() != null) {
-                                return resp;
-                            }
-                            // Return a never-completing future for null/invalid responses
-                            return null;
-                        }))
-                        .toArray(CompletableFuture[]::new)
-                ).thenApply(obj -> (GetTransactionResponse) obj);
-
-                try {
-                    GetTransactionResponse fallbackResponse = anySuccess
-                        .orTimeout(fallbackTimeout, TimeUnit.MILLISECONDS)
-                        .get();
-                    if (fallbackResponse != null && fallbackResponse.getResult() != null) {
-                        log.debug("Got transaction result via fallback getTransaction: {}", ByteUtils.toHex(txExecId.getTxHash()));
-                        return Result.success(fallbackResponse);
-                    }
-                } catch (Exception fallbackEx) {
-                    log.debug("All parallel fallback getTransaction attempts failed: {}", fallbackEx.getMessage());
-                }
-
-                // Mark strategy as inactive when results timeout - no sidecar responded in time
+            try {
+                GetTransactionResponse response = future.get(remainingTimeout, TimeUnit.MILLISECONDS);
+                return Result.success(response);
+            } catch (TimeoutException fallbackTimeoutException) {
                 log.debug("All fallback attempts failed for transaction: {}", ByteUtils.toHex(txExecId.getTxHash()));
                 isActive.set(false);
                 return Result.failure(CredibleRejectionReason.PROCESSING_TIMEOUT);
+            } catch (InterruptedException e) {
+                log.debug("Interrupted waiting for transaction result after fallback: {}",
+                    ByteUtils.toHex(txExecId.getTxHash()));
+                metricsRegistry.getErrorCounter().labels().inc();
+                Thread.currentThread().interrupt();
+                return Result.failure(CredibleRejectionReason.ERROR);
+            } catch (ExecutionException e) {
+                log.debug("Exception waiting for transaction result after fallback: {}, cause: {}",
+                    e.getMessage(), e.getCause() != null ? e.getCause().getMessage() : "null");
+                metricsRegistry.getErrorCounter().labels().inc();
+                return Result.failure(CredibleRejectionReason.ERROR);
             }
+        } catch (ExecutionException e) {
             log.debug("Exception waiting for transaction result: {}, cause: {}",
                 e.getMessage(), e.getCause() != null ? e.getCause().getMessage() : "null");
             metricsRegistry.getErrorCounter().labels().inc();
@@ -317,8 +288,66 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
             Thread.currentThread().interrupt();
             return Result.failure(CredibleRejectionReason.ERROR);
         } finally {
-            pendingTxRequests.remove(txExecId);
+            pendingTxRequests.remove(txExecId, future);
         }
+    }
+
+    private void dispatchFallbackLookup(GetTransactionRequest transactionRequest) {
+        TxExecutionId txExecId = transactionRequest.toTxExecutionId();
+        activeTransports.forEach(transport ->
+            transport.getTransaction(transactionRequest)
+                .whenComplete((response, ex) -> {
+                    if (ex != null) {
+                        log.debug("Fallback getTransaction failed for transport: {}", ex.getMessage());
+                        return;
+                    }
+
+                    if (hasConcreteResult(response)) {
+                        completePendingRequest(txExecId, response, "fallback");
+                        return;
+                    }
+
+                    log.debug("Fallback getTransaction returned not_found for transaction: {}",
+                        ByteUtils.toHex(txExecId.getTxHash()));
+                }));
+    }
+
+    private void completePendingRequest(
+        TxExecutionId txExecId,
+        GetTransactionResponse response,
+        String source
+    ) {
+        CompletableFuture<GetTransactionResponse> future = pendingTxRequests.get(txExecId);
+
+        if (future == null) {
+            log.trace("Received {} result for unknown/already-completed tx: hash={}",
+                source,
+                ByteUtils.toHex(txExecId.getTxHash()));
+            return;
+        }
+
+        if (!hasConcreteResult(response)) {
+            log.trace("Ignoring non-terminal {} response for tx: hash={}",
+                source,
+                ByteUtils.toHex(txExecId.getTxHash()));
+            return;
+        }
+
+        if (future.complete(response)) {
+            log.debug("Received result for pending tx via {}: hash={}, status={}",
+                source,
+                ByteUtils.toHex(txExecId.getTxHash()),
+                response.getResult().getStatus());
+            return;
+        }
+
+        log.trace("Ignoring {} result for already-completed tx: hash={}",
+            source,
+            ByteUtils.toHex(txExecId.getTxHash()));
+    }
+
+    private boolean hasConcreteResult(GetTransactionResponse response) {
+        return response != null && response.getResult() != null;
     }
 
     @Override

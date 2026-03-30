@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 import net.phylax.credible.types.SidecarApiModels;
@@ -14,13 +15,17 @@ import net.phylax.credible.utils.ByteUtils;
 
 public class MockTransport implements ISidecarTransport {
     private int processingLatency;
+    private Integer streamResultLatency = null;
     // Separate latency for getTransaction fallback (if not set, uses processingLatency)
     private Integer getTransactionLatency = null;
     private String sendTxStatus = "accepted";
     private String getTxStatus = TransactionStatus.SUCCESS;
+    private String streamResultStatus = TransactionStatus.SUCCESS;
     private boolean reorgSuccess = true;
     private int sendTransactionsLatency = 0;
     private int sendEventsLatency = 0;
+    private boolean emitStreamResults = true;
+    private boolean getTransactionNotFound = false;
 
     // Whether to return empty results on getTransactions
     private boolean emptyResults = false;
@@ -48,6 +53,7 @@ public class MockTransport implements ISidecarTransport {
     // Results subscription callback
     private Consumer<TransactionResult> resultsCallback;
     private Consumer<Throwable> errorCallback;
+    private final AtomicInteger getTransactionCalls = new AtomicInteger();
 
     public MockTransport(int processingLatency) {
         this.processingLatency = processingLatency;
@@ -66,14 +72,14 @@ public class MockTransport implements ISidecarTransport {
             // Simulate results coming via the stream after processing latency
             // Store callback reference and latency for use in async task (capture at send time)
             final Consumer<TransactionResult> callbackRef = resultsCallback;
-            final int latency = processingLatency;
-            if (callbackRef != null) {
+            final int latency = streamResultLatency != null ? streamResultLatency : processingLatency;
+            if (emitStreamResults && callbackRef != null) {
                 Executor resultExecutor = CompletableFuture.delayedExecutor(
                     latency, TimeUnit.MILLISECONDS);
                 CompletableFuture.runAsync(() -> {
                     for (TransactionExecutionPayload tx : transactions.getTransactions()) {
                         TxExecutionId txExecId = tx.getTxExecutionId();
-                        String status = getTxStatus;
+                        String status = streamResultStatus;
                         if (isFailingTransaction(txExecId.getTxHash())) {
                             status = TransactionStatus.ASSERTION_FAILED;
                         }
@@ -125,10 +131,11 @@ public class MockTransport implements ISidecarTransport {
         }
 
         return CompletableFuture.supplyAsync(() -> {
+            getTransactionCalls.incrementAndGet();
             if (throwOnGetTx) {
                 throw new RuntimeException("GetTransaction failed");
             }
-            return new GetTransactionResponse(emptyResults ? null : result);
+            return new GetTransactionResponse(getTransactionNotFound || emptyResults ? null : result);
         }, delayedExecutor);
     }
 
@@ -142,7 +149,7 @@ public class MockTransport implements ISidecarTransport {
     @Override
     public CompletableFuture<SendEventsResponse> sendEvents(SendEventsRequest events) {
         Executor delayedExecutor = CompletableFuture.delayedExecutor(
-            processingLatency, TimeUnit.MILLISECONDS);
+            sendEventsLatency, TimeUnit.MILLISECONDS);
 
         for(SendEventsRequestItem event : events.getEvents()) {
            if (event instanceof SidecarApiModels.ReorgEventReqItem) {
@@ -168,7 +175,7 @@ public class MockTransport implements ISidecarTransport {
     @Override
     public CompletableFuture<Boolean> sendEvent(SendEventsRequestItem event) {
         Executor delayedExecutor = CompletableFuture.delayedExecutor(
-            processingLatency, TimeUnit.MILLISECONDS);
+            sendEventsLatency, TimeUnit.MILLISECONDS);
 
         return CompletableFuture.supplyAsync(() -> {
             if (throwOnSendEvents) {
@@ -186,12 +193,24 @@ public class MockTransport implements ISidecarTransport {
         this.getTxStatus = getTxStatus;
     }
 
+    public void setStreamResultStatus(String streamResultStatus) {
+        this.streamResultStatus = streamResultStatus;
+    }
+
     public void setReorgSuccess(boolean reorgSuccess) {
         this.reorgSuccess = reorgSuccess;
     }
 
     public void setEmptyResults(boolean emptyResults) {
         this.emptyResults = emptyResults;
+    }
+
+    public void setEmitStreamResults(boolean emitStreamResults) {
+        this.emitStreamResults = emitStreamResults;
+    }
+
+    public void setGetTransactionNotFound(boolean getTransactionNotFound) {
+        this.getTransactionNotFound = getTransactionNotFound;
     }
 
     public void setThrowOnSendEvents(boolean throwOnSendEvents) {
@@ -222,6 +241,10 @@ public class MockTransport implements ISidecarTransport {
         this.getTransactionLatency = getTransactionLatency;
     }
 
+    public void setStreamResultLatency(Integer streamResultLatency) {
+        this.streamResultLatency = streamResultLatency;
+    }
+
     public void addFailingTx(byte[] failingTx) {
         failingTransactions.add(failingTx);
     }
@@ -232,6 +255,10 @@ public class MockTransport implements ISidecarTransport {
 
     public void clearReorgRequests() {
         reorgHashes.clear();
+    }
+
+    public int getGetTransactionCalls() {
+        return getTransactionCalls.get();
     }
 
     @Override

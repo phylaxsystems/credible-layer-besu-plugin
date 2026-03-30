@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -92,6 +93,7 @@ public class GrpcTransportTest {
         public String streamAckMessage = "Events processed";
         public List<Sidecar.TransactionResult> transactionResults = new ArrayList<>();
         public List<ByteString> notFoundTxHashes = new ArrayList<>();
+        public Sidecar.GetTransactionResponse getTransactionResponse;
 
         @Override
         public StreamObserver<Sidecar.Event> streamEvents(StreamObserver<Sidecar.StreamAck> responseObserver) {
@@ -139,9 +141,13 @@ public class GrpcTransportTest {
         public void getTransaction(Sidecar.GetTransactionRequest request,
                                    StreamObserver<Sidecar.GetTransactionResponse> responseObserver) {
             lastGetTransactionRequest = request;
-            responseObserver.onNext(Sidecar.GetTransactionResponse.newBuilder()
-                .setResult(transactionResults.get(0))
-                .build());
+            if (getTransactionResponse != null) {
+                responseObserver.onNext(getTransactionResponse);
+            } else {
+                responseObserver.onNext(Sidecar.GetTransactionResponse.newBuilder()
+                    .setResult(transactionResults.get(0))
+                    .build());
+            }
             responseObserver.onCompleted();
         }
 
@@ -171,6 +177,7 @@ public class GrpcTransportTest {
             lastGetTransactionRequest = null;
             transactionResults.clear();
             notFoundTxHashes.clear();
+            getTransactionResponse = null;
         }
     }
 
@@ -388,6 +395,39 @@ public class GrpcTransportTest {
         assertEquals(21000, result.getGasUsed());
 
         // Verify the request was received correctly
+        assertNotNull(testService.lastGetTransactionRequest);
+    }
+
+    @Test
+    public void testGetTransactionReturnsNotFoundOutcome() throws Exception {
+        testService.getTransactionResponse = Sidecar.GetTransactionResponse.newBuilder()
+            .setNotFound(hexToByteString("0xaabbccdd11223344"))
+            .build();
+
+        SidecarApiModels.GetTransactionRequest txReq =
+            new SidecarApiModels.GetTransactionRequest(1000L, 1L, hexToBytes("0xaabbccdd11223344"), 0);
+
+        SidecarApiModels.GetTransactionResponse response = transport.getTransaction(txReq).get();
+
+        assertNull(response.getResult());
+        assertArrayEquals(hexToBytes("0xaabbccdd11223344"), response.getNotFound());
+        assertNotNull(testService.lastGetTransactionRequest);
+    }
+
+    @Test
+    public void testGetTransactionFailsWhenOutcomeMissing() {
+        testService.getTransactionResponse = Sidecar.GetTransactionResponse.getDefaultInstance();
+
+        SidecarApiModels.GetTransactionRequest txReq =
+            new SidecarApiModels.GetTransactionRequest(1000L, 1L, hexToBytes("0xaabbccdd11223344"), 0);
+
+        ExecutionException exception = assertThrows(
+            ExecutionException.class,
+            () -> transport.getTransaction(txReq).get()
+        );
+
+        assertInstanceOf(IllegalStateException.class, exception.getCause());
+        assertEquals("GetTransaction response did not include an outcome", exception.getCause().getMessage());
         assertNotNull(testService.lastGetTransactionRequest);
     }
 

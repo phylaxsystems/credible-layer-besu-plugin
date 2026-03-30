@@ -391,8 +391,17 @@ public class GrpcTransport implements ISidecarTransport {
                 .getTransaction(request, new StreamObserver<Sidecar.GetTransactionResponse>() {
                     @Override
                     public void onNext(Sidecar.GetTransactionResponse response) {
-                        SidecarApiModels.GetTransactionResponse result = GrpcModelConverter.fromProtoGetTransactionResponse(response);
-                        future.complete(result);
+                        switch (response.getOutcomeCase()) {
+                            case RESULT -> future.complete(
+                                GrpcModelConverter.fromProtoGetTransactionResponse(response));
+                            case NOT_FOUND -> future.complete(
+                                new SidecarApiModels.GetTransactionResponse(
+                                    null,
+                                    response.getNotFound().toByteArray()
+                                ));
+                            case OUTCOME_NOT_SET -> future.completeExceptionally(
+                                new IllegalStateException("GetTransaction response did not include an outcome"));
+                        }
                     }
 
                     @Override
