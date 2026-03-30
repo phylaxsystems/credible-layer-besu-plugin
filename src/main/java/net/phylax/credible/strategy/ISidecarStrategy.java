@@ -36,23 +36,29 @@ public interface ISidecarStrategy {
     CompletableFuture<Void> newIteration(NewIteration newIteration);
 
     /**
-     * Send the transactions for processing to the sidecar and starts the long polling
-     * of dispatched hashes. Returns a List of CompletableFutures for one future per
-     * transport (as multiple transports may be used).
-     * 
+     * Sends transactions for processing and registers per-transaction result futures.
+     * The returned futures are completed by {@code SubscribeResults} first and may later
+     * be completed by unary {@code GetTransaction} recovery lookups if the initial stream
+     * wait slice expires. Dispatch itself is non-blocking and does not treat a missing
+     * unary result as terminal.
+     *
      * @param sendTxRequest SendTransactionsRequest instance
-     * @return List of CompletableFutures, one future from a single transport
+     * @return List of CompletableFutures, one future per dispatched transaction
      */
     List<CompletableFuture<GetTransactionResponse>> dispatchTransactions(
         SendTransactionsRequest sendTxRequest);
 
     /**
-     * Get the result processing a transaction in the credible layer. This method is called
-     * after the dispatchTransactions method and the futures should resolve inside of it.
-     * 
-     * @param txExecId TxExecutionId containing the block number, iteration ID and hash 
-     * @return Result<GetTransactionResponse, CredibleRejectionReason> Contains either the result of the transaction processing 
-     * or the reason it got rejected
+     * Resolves a dispatched transaction result within the configured processing window.
+     * The strategy first waits for the tracked stream result, then starts unary
+     * {@code GetTransaction} lookups against active transports without removing the
+     * pending request. Unary {@code not_found} responses are non-terminal; the first
+     * concrete result from either source wins. {@code PROCESSING_TIMEOUT} is returned
+     * only after the full processing window is exhausted without any concrete result.
+     *
+     * @param transactionRequest GetTransactionRequest containing the transaction execution ID
+     * @return Result<GetTransactionResponse, CredibleRejectionReason> containing either a
+     * concrete transaction result or the rejection reason
      */
     Result<GetTransactionResponse, CredibleRejectionReason> getTransactionResult(GetTransactionRequest transactionRequest);
 

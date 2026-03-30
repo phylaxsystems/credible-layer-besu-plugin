@@ -6,8 +6,18 @@ import java.util.function.Consumer;
 import net.phylax.credible.types.SidecarApiModels.*;
 
 public interface ISidecarTransport {
+    /**
+     * Dispatch transactions for execution. Completion is expected to arrive via
+     * {@code subscribeResults}; callers may issue unary lookups later as a recovery path.
+     */
     CompletableFuture<SendTransactionsResponse> sendTransactions(SendTransactionsRequest transactions);
     CompletableFuture<GetTransactionsResponse> getTransactions(GetTransactionsRequest transactions);
+
+    /**
+     * Query a single transaction result using the unary recovery path.
+     * Implementations may return {@code not_found} when no concrete result is currently
+     * available; callers must treat that outcome as non-terminal.
+     */
     CompletableFuture<GetTransactionResponse> getTransaction(GetTransactionRequest transactions);
     CompletableFuture<ReorgResponse> sendReorg(ReorgRequest reorgRequest);
     CompletableFuture<SendEventsResponse> sendEvents(SendEventsRequest events);
@@ -15,7 +25,8 @@ public interface ISidecarTransport {
 
     /**
      * Subscribe to transaction results stream.
-     * Results are pushed by the server as transactions complete execution.
+     * Results are pushed by the server as transactions complete execution and are the
+     * primary completion path for dispatched transactions.
      *
      * @param onResult callback invoked for each received TransactionResult
      * @param onError callback invoked on stream error
