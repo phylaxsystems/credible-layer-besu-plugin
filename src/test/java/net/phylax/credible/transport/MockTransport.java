@@ -3,7 +3,9 @@ package net.phylax.credible.transport;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -45,6 +47,9 @@ public class MockTransport implements ISidecarTransport {
         return false;
     }
 
+    // Track pending results for non-blocking getTransaction simulation
+    private final Map<String, CompletableFuture<TransactionResult>> pendingResults = new ConcurrentHashMap<>();
+
     // Results subscription callback
     private Consumer<TransactionResult> resultsCallback;
     private Consumer<Throwable> errorCallback;
@@ -67,17 +72,24 @@ public class MockTransport implements ISidecarTransport {
             // Store callback reference and latency for use in async task (capture at send time)
             final Consumer<TransactionResult> callbackRef = resultsCallback;
             final int latency = processingLatency;
-            if (callbackRef != null) {
+
+            // Schedule result availability after processingLatency for each transaction
+            for (TransactionExecutionPayload tx : transactions.getTransactions()) {
+                TxExecutionId txExecId = tx.getTxExecutionId();
+                String txHashHex = ByteUtils.toHex(txExecId.getTxHash());
+                CompletableFuture<TransactionResult> resultFuture = new CompletableFuture<>();
+                pendingResults.put(txHashHex, resultFuture);
+
                 Executor resultExecutor = CompletableFuture.delayedExecutor(
                     latency, TimeUnit.MILLISECONDS);
                 CompletableFuture.runAsync(() -> {
-                    for (TransactionExecutionPayload tx : transactions.getTransactions()) {
-                        TxExecutionId txExecId = tx.getTxExecutionId();
-                        String status = getTxStatus;
-                        if (isFailingTransaction(txExecId.getTxHash())) {
-                            status = TransactionStatus.ASSERTION_FAILED;
-                        }
-                        TransactionResult result = new TransactionResult(txExecId, status, 21000L, "");
+                    String status = getTxStatus;
+                    if (isFailingTransaction(txExecId.getTxHash())) {
+                        status = TransactionStatus.ASSERTION_FAILED;
+                    }
+                    TransactionResult result = new TransactionResult(txExecId, status, 21000L, "");
+                    resultFuture.complete(result);
+                    if (callbackRef != null) {
                         callbackRef.accept(result);
                     }
                 }, resultExecutor);
@@ -114,21 +126,25 @@ public class MockTransport implements ISidecarTransport {
 
     @Override
     public CompletableFuture<GetTransactionResponse> getTransaction(GetTransactionRequest req) {
-        int latency = getTransactionLatency != null ? getTransactionLatency : processingLatency;
+        int latency = getTransactionLatency != null ? getTransactionLatency : 0;
         Executor delayedExecutor = CompletableFuture.delayedExecutor(
             latency, TimeUnit.MILLISECONDS);
-
-        final TransactionResult result = new TransactionResult(req.toTxExecutionId(), getTxStatus, 21000L, "");
-
-        if (isFailingTransaction(result.getTxExecutionId().getTxHash())) {
-            result.setStatus(TransactionStatus.ASSERTION_FAILED);
-        }
 
         return CompletableFuture.supplyAsync(() -> {
             if (throwOnGetTx) {
                 throw new RuntimeException("GetTransaction failed");
             }
-            return new GetTransactionResponse(emptyResults ? null : result);
+
+            // Non-blocking: check if result is already available
+            String txHashHex = ByteUtils.toHex(req.getTxHash());
+            CompletableFuture<TransactionResult> pendingFuture = pendingResults.get(txHashHex);
+            if (pendingFuture != null && pendingFuture.isDone() && !pendingFuture.isCompletedExceptionally()) {
+                TransactionResult result = pendingFuture.join();
+                return new GetTransactionResponse(emptyResults ? null : result);
+            }
+
+            // Result not ready yet — return NotFound
+            return new GetTransactionResponse(req.getTxHash());
         }, delayedExecutor);
     }
 

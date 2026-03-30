@@ -10,6 +10,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -50,6 +51,7 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
     // The ratio of the processing timeout that will be used for the stream future (the initial request)
     // The rest is used in the fallback transport
     private float futureTimeoutRatio = 0.8f;
+    private final long pollIntervalMs;
     private final CredibleMetricsRegistry metricsRegistry;
 
     public static class TransportResponse {
@@ -77,11 +79,22 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
         int processingTimeout,
         final CredibleMetricsRegistry metricsRegistry
     ) {
+        this(primaryTransports, fallbackTransports, processingTimeout, 10, metricsRegistry);
+    }
+
+    public DefaultSidecarStrategy(
+        List<ISidecarTransport> primaryTransports,
+        List<ISidecarTransport> fallbackTransports,
+        int processingTimeout,
+        long pollIntervalMs,
+        final CredibleMetricsRegistry metricsRegistry
+    ) {
         // If transports aren't specified, the strategy shouldn't break
         this.primaryTransports = primaryTransports == null ? new ArrayList<>() : primaryTransports;
         this.fallbackTransports = fallbackTransports == null ? new ArrayList<>() : fallbackTransports;
         this.activeTransports = new CopyOnWriteArrayList<>();
         this.processingTimeout = processingTimeout;
+        this.pollIntervalMs = pollIntervalMs;
         this.metricsRegistry = metricsRegistry;
 
         this.pendingTxRequests = new ConcurrentHashMap<>();
@@ -268,42 +281,66 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                 log.debug("Timeout waiting for transaction result via stream, falling back to getTransaction: {}", ByteUtils.toHex(txExecId.getTxHash()));
                 metricsRegistry.getTimeoutCounter().labels().inc();
 
-                // Fallback: dispatch getTransaction to all active transports in parallel
-                List<CompletableFuture<GetTransactionResponse>> fallbackFutures = activeTransports.stream()
-                    .map(transport -> transport.getTransaction(transactionRequest)
-                        .exceptionally(ex -> {
-                            log.debug("Fallback getTransaction failed for transport: {}", ex.getMessage());
-                            return null;
-                        }))
-                    .collect(Collectors.toList());
+                // Fallback: poll getTransaction with configurable interval until result or timeout.
+                // Returns immediately when ANY transport produces a real result (don't wait for
+                // slower transports). Only re-polls once ALL transports complete with NotFound.
+                long deadline = System.currentTimeMillis() + fallbackTimeout;
+                while (System.currentTimeMillis() < deadline) {
+                    long remaining = deadline - System.currentTimeMillis();
+                    if (remaining <= 0) break;
 
-                // Wait for any successful response with remaining timeout
-                CompletableFuture<GetTransactionResponse> anySuccess = CompletableFuture.anyOf(
-                    fallbackFutures.stream()
-                        .map(f -> f.thenApply(resp -> {
-                            if (resp != null && resp.getResult() != null) {
-                                return resp;
+                    // Fire getTransaction on all active transports in parallel
+                    List<CompletableFuture<GetTransactionResponse>> fallbackFutures = activeTransports.stream()
+                        .map(transport -> transport.getTransaction(transactionRequest)
+                            .exceptionally(ex -> {
+                                log.debug("Fallback getTransaction failed for transport: {}", ex.getMessage());
+                                return null;
+                            }))
+                        .collect(Collectors.toList());
+
+                    int totalTransports = fallbackFutures.size();
+                    // Completes with a real result on first success, or null when all are NotFound/error
+                    CompletableFuture<GetTransactionResponse> firstResult = new CompletableFuture<>();
+                    AtomicInteger notFoundCount = new AtomicInteger(0);
+
+                    for (CompletableFuture<GetTransactionResponse> f : fallbackFutures) {
+                        f.thenAccept(resp -> {
+                            if (resp != null && resp.getResult() != null && !resp.isNotFound()) {
+                                firstResult.complete(resp);
+                            } else if (notFoundCount.incrementAndGet() >= totalTransports) {
+                                log.debug("All {} transports returned NotFound for tx: {}, will re-poll",
+                                    totalTransports, ByteUtils.toHex(txExecId.getTxHash()));
+                                firstResult.complete(null);
                             }
-                            // Return a never-completing future for null/invalid responses
-                            return null;
-                        }))
-                        .toArray(CompletableFuture[]::new)
-                ).thenApply(obj -> (GetTransactionResponse) obj);
-
-                try {
-                    GetTransactionResponse fallbackResponse = anySuccess
-                        .orTimeout(fallbackTimeout, TimeUnit.MILLISECONDS)
-                        .get();
-                    if (fallbackResponse != null && fallbackResponse.getResult() != null) {
-                        log.debug("Got transaction result via fallback getTransaction: {}", ByteUtils.toHex(txExecId.getTxHash()));
-                        return Result.success(fallbackResponse);
+                        });
                     }
-                } catch (Exception fallbackEx) {
-                    log.debug("All parallel fallback getTransaction attempts failed: {}", fallbackEx.getMessage());
+
+                    try {
+                        GetTransactionResponse resp = firstResult
+                            .orTimeout(remaining, TimeUnit.MILLISECONDS)
+                            .get();
+                        if (resp != null) {
+                            log.debug("Got transaction result via fallback polling: {}", ByteUtils.toHex(txExecId.getTxHash()));
+                            return Result.success(resp);
+                        }
+                    } catch (Exception waitEx) {
+                        log.debug("Fallback polling timed out waiting for transports: {}", waitEx.getMessage());
+                        break;
+                    }
+
+                    // All transports returned NotFound — sleep and retry
+                    if (System.currentTimeMillis() < deadline) {
+                        try {
+                            Thread.sleep(Math.min(pollIntervalMs, deadline - System.currentTimeMillis()));
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                            return Result.failure(CredibleRejectionReason.ERROR);
+                        }
+                    }
                 }
 
-                // Mark strategy as inactive when results timeout - no sidecar responded in time
-                log.debug("All fallback attempts failed for transaction: {}", ByteUtils.toHex(txExecId.getTxHash()));
+                // Exhausted timeout — no sidecar responded with a result in time
+                log.debug("All fallback polling attempts failed for transaction: {}", ByteUtils.toHex(txExecId.getTxHash()));
                 isActive.set(false);
                 return Result.failure(CredibleRejectionReason.PROCESSING_TIMEOUT);
             }
