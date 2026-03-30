@@ -339,8 +339,17 @@ public class GrpcModelConverter {
      */
     public static SidecarApiModels.GetTransactionResponse fromProtoGetTransactionResponse(
             Sidecar.GetTransactionResponse proto) {
-        SidecarApiModels.TransactionResult result = fromProtoTransactionResult(proto.getResult());
-        return new SidecarApiModels.GetTransactionResponse(result);
+        return switch (proto.getOutcomeCase()) {
+            case RESULT -> new SidecarApiModels.GetTransactionResponse(
+                fromProtoTransactionResult(proto.getResult()),
+                null
+            );
+            case NOT_FOUND -> new SidecarApiModels.GetTransactionResponse(
+                null,
+                proto.getNotFound().toByteArray()
+            );
+            case OUTCOME_NOT_SET -> new SidecarApiModels.GetTransactionResponse();
+        };
     }
 
     /**

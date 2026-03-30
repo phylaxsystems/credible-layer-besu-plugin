@@ -670,15 +670,37 @@ public class SidecarApiModels {
     public static class GetTransactionResponse {
         private TransactionResult result;
 
+        private byte[] notFound;
+
         public GetTransactionResponse() {}
 
         public GetTransactionResponse(TransactionResult result) {
             this.result = result;
         }
+
+        public GetTransactionResponse(TransactionResult result, byte[] notFound) {
+            this.result = result;
+            this.notFound = notFound;
+        }
         
         public TransactionResult getResult() { return result; }
-        public void setResults(TransactionResult result) { this.result = result; }
-    
+        public void setResult(TransactionResult result) {
+            this.result = result;
+            if (result != null) {
+                this.notFound = null;
+            }
+        }
+
+        public byte[] getNotFound() { return notFound; }
+        public void setNotFound(byte[] notFound) {
+            this.notFound = notFound;
+            if (notFound != null) {
+                this.result = null;
+            }
+        }
+
+        public boolean hasResult() { return result != null; }
+        public boolean hasNotFound() { return notFound != null; }
     }
 
     /**
