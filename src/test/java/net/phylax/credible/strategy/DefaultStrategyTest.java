@@ -286,33 +286,10 @@ public class DefaultStrategyTest {
 
         response = sendTransaction(strategy);
         assertTrue(response.getFailure() == CredibleRejectionReason.PROCESSING_TIMEOUT);
-        assertEquals(strategy.isActive(), false);
+        assertEquals(strategy.isActive(), true);
 
-        // Should still be inactive
-        response = sendTransaction(strategy);
-        assertFalse(response.isSuccess());
-        assertTrue(response.getFailure() == CredibleRejectionReason.NO_ACTIVE_TRANSPORT);
-
-        // One sidecar gets up again
+        // One sidecar gets up again and should be used without a reactivation cycle.
         mockTransport3.setProcessingLatency(100);
-
-        // Still inactive until next block
-        response = sendTransaction(strategy);
-        assertFalse(response.isSuccess());
-        assertTrue(response.getFailure() == CredibleRejectionReason.NO_ACTIVE_TRANSPORT);
-
-        // All transport get back up
-        mockTransport.setProcessingLatency(100);
-        mockTransport2.setProcessingLatency(100);
-
-        // Still inactive until next block
-        response = sendTransaction(strategy);
-        assertFalse(response.isSuccess());
-        assertTrue(response.getFailure() == CredibleRejectionReason.NO_ACTIVE_TRANSPORT);
-
-        // New block, activate again
-        strategy.commitHead(generateNewCommitHead(), 1000);
-        strategy.newIteration(generateNewIteration()).join();
 
         response = sendTransaction(strategy);
         assertNotNull(response.getSuccess().getResult());
@@ -438,7 +415,7 @@ public class DefaultStrategyTest {
         assertEquals(CredibleRejectionReason.PROCESSING_TIMEOUT, response.getFailure());
         assertEquals(1, mockTransport.getGetTransactionCalls());
         assertTrue(stopwatch.elapsed().toMillis() >= 450);
-        assertFalse(strategy.isActive());
+        assertTrue(strategy.isActive());
         assertEquals(0, pendingRequestCount(strategy));
     }
 
@@ -463,7 +440,7 @@ public class DefaultStrategyTest {
     }
 
     @Test
-    void shouldReturnNoActiveTransportAfterTimeoutMarksStrategyInactive() {
+    void shouldKeepStrategyActiveAfterProcessingTimeout() {
         byte[] timeoutHash = hexToBytes("0x105");
         var mockTransport = new MockTransport(900);
         mockTransport.setEmitStreamResults(false);
@@ -476,14 +453,15 @@ public class DefaultStrategyTest {
             strategy.getTransactionResult(dispatchSingleTransaction(strategy, timeoutHash));
         assertEquals(CredibleRejectionReason.PROCESSING_TIMEOUT, timeoutResponse.getFailure());
 
-        List<CompletableFuture<GetTransactionResponse>> pendingResults =
-            strategy.dispatchTransactions(generateTransactionRequest(hexToBytes("0x106")));
-        assertTrue(pendingResults.isEmpty());
+        mockTransport.setEmitStreamResults(true);
+        mockTransport.setGetTransactionNotFound(false);
+        mockTransport.setProcessingLatency(100);
 
-        Result<GetTransactionResponse, CredibleRejectionReason> inactiveResponse =
-            strategy.getTransactionResult(new GetTransactionRequest(0L, 1L, hexToBytes("0x106"), 0));
-        assertFalse(inactiveResponse.isSuccess());
-        assertEquals(CredibleRejectionReason.NO_ACTIVE_TRANSPORT, inactiveResponse.getFailure());
+        Result<GetTransactionResponse, CredibleRejectionReason> recoveryResponse =
+            strategy.getTransactionResult(dispatchSingleTransaction(strategy, hexToBytes("0x106")));
+        assertTrue(recoveryResponse.isSuccess());
+        assertEquals(TransactionStatus.SUCCESS, recoveryResponse.getSuccess().getResult().getStatus());
+        assertTrue(strategy.isActive());
         assertEquals(0, pendingRequestCount(strategy));
     }
 }

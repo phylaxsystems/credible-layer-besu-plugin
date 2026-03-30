@@ -263,7 +263,6 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                 return Result.success(response);
             } catch (TimeoutException fallbackTimeoutException) {
                 log.debug("All fallback attempts failed for transaction: {}", ByteUtils.toHex(txExecId.getTxHash()));
-                isActive.set(false);
                 return Result.failure(CredibleRejectionReason.PROCESSING_TIMEOUT);
             } catch (InterruptedException e) {
                 log.debug("Interrupted waiting for transaction result after fallback: {}",
