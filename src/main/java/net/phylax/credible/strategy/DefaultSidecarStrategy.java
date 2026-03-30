@@ -10,6 +10,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -280,7 +281,9 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                 log.debug("Timeout waiting for transaction result via stream, falling back to getTransaction: {}", ByteUtils.toHex(txExecId.getTxHash()));
                 metricsRegistry.getTimeoutCounter().labels().inc();
 
-                // Fallback: poll getTransaction with configurable interval until result or timeout
+                // Fallback: poll getTransaction with configurable interval until result or timeout.
+                // Returns immediately when ANY transport produces a real result (don't wait for
+                // slower transports). Only re-polls once ALL transports complete with NotFound.
                 long deadline = System.currentTimeMillis() + fallbackTimeout;
                 while (System.currentTimeMillis() < deadline) {
                     long remaining = deadline - System.currentTimeMillis();
@@ -295,27 +298,35 @@ public class DefaultSidecarStrategy implements ISidecarStrategy {
                             }))
                         .collect(Collectors.toList());
 
-                    // Wait for all to complete (with remaining timeout) so we can inspect results
+                    int totalTransports = fallbackFutures.size();
+                    // Completes with a real result on first success, or null when all are NotFound/error
+                    CompletableFuture<GetTransactionResponse> firstResult = new CompletableFuture<>();
+                    AtomicInteger notFoundCount = new AtomicInteger(0);
+
+                    for (CompletableFuture<GetTransactionResponse> f : fallbackFutures) {
+                        f.thenAccept(resp -> {
+                            if (resp != null && resp.getResult() != null && !resp.isNotFound()) {
+                                firstResult.complete(resp);
+                            } else if (notFoundCount.incrementAndGet() >= totalTransports) {
+                                firstResult.complete(null);
+                            }
+                        });
+                    }
+
                     try {
-                        CompletableFuture.allOf(fallbackFutures.toArray(new CompletableFuture[0]))
+                        GetTransactionResponse resp = firstResult
                             .orTimeout(remaining, TimeUnit.MILLISECONDS)
                             .get();
-                    } catch (Exception waitEx) {
-                        // Timeout or error waiting for responses
-                    }
-
-                    // Check if any returned a real result (not NotFound)
-                    for (CompletableFuture<GetTransactionResponse> f : fallbackFutures) {
-                        if (f.isDone() && !f.isCompletedExceptionally()) {
-                            GetTransactionResponse resp = f.join();
-                            if (resp != null && resp.getResult() != null && !resp.isNotFound()) {
-                                log.debug("Got transaction result via fallback polling: {}", ByteUtils.toHex(txExecId.getTxHash()));
-                                return Result.success(resp);
-                            }
+                        if (resp != null) {
+                            log.debug("Got transaction result via fallback polling: {}", ByteUtils.toHex(txExecId.getTxHash()));
+                            return Result.success(resp);
                         }
+                    } catch (Exception waitEx) {
+                        // Timeout waiting for any transport — break out to PROCESSING_TIMEOUT
+                        break;
                     }
 
-                    // All returned NotFound or errors — sleep and retry
+                    // All transports returned NotFound — sleep and retry
                     if (System.currentTimeMillis() < deadline) {
                         try {
                             Thread.sleep(Math.min(pollIntervalMs, deadline - System.currentTimeMillis()));
