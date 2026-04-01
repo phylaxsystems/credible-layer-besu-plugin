@@ -40,7 +40,7 @@ import picocli.CommandLine;
 @AutoService(BesuPlugin.class)
 @Slf4j
 public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedListener {
-    private static final String PLUGIN_NAME = "credible-sidecar";
+    private static final String PLUGIN_NAME = "credible";
 
     private ServiceManager serviceManager;
     private BesuEvents besuEvents;
