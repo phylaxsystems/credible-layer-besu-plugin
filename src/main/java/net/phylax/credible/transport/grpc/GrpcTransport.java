@@ -1,7 +1,5 @@
 package net.phylax.credible.transport.grpc;
 
-import java.io.IOException;
-import java.net.Socket;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -9,7 +7,6 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
-import javax.net.SocketFactory;
 
 import io.grpc.ConnectivityState;
 import io.grpc.ManagedChannel;
@@ -40,11 +37,9 @@ import sidecar.transport.v1.SidecarTransportGrpc;
  * Uses StreamEvents for sending events (transactions, reorg, etc.) through a long-lived stream.
  */
 @Slf4j
-public class GrpcTransport implements ISidecarTransport {
-    private final ManagedChannel channel;
+public class GrpcTransport extends BaseGrpcTransport implements ISidecarTransport {
     private final SidecarTransportGrpc.SidecarTransportStub stub;
 
-    private final long deadlineMillis;
     private final CredibleMetricsRegistry metricsRegistry;
 
     // Stream management for StreamEvents
@@ -69,9 +64,8 @@ public class GrpcTransport implements ISidecarTransport {
      * Create a new GrpcTransport with pre-configured channel pools
      */
     public GrpcTransport(ManagedChannel channel, long deadlineMillis, CredibleMetricsRegistry metricsRegistry) {
-        this.channel = channel;
+        super(channel, deadlineMillis);
         this.stub = SidecarTransportGrpc.newStub(channel);
-        this.deadlineMillis = deadlineMillis;
         this.metricsRegistry = metricsRegistry;
         this.eventStreamRef = new AtomicReference<>();
         this.resultsSubscriptionContext = new AtomicReference<>();
@@ -124,9 +118,9 @@ public class GrpcTransport implements ISidecarTransport {
             }
 
             // Reset the channel's backoff to force immediate reconnection
-            channel.resetConnectBackoff();
+            resetChannelBackoff();
 
-            ConnectivityState state = channel.getState(true);
+            ConnectivityState state = getChannelState(true);
             log.info("Creating new StreamEvents stream, channel state: {}", state);
 
             if (state == ConnectivityState.TRANSIENT_FAILURE) {
@@ -519,20 +513,8 @@ public class GrpcTransport implements ISidecarTransport {
             streamConnected = false;
         } catch (Exception e) {
             log.warn("Interrupted while shutting down gRPC channels", e);
-            channel.shutdown();
+            shutdownChannel();
         }
-    }
-
-    /**
-     * Extract a meaningful error message from gRPC exceptions
-     */
-    private String getErrorMessage(Throwable t) {
-        if (t instanceof StatusRuntimeException) {
-            StatusRuntimeException sre = (StatusRuntimeException) t;
-            Status status = sre.getStatus();
-            return String.format("%s: %s", status.getCode(), status.getDescription());
-        }
-        return t.getMessage();
     }
 
     /**
@@ -543,7 +525,7 @@ public class GrpcTransport implements ISidecarTransport {
         private int port = 50051;
         private long deadlineMillis = 5000; // 5 seconds default
         private CredibleMetricsRegistry metricsRegistry;
-        
+
         public Builder host(String host) {
             this.host = host;
             return this;
@@ -565,66 +547,12 @@ public class GrpcTransport implements ISidecarTransport {
         }
 
         public GrpcTransport build() {
-            return new GrpcTransport(createChannel(), deadlineMillis, metricsRegistry);
-        }
-
-        private ManagedChannel createChannel() {
-            SocketFactory flushingSocketFactory = new SocketFactory() {
-                private final SocketFactory delegate = SocketFactory.getDefault();
-                
-                @Override
-                public Socket createSocket() throws IOException {
-                    Socket socket = delegate.createSocket();
-                    socket.setTcpNoDelay(true);
-                    return socket;
-                }
-                
-                @Override
-                public Socket createSocket(String host, int port) throws IOException {
-                    Socket socket = delegate.createSocket(host, port);
-                    socket.setTcpNoDelay(true);
-                    return socket;
-                }
-                
-                @Override
-                public Socket createSocket(String host, int port,
-                        java.net.InetAddress localHost, int localPort) throws IOException {
-                    Socket socket = delegate.createSocket(host, port, localHost, localPort);
-                    socket.setTcpNoDelay(true);
-                    return socket;
-                }
-                
-                @Override
-                public Socket createSocket(java.net.InetAddress host, int port) throws IOException {
-                    Socket socket = delegate.createSocket(host, port);
-                    socket.setTcpNoDelay(true);
-                    return socket;
-                }
-                
-                @Override
-                public Socket createSocket(java.net.InetAddress address, int port,
-                        java.net.InetAddress localAddress, int localPort) throws IOException {
-                    Socket socket = delegate.createSocket(address, port, localAddress, localPort);
-                    socket.setTcpNoDelay(true);
-                    return socket;
-                }
-            };
-
-            OkHttpChannelBuilder channelBuilder = OkHttpChannelBuilder
-                .forAddress(host, port)
-                .usePlaintext()
-                .socketFactory(flushingSocketFactory)
-                .keepAliveTime(30, TimeUnit.SECONDS)
-                .keepAliveTimeout(10, TimeUnit.SECONDS)
-                .keepAliveWithoutCalls(true)
-                // OkHttp-specific: Flow control window
-                .flowControlWindow(16 * 1024 * 1024) // 1MB
-                // Set max message size
-                .maxInboundMetadataSize(8192)
-                .maxInboundMessageSize(1 * 1024 * 1024) // 1MB max message
-                .intercept(new LoggingClientInterceptor(metricsRegistry));
-
-            return channelBuilder.build();
+            ManagedChannel channel = new BaseGrpcTransport.ChannelBuilder()
+                .host(host)
+                .port(port)
+                .interceptor(new LoggingClientInterceptor(metricsRegistry))
+                .build();
+            return new GrpcTransport(channel, deadlineMillis, metricsRegistry);
         }
     }
 
