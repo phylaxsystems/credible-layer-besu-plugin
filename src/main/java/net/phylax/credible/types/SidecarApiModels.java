@@ -669,16 +669,26 @@ public class SidecarApiModels {
 
     public static class GetTransactionResponse {
         private TransactionResult result;
+        private byte[] notFound;
 
         public GetTransactionResponse() {}
 
         public GetTransactionResponse(TransactionResult result) {
             this.result = result;
         }
-        
+
+        /** Construct a NotFound response with the tx hash that was not yet computed */
+        public GetTransactionResponse(byte[] notFound) {
+            this.notFound = notFound;
+        }
+
+        public boolean isNotFound() { return notFound != null; }
+
         public TransactionResult getResult() { return result; }
         public void setResults(TransactionResult result) { this.result = result; }
-    
+
+        public byte[] getNotFound() { return notFound; }
+        public void setNotFound(byte[] notFound) { this.notFound = notFound; }
     }
 
     /**

@@ -99,6 +99,13 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         private int commitHeadTimeout = 50;
 
         @CommandLine.Option(
+            names = {"--plugin-credible-sidecar-poll-interval-ms"},
+            description = "Poll interval in ms for the getTransaction fallback polling loop",
+            defaultValue = "10"
+        )
+        private long pollIntervalMs = 10;
+
+        @CommandLine.Option(
             names = {"--plugin-credible-sidecar-grpc-endpoints"},
             description = "List of gRPC endpoints (format: host:port)",
             paramLabel = "<host:port>",
@@ -146,6 +153,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         public int getCommitHeadTimeout() { return commitHeadTimeout; }
         public List<String> getAegesGrpcEndpoints() { return aegesGrpcEndpoints; }
         public long getAegesDeadlineMillis() { return aegesDeadlineMillis; }
+        public long getPollIntervalMs() { return pollIntervalMs; }
     }
 
     private static CrediblePluginConfiguration config = null;
@@ -224,7 +232,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         primaryTransports = createGrpcTransports(config.getGrpcEndpoints());
         fallbackTransports = createGrpcTransports(config.getGrpcFallbackEndpoints());
 
-        strategy = new DefaultSidecarStrategy(primaryTransports, fallbackTransports, config.getProcessingTimeout(), metricsRegistry);
+        strategy = new DefaultSidecarStrategy(primaryTransports, fallbackTransports, config.getProcessingTimeout(), config.getPollIntervalMs(), metricsRegistry);
 
         var credibleTxConfig = new CredibleTransactionSelector.Config(strategy, config.getAggregatedTimeout());
 

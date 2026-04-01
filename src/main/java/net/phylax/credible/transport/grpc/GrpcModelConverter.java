@@ -335,12 +335,21 @@ public class GrpcModelConverter {
     }
 
     /**
-     * Convert GetTransactionResponse protobuf to POJO
+     * Convert GetTransactionResponse protobuf to POJO.
+     * Handles the oneof outcome: result (TransactionResult) or not_found (tx hash bytes).
      */
     public static SidecarApiModels.GetTransactionResponse fromProtoGetTransactionResponse(
             Sidecar.GetTransactionResponse proto) {
-        SidecarApiModels.TransactionResult result = fromProtoTransactionResult(proto.getResult());
-        return new SidecarApiModels.GetTransactionResponse(result);
+        switch (proto.getOutcomeCase()) {
+            case RESULT:
+                return new SidecarApiModels.GetTransactionResponse(
+                    fromProtoTransactionResult(proto.getResult()));
+            case NOT_FOUND:
+                return new SidecarApiModels.GetTransactionResponse(
+                    proto.getNotFound().toByteArray());
+            default:
+                return new SidecarApiModels.GetTransactionResponse();
+        }
     }
 
     /**
