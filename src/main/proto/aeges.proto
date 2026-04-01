@@ -9,8 +9,6 @@ service AegesService {
   // is reused across calls automatically.
   rpc VerifyTransaction(VerifyTransactionRequest) returns (VerifyTransactionResponse);
 
-  // Unary: return current service stats (cache sizes, request counters).
-  rpc GetStats(GetStatsRequest) returns (GetStatsResponse);
 }
 
 // Mirrors the Besu Transaction interface fields.
@@ -71,18 +69,3 @@ message VerifyTransactionResponse {
   bool denied = 2;
 }
 
-message GetStatsRequest {}
-
-message GetStatsResponse {
-  // Cache entry counts.
-  uint64 cache_entry_count = 1;
-  uint64 f0_count = 2;
-  uint64 f1_count = 3;
-
-  // F1 promotion: how many times an F1 key crossed its threshold.
-  uint64 f1_promotion_count = 4;
-
-  // Request counters (since process start).
-  uint64 verify_requests_total = 5;
-  uint64 verify_blocked_total = 6;
-}

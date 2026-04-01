@@ -129,12 +129,11 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
 
         // Aeges options
         @CommandLine.Option(
-            names = {"--plugin-credible-aeges-grpc-endpoints"},
-            description = "Aeges gRPC endpoints (format: host:port). When set, enables the Aeges transaction pool validator.",
-            paramLabel = "<host:port>",
-            split = ","
+            names = {"--plugin-credible-aeges-grpc-endpoint"},
+            description = "Aeges gRPC endpoint (format: host:port). When set, enables the Aeges transaction pool validator.",
+            paramLabel = "<host:port>"
         )
-        private List<String> aegesGrpcEndpoints = new ArrayList<>();
+        private String aegesGrpcEndpoint = null;
 
         @CommandLine.Option(
             names = {"--plugin-credible-aeges-deadline-ms"},
@@ -151,7 +150,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         public int getWriteTimeout() { return writeTimeout; }
         public String getOtelEndpoint() { return otelEndpoint; }
         public int getCommitHeadTimeout() { return commitHeadTimeout; }
-        public List<String> getAegesGrpcEndpoints() { return aegesGrpcEndpoints; }
+        public String getAegesGrpcEndpoint() { return aegesGrpcEndpoint; }
         public long getAegesDeadlineMillis() { return aegesDeadlineMillis; }
         public long getPollIntervalMs() { return pollIntervalMs; }
     }
@@ -296,18 +295,17 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
      * Start the Aeges pool validator if endpoints are configured.
      */
     private void startAeges() {
-        if (!isNotEmpty(config.getAegesGrpcEndpoints())) {
+        String endpoint = config.getAegesGrpcEndpoint();
+        if (endpoint == null || endpoint.isBlank()) {
             log.info("Aeges not configured, skipping pool validator registration");
             return;
         }
 
         if (transactionPoolValidatorService == null) {
-            log.warn("Aeges endpoints configured but TransactionPoolValidatorService is not available, skipping");
+            log.warn("Aeges endpoint configured but TransactionPoolValidatorService is not available, skipping");
             return;
         }
 
-        // Use the first configured endpoint
-        String endpoint = config.getAegesGrpcEndpoints().get(0);
         String[] parts = endpoint.split(":");
         if (parts.length != 2) {
             throw new IllegalArgumentException(
