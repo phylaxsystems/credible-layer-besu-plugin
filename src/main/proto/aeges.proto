@@ -2,20 +2,31 @@ syntax = "proto3";
 
 package aeges.v1;
 
+// Aeges service — called by the Besu plugin.
+service AegesService {
+  // Unary: plugin sends a single transaction, server responds with a
+  // denied/allowed verdict.  One HTTP/2 stream per call; the connection
+  // is reused across calls automatically.
+  rpc VerifyTransaction(VerifyTransactionRequest) returns (VerifyTransactionResponse);
+
+  // Unary: return current service stats (cache sizes, request counters).
+  rpc GetStats(GetStatsRequest) returns (GetStatsResponse);
+}
+
 // Mirrors the Besu Transaction interface fields.
 // See https://github.com/hyperledger/besu/blob/main/datatypes/src/main/java/org/hyperledger/besu/datatypes/Transaction.java
 message Transaction {
   // Core fields.
-  bytes hash = 1; // 32 bytes
-  bytes sender = 2; // 20 bytes
+  bytes hash = 1;             // 32 bytes
+  bytes sender = 2;           // 20 bytes
   optional bytes to = 3;      // 20 bytes, absent for contract creation
-  bytes value = 4; // big-endian uint256
+  bytes value = 4;            // big-endian uint256
   uint64 nonce = 5;
-  uint32 type = 6; // TransactionType ordinal
+  uint32 type = 6;            // TransactionType ordinal
   optional uint64 chain_id = 7;
 
   // Payload.
-  bytes payload = 8; // calldata (calls) or init code (creates)
+  bytes payload = 8;          // calldata (calls) or init code (creates)
 
   // Gas.
   uint64 gas_limit = 9;
@@ -35,27 +46,43 @@ message Transaction {
 }
 
 message AccessListEntry {
-  bytes address = 1; // 20 bytes
+  bytes address = 1;              // 20 bytes
   repeated bytes storage_keys = 2; // each 32 bytes
 }
 
 message CodeDelegation {
   uint64 chain_id = 1;
-  bytes address = 2; // 20 bytes
+  bytes address = 2;   // 20 bytes
   uint64 nonce = 3;
-  uint32 v = 4; // y-parity (0 or 1)
-  bytes r = 5; // 32 bytes
-  bytes s = 6; // 32 bytes
+  uint32 v = 4;              // y-parity (0 or 1)
+  bytes r = 5;         // 32 bytes
+  bytes s = 6;         // 32 bytes
 }
 
 message VerifyTransactionRequest {
-  Transaction transaction = 1;
+  // Client-provided correlation ID, echoed back in the response.
+  uint64 event_id = 1;
+  Transaction transaction = 2;
 }
 
 message VerifyTransactionResponse {
-  bool denied = 1;
+  // Echoed from the request.
+  uint64 event_id = 1;
+  bool denied = 2;
 }
 
-service AegesService {
-  rpc VerifyTransaction(stream VerifyTransactionRequest) returns (stream VerifyTransactionResponse);
+message GetStatsRequest {}
+
+message GetStatsResponse {
+  // Cache entry counts.
+  uint64 cache_entry_count = 1;
+  uint64 f0_count = 2;
+  uint64 f1_count = 3;
+
+  // F1 promotion: how many times an F1 key crossed its threshold.
+  uint64 f1_promotion_count = 4;
+
+  // Request counters (since process start).
+  uint64 verify_requests_total = 5;
+  uint64 verify_blocked_total = 6;
 }
