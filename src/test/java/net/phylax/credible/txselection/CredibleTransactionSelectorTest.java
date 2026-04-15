@@ -13,6 +13,7 @@ import static org.junit.Assert.assertNotEquals;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.hyperledger.besu.datatypes.Hash;
 import org.hyperledger.besu.plugin.data.TransactionSelectionResult;
 import org.hyperledger.besu.plugin.services.txselection.SelectorsStateManager;
 import org.junit.jupiter.api.BeforeEach;
@@ -229,7 +230,7 @@ public class CredibleTransactionSelectorTest {
         var selector = (CredibleTransactionSelector) factory.create(new SelectorsStateManager());
         final var operationTracer = selector.getOperationTracer();
         strategy.commitHead(generateCommitHead(1L, 0, 1L), 100);
-        mockTransport.addFailingTx(hexToBytes("0x3"));
+        mockTransport.addFailingTx(Hash.fromHexStringLenient("0x3").getBytes().toArrayUnsafe());
         
         operationTracer.traceStartBlock(new MockWorldView(), new MockProcessableBlockHeader(1L), null);
 

@@ -75,7 +75,7 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
 
     var tx = txContext.getPendingTransaction().getTransaction();
     // Store hash as byte[] for efficiency
-    byte[] txHashBytes = tx.getHash().toArrayUnsafe();
+    byte[] txHashBytes = ByteUtils.toByteArray(tx.getHash());
     transactionHash = tx.getHash().toHexString(); // Keep for logging
     long blockNumber = txContext.getPendingBlockHeader().getNumber();
     long iterationId = getOperationTracer().getCurrentIterationId();
@@ -132,7 +132,7 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
         log.debug("Awaiting result for, hash: {}, iteration: {}, index: {}", transactionHash, iterationId, index);
 
         // Use byte[] for txHash
-        byte[] txHashBytes = txContext.getPendingTransaction().getTransaction().getHash().toArrayUnsafe();
+        byte[] txHashBytes = ByteUtils.toByteArray(txContext.getPendingTransaction().getTransaction().getHash());
         GetTransactionRequest txRequest = new GetTransactionRequest(blockNumber, iterationId, txHashBytes, index);
 
         var txResponseResult = config.strategy.getTransactionResult(txRequest);
@@ -171,7 +171,7 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
       final TransactionSelectionResult transactionSelectionResult) {
 
     var transaction = evaluationContext.getPendingTransaction().getTransaction();
-    byte[] txHashBytes = transaction.getHash().toArrayUnsafe();
+    byte[] txHashBytes = ByteUtils.toByteArray(transaction.getHash());
     String txHashHex = transaction.getHash().toHexString(); // For logging
     String reason = transactionSelectionResult.toString();
     long blockNumber = evaluationContext.getPendingBlockHeader().getNumber();

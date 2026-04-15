@@ -15,6 +15,7 @@ import net.phylax.credible.strategy.ISidecarStrategy;
 import net.phylax.credible.types.SidecarApiModels.BlobExcessGasAndPrice;
 import net.phylax.credible.types.SidecarApiModels.BlockEnv;
 import net.phylax.credible.types.SidecarApiModels.NewIteration;
+import net.phylax.credible.utils.ByteUtils;
 
 /**
  * Implementation of the operation tracer that tracks the repetitions of block creation processes
@@ -41,12 +42,12 @@ public class CredibleOperationTracer implements BlockAwareOperationTracer {
         // Convert fields directly to byte[] without hex string intermediate
         BlockEnv blockEnv = new BlockEnv(
             processableBlockHeader.getNumber(),
-            processableBlockHeader.getCoinbase().toArrayUnsafe(),  // 20 bytes
+            ByteUtils.toByteArray(processableBlockHeader.getCoinbase()),  // 20 bytes
             processableBlockHeader.getTimestamp(),
             processableBlockHeader.getGasLimit(),
             processableBlockHeader.getBaseFee().map(quantity -> quantity.getAsBigInteger().longValue()).orElse(1L), // 1 Gwei
             bigIntegerToBytes32(processableBlockHeader.getDifficulty().getAsBigInteger()),  // 32 bytes
-            processableBlockHeader.getPrevRandao().map(bytes32 -> bytes32.toArrayUnsafe()).orElse(null),  // 32 bytes
+            processableBlockHeader.getPrevRandao().map(ByteUtils::toByteArray).orElse(null),  // 32 bytes
             new BlobExcessGasAndPrice(0L, 1L)
         );
         NewIteration iteration = new NewIteration(currentIterationId.get(), blockEnv);
