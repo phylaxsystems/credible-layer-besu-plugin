@@ -103,6 +103,8 @@ repositories {
     }
 }
 
+def grpcVersion = '1.79.0'
+
 dependencies {
     def besuVersion = '26.4.0'
 
@@ -125,9 +127,10 @@ dependencies {
     implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jdk8:2.18.2'
 
     // gRPC and Protobuf
-    implementation 'io.grpc:grpc-okhttp:1.77.0'
-    implementation 'io.grpc:grpc-protobuf:1.77.0'
-    implementation 'io.grpc:grpc-stub:1.77.0'
+    implementation platform("io.grpc:grpc-bom:${grpcVersion}")
+    implementation 'io.grpc:grpc-okhttp'
+    implementation 'io.grpc:grpc-protobuf'
+    implementation 'io.grpc:grpc-stub'
     implementation 'com.google.protobuf:protobuf-java:4.32.1'
     compileOnly 'javax.annotation:javax.annotation-api:1.3.2'
     
@@ -148,8 +151,9 @@ dependencies {
     testImplementation "org.hyperledger.besu:besu-evm:${besuVersion}"
     testImplementation "org.hyperledger.besu:besu-datatypes:${besuVersion}"
     testImplementation 'org.apache.logging.log4j:log4j-slf4j-impl:2.20.0'
-    testImplementation 'io.grpc:grpc-testing:1.77.0'
-    testImplementation 'io.grpc:grpc-inprocess:1.77.0'
+    testImplementation platform("io.grpc:grpc-bom:${grpcVersion}")
+    testImplementation 'io.grpc:grpc-testing'
+    testImplementation 'io.grpc:grpc-inprocess'
 }
 
 test {
@@ -172,9 +176,17 @@ jar {
         )
     }
     
-    // Include all dependencies in fat jar (optional)
+    // Avoid bundling host-provided gRPC/protobuf classes into the plugin jar.
+    // Besu already provides these, and embedding a second copy causes runtime
+    // linkage errors when versions drift across classloaders.
     from {
-        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+        configurations.runtimeClasspath
+            .filter { file ->
+                !file.name.startsWith('grpc-') &&
+                !file.name.startsWith('protobuf-') &&
+                !file.name.startsWith('proto-google-common-protos')
+            }
+            .collect { it.isDirectory() ? it : zipTree(it) }
     }
     
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
@@ -244,7 +256,7 @@ protobuf {
     }
     plugins {
         grpc {
-            artifact = 'io.grpc:protoc-gen-grpc-java:1.77.0'
+            artifact = "io.grpc:protoc-gen-grpc-java:${grpcVersion}"
         }
     }
     generateProtoTasks {
@@ -260,6 +272,36 @@ sourceSets {
         java {
             srcDirs 'build/generated/source/proto/main/grpc'
             srcDirs 'build/generated/source/proto/main/java'
+        }
+    }
+}
+
+tasks.register('verifyPluginJarDoesNotBundleGrpc') {
+    dependsOn jar
+
+    doLast {
+        def archive = jar.archiveFile.get().asFile
+        def forbiddenPrefixes = [
+            'io/grpc/',
+            'com/google/protobuf/',
+            'com/google/api/'
+        ]
+        def offenders = []
+
+        new java.util.zip.ZipFile(archive).withCloseable { zip ->
+            def entries = zip.entries()
+            while (entries.hasMoreElements() && offenders.size() < 20) {
+                def entry = entries.nextElement()
+                if (!entry.isDirectory() && forbiddenPrefixes.any { entry.name.startsWith(it) }) {
+                    offenders << entry.name
+                }
+            }
+        }
+
+        if (!offenders.isEmpty()) {
+            throw new GradleException(
+                "Plugin jar bundles host-provided gRPC/protobuf classes: ${offenders.join(', ')}"
+            )
         }
     }
 }
