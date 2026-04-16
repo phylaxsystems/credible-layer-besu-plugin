@@ -239,8 +239,6 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
             .getService(BesuEvents.class)
             .orElseThrow(() -> new RuntimeException("BesuEvents service not available"));
 
-        startEvents(besuEvents);
-
         // Initialize the metrics system
         this.metricsSystem = serviceManager.getService(MetricsSystem.class)
             .orElseThrow(
@@ -268,6 +266,8 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         transactionSelectionService.registerPluginTransactionSelectorFactory(
             new CredibleTransactionSelectorFactory(credibleTxConfig, metricsRegistry)
         );
+
+        startEvents(besuEvents);
     }
 
     /**
@@ -382,13 +382,19 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
 
     @Override
     public void stop() {
-        stopEvents(besuEvents);
+        if (besuEvents != null) {
+            stopEvents(besuEvents);
+        }
     }
         
     @Override
     public void onBlockAdded(final AddedBlockContext block) {
         if (block.getEventType() != EventType.HEAD_ADVANCED) {
             log.debug("Skipping onBlockAdded, event type: {}", block.getEventType());
+            return;
+        }
+        if (strategy == null) {
+            log.warn("Skipping onBlockAdded because the sidecar strategy is not initialized");
             return;
         }
         var blockHeader = block.getBlockHeader();

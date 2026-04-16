@@ -2,6 +2,7 @@ plugins {
     id 'java-library'
     id 'maven-publish'
     id 'com.google.protobuf' version '0.9.4'
+    id 'com.gradleup.shadow' version '8.3.8'
 }
 
 // Configure Java compilation
@@ -165,6 +166,8 @@ test {
 }
 
 jar {
+    archiveClassifier = 'thin'
+
     manifest {
         attributes(
             'Implementation-Title': 'Credible Layer Plugin',
@@ -176,9 +179,7 @@ jar {
         )
     }
     
-    // Avoid bundling host-provided gRPC/protobuf classes into the plugin jar.
-    // Besu already provides these, and embedding a second copy causes runtime
-    // linkage errors when versions drift across classloaders.
+    // Keep the thin jar available for local inspection and publishing.
     from {
         configurations.runtimeClasspath
             .filter { file ->
@@ -194,6 +195,18 @@ jar {
     // Exclude signing files
     exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA'
 }
+
+shadowJar {
+    archiveClassifier = ''
+    mergeServiceFiles()
+
+    // Keep gRPC/protobuf isolated from Besu's runtime classpath.
+    relocate 'io.grpc', 'net.phylax.credible.shaded.io.grpc'
+    relocate 'com.google.protobuf', 'net.phylax.credible.shaded.com.google.protobuf'
+    relocate 'com.google.api', 'net.phylax.credible.shaded.com.google.api'
+}
+
+assemble.dependsOn shadowJar
 
 publishing {
     publications {
@@ -232,18 +245,19 @@ publishing {
 
 // Custom tasks
 task copyPlugin(type: Copy) {
-    from jar
+    dependsOn shadowJar
+    from shadowJar
     into "${rootProject.projectDir}/build/plugins"
     doLast {
-        println "Plugin JAR copied to: ${rootProject.projectDir}/build/plugins/${jar.archiveFileName.get()}"
+        println "Plugin JAR copied to: ${rootProject.projectDir}/build/plugins/${shadowJar.archiveFileName.get()}"
     }
 }
 
-task installPlugin(type: Copy, dependsOn: jar) {
-    from jar
+task installPlugin(type: Copy, dependsOn: shadowJar) {
+    from shadowJar
     into System.getProperty('user.home') + '/.besu/plugins'
     doLast {
-        println "Plugin installed to: ${System.getProperty('user.home')}/.besu/plugins/${jar.archiveFileName.get()}"
+        println "Plugin installed to: ${System.getProperty('user.home')}/.besu/plugins/${shadowJar.archiveFileName.get()}"
     }
 }
 
@@ -277,30 +291,45 @@ sourceSets {
 }
 
 tasks.register('verifyPluginJarDoesNotBundleGrpc') {
-    dependsOn jar
+    dependsOn shadowJar
 
     doLast {
-        def archive = jar.archiveFile.get().asFile
+        def archive = shadowJar.archiveFile.get().asFile
         def forbiddenPrefixes = [
             'io/grpc/',
             'com/google/protobuf/',
             'com/google/api/'
         ]
+        def requiredEntries = [
+            'net/phylax/credible/shaded/io/grpc/stub/StreamObserver.class',
+            'net/phylax/credible/shaded/com/google/protobuf/GeneratedMessageV3.class'
+        ]
         def offenders = []
+        def entriesPresent = [] as Set
 
         new java.util.zip.ZipFile(archive).withCloseable { zip ->
             def entries = zip.entries()
-            while (entries.hasMoreElements() && offenders.size() < 20) {
+            while (entries.hasMoreElements()) {
                 def entry = entries.nextElement()
+                entriesPresent << entry.name
                 if (!entry.isDirectory() && forbiddenPrefixes.any { entry.name.startsWith(it) }) {
-                    offenders << entry.name
+                    if (offenders.size() < 20) {
+                        offenders << entry.name
+                    }
                 }
             }
         }
 
         if (!offenders.isEmpty()) {
             throw new GradleException(
-                "Plugin jar bundles host-provided gRPC/protobuf classes: ${offenders.join(', ')}"
+                "Plugin jar still exposes unrelocated gRPC/protobuf classes: ${offenders.join(', ')}"
+            )
+        }
+
+        def missingEntries = requiredEntries.findAll { !entriesPresent.contains(it) }
+        if (!missingEntries.isEmpty()) {
+            throw new GradleException(
+                "Plugin jar is missing relocated gRPC/protobuf classes: ${missingEntries.join(', ')}"
             )
         }
     }
