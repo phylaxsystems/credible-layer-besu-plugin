@@ -902,6 +902,7 @@ public class SidecarApiModels {
     public static class TransactionStatus {
         public static final String SUCCESS = "success";
         public static final String ASSERTION_FAILED = "assertion_failed";
+        public static final String ADMISSION_REJECTED = "admission_rejected";
         public static final String FAILED = "failed";
         public static final String REVERTED = "reverted";
         public static final String HALTED = "halted";
