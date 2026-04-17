@@ -33,6 +33,7 @@ import net.phylax.credible.transport.grpc.LoggingClientInterceptor;
 import net.phylax.credible.txselection.CredibleTransactionSelector;
 import net.phylax.credible.txselection.CredibleTransactionSelectorFactory;
 import net.phylax.credible.types.SidecarApiModels.CommitHead;
+import net.phylax.credible.utils.ByteUtils;
 import picocli.CommandLine;
 
 /**
@@ -398,13 +399,13 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
             byte[] lastTxHash = null;
 
             if (!transactions.isEmpty()) {
-                lastTxHash = transactions.get(transactions.size() - 1).getHash().toArrayUnsafe();
+                lastTxHash = ByteUtils.toByteArray(transactions.get(transactions.size() - 1).getHash());
             }
 
-            byte[] blockHashBytes = blockHeader.getBlockHash().toArrayUnsafe();
+            byte[] blockHashBytes = ByteUtils.toByteArray(blockHeader.getBlockHash());
 
             byte[] parentBeaconBlockRoot = blockHeader.getParentBeaconBlockRoot()
-                .map(root -> root.toArrayUnsafe())
+                .map(ByteUtils::toByteArray)
                 .orElse(null);
 
             long timestamp = blockHeader.getTimestamp();

@@ -4,6 +4,7 @@ import static org.mockito.Mockito.*;
 
 import java.util.Optional;
 
+import org.apache.tuweni.bytes.Bytes;
 import org.hyperledger.besu.datatypes.Wei;
 import org.hyperledger.besu.plugin.data.BlockHeader;
 import org.hyperledger.besu.datatypes.Address;
@@ -40,24 +41,8 @@ public class MockTransactionEvaluationContext implements TransactionEvaluationCo
         this.mockPendingBlockHeader = pendingBlockHeader;
     }
 
-    // Helper to convert hex string to byte array
-    private static byte[] hexToBytes(String hex) {
-        if (hex == null || hex.isEmpty()) return new byte[0];
-        String cleanHex = hex.startsWith("0x") ? hex.substring(2) : hex;
-        if (cleanHex.length() % 2 != 0) cleanHex = "0" + cleanHex;
-        byte[] bytes = new byte[cleanHex.length() / 2];
-        for (int i = 0; i < bytes.length; i++) {
-            bytes[i] = (byte) Integer.parseInt(cleanHex.substring(i * 2, i * 2 + 2), 16);
-        }
-        return bytes;
-    }
-
     private void setupDefaultMockBehaviors() {
-        Hash mockTxHash = mock(Hash.class);
-        when(mockTxHash.toHexString()).thenReturn(this.txHash);
-        when(mockTxHash.toArrayUnsafe()).thenReturn(hexToBytes(this.txHash));
-
-        when(mockTransaction.getHash()).thenReturn(mockTxHash);
+        when(mockTransaction.getHash()).thenReturn(Hash.fromHexStringLenient(this.txHash));
         when(mockTransaction.getNonce()).thenReturn(0L);
         when(mockTransaction.getGasLimit()).thenReturn(21000L);
 
@@ -67,7 +52,7 @@ public class MockTransactionEvaluationContext implements TransactionEvaluationCo
         
         lenient().when(mockTransaction.getType()).thenReturn(org.hyperledger.besu.datatypes.TransactionType.FRONTIER);
         when(mockTransaction.getSender()).thenReturn(Address.fromHexString("0x1234567890abcdef1234567890abcdef12345678"));
-        when(mockTransaction.getPayload()).thenReturn(Address.fromHexString("0x"));
+        when(mockTransaction.getPayload()).thenReturn(Bytes.EMPTY);
         lenient().when(mockTransaction.getValue()).thenReturn(Wei.of(10L));
 
         when(mockPendingTransaction.getTransaction()).thenReturn(mockTransaction);

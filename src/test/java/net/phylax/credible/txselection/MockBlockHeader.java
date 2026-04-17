@@ -6,6 +6,7 @@ import java.util.Optional;
 
 import org.hyperledger.besu.datatypes.Address;
 import org.hyperledger.besu.datatypes.Hash;
+import org.hyperledger.besu.datatypes.LogsBloomFilter;
 import org.hyperledger.besu.datatypes.Quantity;
 import org.hyperledger.besu.datatypes.Wei;
 import org.hyperledger.besu.plugin.data.BlockHeader;
@@ -28,13 +29,8 @@ public class MockBlockHeader implements BlockHeader {
     }
     
     private void setupDefaultMockBehaviors() {
-        Hash mockHash = mock(Hash.class);
-        when(mockHash.toHexString()).thenReturn("0x"+this.blockNumber);
-        doReturn(mockHash).when(mockHeader).getBlockHash();
-        
-        Hash mockParentHash = mock(Hash.class);
-        when(mockParentHash.toHexString()).thenReturn("0x9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba");
-        doReturn(mockParentHash).when(mockHeader).getParentHash();
+        doReturn(Hash.fromHexString(String.format("0x%064x", this.blockNumber))).when(mockHeader).getBlockHash();
+        doReturn(Hash.fromHexString("0x9876543210fedcba9876543210fedcba9876543210fedcba9876543210fedcba")).when(mockHeader).getParentHash();
         
         doReturn(this.blockNumber).when(mockHeader).getNumber();
         doReturn(System.currentTimeMillis() / 1000).when(mockHeader).getTimestamp();
@@ -43,27 +39,19 @@ public class MockBlockHeader implements BlockHeader {
         doReturn(15000000L).when(mockHeader).getGasUsed();
         lenient().when(mockHeader.getDifficulty()).thenReturn(Wei.of(10L));
 
-        Address mockCoinbase = mock(Address.class);
-        when(mockCoinbase.toHexString()).thenReturn("0x0000000000000000000000000000000000000000");
-        doReturn(mockCoinbase).when(mockHeader).getCoinbase();
+        doReturn(Address.ZERO).when(mockHeader).getCoinbase();
 
         doReturn(Optional.of(Wei.of(1000000000L))).when(mockHeader).getBaseFee();
 
         doReturn(Bytes.EMPTY).when(mockHeader).getExtraData();
         
-        Hash mockStateRootHash = mock(Hash.class);
-        lenient().when(mockHeader.getStateRoot()).thenReturn(mockStateRootHash);
-        
-        Hash mockReceiptRootHash = mock(Hash.class);
-        doReturn(mockReceiptRootHash).when(mockHeader).getReceiptsRoot();
-        
-        Hash mockTransactionsRoot = mock(Hash.class);
-        doReturn(mockTransactionsRoot).when(mockHeader).getTransactionsRoot();
+        lenient().when(mockHeader.getStateRoot()).thenReturn(Hash.ZERO);
+        doReturn(Hash.ZERO).when(mockHeader).getReceiptsRoot();
+        doReturn(Hash.ZERO).when(mockHeader).getTransactionsRoot();
 
-        doReturn(Bytes.wrap(new byte[256])).when(mockHeader).getLogsBloom();
+        doReturn(LogsBloomFilter.empty()).when(mockHeader).getLogsBloom();
         
-        Hash mockMixHash = mock(Hash.class);
-        doReturn(mockMixHash).when(mockHeader).getMixHash();
+        doReturn(Hash.ZERO).when(mockHeader).getMixHash();
         doReturn(0L).when(mockHeader).getNonce();
 
         doReturn(Optional.empty()).when(mockHeader).getBlobGasUsed();
@@ -105,7 +93,7 @@ public class MockBlockHeader implements BlockHeader {
     }
     
     @Override
-    public Bytes getLogsBloom() {
+    public LogsBloomFilter getLogsBloom() {
         return mockHeader.getLogsBloom();
     }
     
@@ -155,22 +143,22 @@ public class MockBlockHeader implements BlockHeader {
     }
     
     @Override
-    public Optional<Hash> getWithdrawalsRoot() {
+    public Optional<? extends Hash> getWithdrawalsRoot() {
         return (Optional) mockHeader.getWithdrawalsRoot();
     }
     
     @Override
-    public Optional<Long> getBlobGasUsed() {
+    public Optional<? extends Long> getBlobGasUsed() {
         return (Optional) mockHeader.getBlobGasUsed();
     }
     
     @Override
-    public Optional<Quantity> getExcessBlobGas() {
+    public Optional<? extends Quantity> getExcessBlobGas() {
         return (Optional) mockHeader.getExcessBlobGas();
     }
     
     @Override
-    public Optional<Hash> getParentBeaconBlockRoot() {
+    public Optional<? extends org.apache.tuweni.bytes.Bytes32> getParentBeaconBlockRoot() {
         return (Optional) mockHeader.getParentBeaconBlockRoot();
     }
     
@@ -186,13 +174,11 @@ public class MockBlockHeader implements BlockHeader {
 
     @Override
     public Optional<? extends Hash> getRequestsHash() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getRequestsHash'");
+        return Optional.empty();
     }
 
     @Override
     public Optional<? extends Hash> getBalHash() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getBalHash'");
+        return Optional.empty();
     }
 }

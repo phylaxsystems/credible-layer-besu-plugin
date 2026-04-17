@@ -11,6 +11,7 @@ import org.hyperledger.besu.datatypes.Hash;
 import org.hyperledger.besu.datatypes.Transaction;
 import org.hyperledger.besu.datatypes.TransactionType;
 import org.hyperledger.besu.datatypes.Wei;
+import org.apache.tuweni.bytes.Bytes32;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -39,10 +40,7 @@ public class TransactionConverterTest {
         Transaction mockTransaction = mock(Transaction.class);
 
         // Basic transaction fields
-        Hash mockTxHash = mock(Hash.class);
-        when(mockTxHash.toHexString()).thenReturn("0xaabbccdd");
-        when(mockTxHash.toArrayUnsafe()).thenReturn(new byte[32]);
-        when(mockTransaction.getHash()).thenReturn(mockTxHash);
+        when(mockTransaction.getHash()).thenReturn(Hash.wrap(Bytes32.ZERO));
 
         when(mockTransaction.getNonce()).thenReturn(0L);
         when(mockTransaction.getGasLimit()).thenReturn(21000L);

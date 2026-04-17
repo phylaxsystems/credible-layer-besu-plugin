@@ -1,5 +1,8 @@
 package net.phylax.credible.utils;
 
+import org.apache.tuweni.bytes.Bytes;
+import org.hyperledger.besu.datatypes.BytesHolder;
+
 /**
  * Utility class for byte array operations, primarily for logging and debugging.
  */
@@ -9,6 +12,14 @@ public final class ByteUtils {
 
     private ByteUtils() {
         // Prevent instantiation
+    }
+
+    public static byte[] toByteArray(Bytes value) {
+        return value == null ? null : value.toArrayUnsafe();
+    }
+
+    public static byte[] toByteArray(BytesHolder value) {
+        return value == null ? null : value.getBytes().toArrayUnsafe();
     }
 
     /**
