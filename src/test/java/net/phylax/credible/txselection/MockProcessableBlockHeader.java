@@ -33,9 +33,7 @@ public class MockProcessableBlockHeader implements ProcessableBlockHeader {
     }
     
     private void setupDefaultMockBehaviors() {
-        Hash mockParentHash = mock(Hash.class);
-        when(mockParentHash.toHexString()).thenReturn("0x"+this.blockNumber);
-        doReturn(mockParentHash).when(mockHeader).getParentHash();
+        doReturn(Hash.fromHexString(String.format("0x%064x", this.blockNumber))).when(mockHeader).getParentHash();
 
         doReturn(this.blockNumber).when(mockHeader).getNumber();
         doReturn(System.currentTimeMillis() / 1000).when(mockHeader).getTimestamp();
@@ -43,9 +41,7 @@ public class MockProcessableBlockHeader implements ProcessableBlockHeader {
         doReturn(30000000L).when(mockHeader).getGasLimit();
         lenient().when(mockHeader.getDifficulty()).thenReturn(Wei.of(10L));
 
-        Address mockCoinbase = mock(Address.class);
-        when(mockCoinbase.toHexString()).thenReturn("0x0000000000000000000000000000000000000000");
-        doReturn(mockCoinbase).when(mockHeader).getCoinbase();
+        doReturn(Address.ZERO).when(mockHeader).getCoinbase();
         
         doReturn(Optional.of(Wei.of(1000000000L))).when(mockHeader).getBaseFee();
     }
