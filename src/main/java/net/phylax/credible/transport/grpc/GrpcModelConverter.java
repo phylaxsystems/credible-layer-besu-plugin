@@ -383,8 +383,6 @@ public class GrpcModelConverter {
                 return SidecarApiModels.TransactionStatus.FAILED;
             case RESULT_STATUS_ASSERTION_FAILED:
                 return SidecarApiModels.TransactionStatus.ASSERTION_FAILED;
-            case RESULT_STATUS_ADMISSION_REJECTED:
-                return SidecarApiModels.TransactionStatus.ADMISSION_REJECTED;
             default:
                 return "unknown";
         }

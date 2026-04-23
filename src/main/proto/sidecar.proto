@@ -134,7 +134,6 @@ enum ResultStatus {
   RESULT_STATUS_HALTED = 3;                               // transaction halted (out of gas, etc.)
   RESULT_STATUS_FAILED = 4;                               // validation failed
   RESULT_STATUS_ASSERTION_FAILED = 5;                     // assertion validation failed
-  RESULT_STATUS_ADMISSION_REJECTED = 6;                   // rejected by pre-tx admission check
 }
 
 // Transaction execution result.

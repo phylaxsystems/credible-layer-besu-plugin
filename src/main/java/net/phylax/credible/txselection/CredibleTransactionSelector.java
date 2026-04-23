@@ -148,12 +148,11 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
         var txResult = txResponseResult.getSuccess().getResult();
 
         var txStatus = txResult.getStatus();
-        if (TransactionStatus.ASSERTION_FAILED.equals(txStatus)
-                || TransactionStatus.ADMISSION_REJECTED.equals(txStatus)) {
+        if (TransactionStatus.ASSERTION_FAILED.equals(txStatus)) {
               log.info("Transaction {} excluded due to status: {}", transactionHash, txStatus);
               metricsRegistry.getInvalidationCounter().labels().inc();
               status = "rejected";
-              return TransactionSelectionResult.invalid("CREDIBLE_LAYER_" + txStatus.toUpperCase());
+              return TransactionSelectionResult.invalid("CREDIBLE_LAYER_ASSERTION_FAILED");
           } else {
               log.debug("Transaction {} included with status: {}", transactionHash, txStatus);
               return TransactionSelectionResult.SELECTED;
