@@ -32,6 +32,7 @@ public class AegesPoolValidator implements PluginTransactionPoolValidator {
             Aeges.VerifyTransactionResponse response = client.verifyTransaction(protoTx);
 
             if (response == null) {
+                // Service unavailable
                 verifyOutcomeCounter.labels("error").inc();
                 return Optional.empty();
             }
@@ -47,6 +48,7 @@ public class AegesPoolValidator implements PluginTransactionPoolValidator {
         } catch (Exception e) {
             verifyOutcomeCounter.labels("error").inc();
             log.error("Error during Aeges validation for tx {}: {}", transaction.getHash(), e.getMessage(), e);
+            // Unexpected error
             return Optional.empty();
         }
     }
