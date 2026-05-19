@@ -94,8 +94,7 @@ public class CredibleMetricsRegistry {
             "Number of stream event retries due to ack timeout"
         );
 
-        // Complements transport_request_duration_seconds: tracks allowed/denied split
-        // and catches fail-open paths (null response, pre-RPC exceptions) the histogram misses.
+        // Catches fail-open paths transport_request_duration_seconds misses.
         aegesVerifyOutcomeCounter = metricsSystem.createLabelledCounter(
             CredibleMetricsCategory.PLUGIN,
             "aeges_verify_outcome_total",
@@ -188,8 +187,16 @@ public class CredibleMetricsRegistry {
         return postProcessingDuration;
     }
 
-    public LabelledMetric<Counter> getAegesVerifyOutcomeCounter() {
-        return aegesVerifyOutcomeCounter;
+    public void recordAegesVerifyAllowed() {
+        aegesVerifyOutcomeCounter.labels("allowed").inc();
+    }
+
+    public void recordAegesVerifyDenied() {
+        aegesVerifyOutcomeCounter.labels("denied").inc();
+    }
+
+    public void recordAegesVerifyError() {
+        aegesVerifyOutcomeCounter.labels("error").inc();
     }
 
     public void registerActiveTransportsGauge(final IntSupplier supplier) {

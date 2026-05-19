@@ -32,20 +32,20 @@ public class AegesPoolValidator implements PluginTransactionPoolValidator {
 
             if (response == null) {
                 // Service unavailable
-                metricsRegistry.getAegesVerifyOutcomeCounter().labels("error").inc();
+                metricsRegistry.recordAegesVerifyError();
                 return Optional.empty();
             }
 
             if (response.getDenied()) {
-                metricsRegistry.getAegesVerifyOutcomeCounter().labels("denied").inc();
+                metricsRegistry.recordAegesVerifyDenied();
                 log.debug("Transaction denied by Aeges: {}", transaction.getHash());
                 return Optional.of("AEGES_DENIED");
             }
 
-            metricsRegistry.getAegesVerifyOutcomeCounter().labels("allowed").inc();
+            metricsRegistry.recordAegesVerifyAllowed();
             return Optional.empty();
         } catch (Exception e) {
-            metricsRegistry.getAegesVerifyOutcomeCounter().labels("error").inc();
+            metricsRegistry.recordAegesVerifyError();
             log.error("Error during Aeges validation for tx {}: {}", transaction.getHash(), e.getMessage(), e);
             // Unexpected error
             return Optional.empty();
