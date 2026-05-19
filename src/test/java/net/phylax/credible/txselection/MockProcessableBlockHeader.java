@@ -87,9 +87,6 @@ public class MockProcessableBlockHeader implements ProcessableBlockHeader {
 
     @Override
     public Optional<? extends Bytes32> getParentBeaconBlockRoot() {
-        // Return a mock parent beacon block root for EIP-4788 testing
-        Bytes32 mockRoot = mock(Bytes32.class);
-        when(mockRoot.toArrayUnsafe()).thenReturn(new byte[32]);
-        return Optional.of(mockRoot);
+        return Optional.of(Bytes32.ZERO);
     }
 }

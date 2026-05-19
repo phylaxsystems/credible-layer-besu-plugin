@@ -51,10 +51,10 @@ public class CredibleOperationTracer implements BlockAwareOperationTracer {
             new BlobExcessGasAndPrice(0L, 1L)
         );
 
-        byte[] parentBlockHash = processableBlockHeader.getParentHash().toArrayUnsafe();
+        byte[] parentBlockHash = ByteUtils.toByteArray(processableBlockHeader.getParentHash());
 
         byte[] parentBeaconBlockRoot = processableBlockHeader.getParentBeaconBlockRoot()
-            .map(bytes32 -> bytes32.toArrayUnsafe())
+            .map(ByteUtils::toByteArray)
             .orElse(null);
         NewIteration iteration = new NewIteration(currentIterationId.get(), blockEnv, parentBlockHash, parentBeaconBlockRoot);
 

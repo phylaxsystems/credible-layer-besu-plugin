@@ -6,6 +6,7 @@ import com.google.protobuf.ByteString;
 import org.hyperledger.besu.datatypes.Transaction;
 
 import aeges.v1.Aeges;
+import net.phylax.credible.utils.ByteUtils;
 
 
 /**
@@ -20,17 +21,17 @@ public final class AegesModelConverter {
      */
     public static Aeges.Transaction toProtoTransaction(Transaction tx) {
         var builder = Aeges.Transaction.newBuilder()
-            .setHash(ByteString.copyFrom(tx.getHash().toArray()))
-            .setSender(ByteString.copyFrom(tx.getSender().toArray()))
+            .setHash(ByteString.copyFrom(ByteUtils.toByteArray(tx.getHash())))
+            .setSender(ByteString.copyFrom(ByteUtils.toByteArray(tx.getSender())))
             .setValue(ByteString.copyFrom(bigIntToBytes32(tx.getValue().getAsBigInteger())))
             .setNonce(tx.getNonce())
             .setType(tx.getType().ordinal())
-            .setPayload(ByteString.copyFrom(tx.getPayload().toArray()))
+            .setPayload(ByteString.copyFrom(ByteUtils.toByteArray(tx.getPayload())))
             .setGasLimit(tx.getGasLimit());
 
         // Optional core fields
         tx.getTo().ifPresent(to ->
-            builder.setTo(ByteString.copyFrom(to.toArray())));
+            builder.setTo(ByteString.copyFrom(ByteUtils.toByteArray(to))));
         tx.getChainId().ifPresent(chainId ->
             builder.setChainId(chainId.longValueExact()));
 
@@ -47,21 +48,21 @@ public final class AegesModelConverter {
         // EIP-2930 access list
         tx.getAccessList().ifPresent(al -> al.forEach(entry -> {
             var alBuilder = Aeges.AccessListEntry.newBuilder()
-                .setAddress(ByteString.copyFrom(entry.address().toArray()));
+                .setAddress(ByteString.copyFrom(ByteUtils.toByteArray(entry.address())));
             entry.storageKeys().forEach(key ->
-                alBuilder.addStorageKeys(ByteString.copyFrom(key.toArray())));
+                alBuilder.addStorageKeys(ByteString.copyFrom(ByteUtils.toByteArray(key))));
             builder.addAccessList(alBuilder);
         }));
 
         // EIP-4844 versioned hashes
         tx.getVersionedHashes().ifPresent(hashes -> hashes.forEach(vh ->
-            builder.addVersionedHashes(ByteString.copyFrom(vh.toBytes().toArray()))));
+            builder.addVersionedHashes(ByteString.copyFrom(ByteUtils.toByteArray(vh)))));
 
         // EIP-7702 code delegations
         tx.getCodeDelegationList().ifPresent(cds -> cds.forEach(cd -> {
             var cdBuilder = Aeges.CodeDelegation.newBuilder()
                 .setChainId(cd.chainId().longValueExact())
-                .setAddress(ByteString.copyFrom(cd.address().toArray()))
+                .setAddress(ByteString.copyFrom(ByteUtils.toByteArray(cd.address())))
                 .setNonce(cd.nonce())
                 .setV(cd.v())
                 .setR(ByteString.copyFrom(bigIntToBytes32(cd.r())))

@@ -15,6 +15,7 @@ import org.apache.tuweni.bytes.Bytes32;
 import org.junit.jupiter.api.Test;
 
 import aeges.v1.Aeges;
+import net.phylax.credible.utils.ByteUtils;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -174,14 +175,14 @@ public class AegesModelConverterTest {
 
         // First entry: address + 2 storage keys
         Aeges.AccessListEntry protoEntry1 = proto.getAccessList(0);
-        assertArrayEquals(addr1.toArray(), protoEntry1.getAddress().toByteArray());
+        assertArrayEquals(ByteUtils.toByteArray(addr1), protoEntry1.getAddress().toByteArray());
         assertEquals(2, protoEntry1.getStorageKeysCount());
-        assertArrayEquals(key1.toArray(), protoEntry1.getStorageKeys(0).toByteArray());
-        assertArrayEquals(key2.toArray(), protoEntry1.getStorageKeys(1).toByteArray());
+        assertArrayEquals(ByteUtils.toByteArray(key1), protoEntry1.getStorageKeys(0).toByteArray());
+        assertArrayEquals(ByteUtils.toByteArray(key2), protoEntry1.getStorageKeys(1).toByteArray());
 
         // Second entry: address + no storage keys
         Aeges.AccessListEntry protoEntry2 = proto.getAccessList(1);
-        assertArrayEquals(addr2.toArray(), protoEntry2.getAddress().toByteArray());
+        assertArrayEquals(ByteUtils.toByteArray(addr2), protoEntry2.getAddress().toByteArray());
         assertEquals(0, protoEntry2.getStorageKeysCount());
     }
 

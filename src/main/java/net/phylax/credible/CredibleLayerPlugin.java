@@ -375,6 +375,10 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
             log.debug("Skipping onBlockAdded, event type: {}", block.getEventType());
             return;
         }
+        if (strategy == null) {
+            log.debug("Skipping onBlockAdded because strategy is unavailable");
+            return;
+        }
         var blockHeader = block.getBlockHeader();
         var blockBody = block.getBlockBody();
         var transactions = blockBody.getTransactions();
