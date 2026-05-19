@@ -12,6 +12,7 @@ import org.hyperledger.besu.datatypes.TransactionType;
 import org.hyperledger.besu.datatypes.VersionedHash;
 
 import net.phylax.credible.types.SidecarApiModels.TxEnv;
+import net.phylax.credible.utils.ByteUtils;
 
 public class TransactionConverter {
     private static final List<SidecarApiModels.AccessListEntry> EMPTY_LIST = Collections.emptyList();
@@ -27,7 +28,7 @@ public class TransactionConverter {
         txEnv.setTxType(convertType(transaction.getType()));
 
         // Caller (sender address) - 20 bytes
-        txEnv.setCaller(transaction.getSender().toArrayUnsafe());
+        txEnv.setCaller(ByteUtils.toByteArray(transaction.getSender()));
 
         // Gas limit
         txEnv.setGasLimit(transaction.getGasLimit());
@@ -51,8 +52,7 @@ public class TransactionConverter {
         // Blob hashes - 32 bytes each
         transaction.getVersionedHashes().ifPresent(versionedHashes ->
             txEnv.setBlobHashes(versionedHashes.stream()
-                .map(VersionedHash::toBytes)
-                .map(bytes -> bytes.toArrayUnsafe())
+                .map(ByteUtils::toByteArray)
                 .collect(Collectors.toList()))
             );
 
@@ -64,7 +64,7 @@ public class TransactionConverter {
 
         // Transaction destination - 20 bytes or empty for contract creation
         if (transaction.getTo().isPresent()) {
-            txEnv.setKind(transaction.getTo().get().toArrayUnsafe());
+            txEnv.setKind(ByteUtils.toByteArray(transaction.getTo().get()));
         } else {
             // Contract creation - empty bytes
             txEnv.setKind(EMPTY_BYTES);
@@ -72,9 +72,9 @@ public class TransactionConverter {
 
         // Data/payload - variable length calldata bytes
         if (transaction.getData().isPresent()) {
-            txEnv.setData(transaction.getData().get().toArrayUnsafe());
+            txEnv.setData(ByteUtils.toByteArray(transaction.getData().get()));
         } else {
-            txEnv.setData(transaction.getPayload().toArrayUnsafe());
+            txEnv.setData(ByteUtils.toByteArray(transaction.getPayload()));
         }
 
         // Value - 32 bytes U256 big-endian
@@ -144,7 +144,7 @@ public class TransactionConverter {
     private static SidecarApiModels.AuthorizationListEntry convertAuthorizationListEntry(
             CodeDelegation codeDelegation) {
         return new SidecarApiModels.AuthorizationListEntry(
-            codeDelegation.address().toArrayUnsafe(),  // 20 bytes
+            ByteUtils.toByteArray(codeDelegation.address()),  // 20 bytes
             codeDelegation.v(),
             bigIntegerToBytes32(codeDelegation.r()),   // 32 bytes
             bigIntegerToBytes32(codeDelegation.s()),   // 32 bytes
@@ -170,11 +170,11 @@ public class TransactionConverter {
             org.hyperledger.besu.datatypes.AccessListEntry besuEntry) {
 
         // Address - 20 bytes
-        byte[] address = besuEntry.address().toArrayUnsafe();
+        byte[] address = ByteUtils.toByteArray(besuEntry.address());
 
         // Storage keys - 32 bytes each
         List<byte[]> storageKeys = besuEntry.storageKeys().stream()
-            .map(key -> key.toArrayUnsafe())
+            .map(ByteUtils::toByteArray)
             .collect(Collectors.toList());
 
         return new SidecarApiModels.AccessListEntry(address, storageKeys);
@@ -214,7 +214,7 @@ public class TransactionConverter {
             // Return minimal TxEnv with available data
             TxEnv fallbackTxEnv = new TxEnv();
 
-            fallbackTxEnv.setCaller(transaction.getSender().toArrayUnsafe());
+            fallbackTxEnv.setCaller(ByteUtils.toByteArray(transaction.getSender()));
             fallbackTxEnv.setGasLimit(transaction.getGasLimit());
             fallbackTxEnv.setValue(bigIntegerToBytes32(transaction.getValue().getAsBigInteger()));
             fallbackTxEnv.setNonce(transaction.getNonce());
@@ -229,7 +229,7 @@ public class TransactionConverter {
 
             // Handle destination and data safely
             if (transaction.getTo().isPresent()) {
-                fallbackTxEnv.setKind(transaction.getTo().get().toArrayUnsafe());
+                fallbackTxEnv.setKind(ByteUtils.toByteArray(transaction.getTo().get()));
             } else {
                 fallbackTxEnv.setKind(EMPTY_BYTES);
             }
@@ -237,9 +237,9 @@ public class TransactionConverter {
             // Handle data safely
             try {
                 if (transaction.getData().isPresent()) {
-                    fallbackTxEnv.setData(transaction.getData().get().toArrayUnsafe());
+                    fallbackTxEnv.setData(ByteUtils.toByteArray(transaction.getData().get()));
                 } else {
-                    fallbackTxEnv.setData(transaction.getPayload().toArrayUnsafe());
+                    fallbackTxEnv.setData(ByteUtils.toByteArray(transaction.getPayload()));
                 }
             } catch (Exception dataException) {
                 fallbackTxEnv.setData(EMPTY_BYTES);
