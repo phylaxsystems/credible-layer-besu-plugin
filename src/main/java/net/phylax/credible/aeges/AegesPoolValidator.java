@@ -4,11 +4,10 @@ import java.util.Optional;
 
 import lombok.extern.slf4j.Slf4j;
 import org.hyperledger.besu.datatypes.Transaction;
-import org.hyperledger.besu.plugin.services.metrics.Counter;
-import org.hyperledger.besu.plugin.services.metrics.LabelledMetric;
 import org.hyperledger.besu.plugin.services.txvalidator.PluginTransactionPoolValidator;
 
 import aeges.v1.Aeges;
+import net.phylax.credible.metrics.CredibleMetricsRegistry;
 
 
 /**
@@ -17,11 +16,11 @@ import aeges.v1.Aeges;
 @Slf4j
 public class AegesPoolValidator implements PluginTransactionPoolValidator {
     private final AegesGrpcClient client;
-    private final LabelledMetric<Counter> verifyOutcomeCounter;
+    private final CredibleMetricsRegistry metricsRegistry;
 
-    public AegesPoolValidator(AegesGrpcClient client, LabelledMetric<Counter> verifyOutcomeCounter) {
+    public AegesPoolValidator(AegesGrpcClient client, CredibleMetricsRegistry metricsRegistry) {
         this.client = client;
-        this.verifyOutcomeCounter = verifyOutcomeCounter;
+        this.metricsRegistry = metricsRegistry;
     }
 
     @Override
@@ -33,20 +32,20 @@ public class AegesPoolValidator implements PluginTransactionPoolValidator {
 
             if (response == null) {
                 // Service unavailable
-                verifyOutcomeCounter.labels("error").inc();
+                metricsRegistry.getAegesVerifyOutcomeCounter().labels("error").inc();
                 return Optional.empty();
             }
 
             if (response.getDenied()) {
-                verifyOutcomeCounter.labels("denied").inc();
+                metricsRegistry.getAegesVerifyOutcomeCounter().labels("denied").inc();
                 log.debug("Transaction denied by Aeges: {}", transaction.getHash());
                 return Optional.of("AEGES_DENIED");
             }
 
-            verifyOutcomeCounter.labels("allowed").inc();
+            metricsRegistry.getAegesVerifyOutcomeCounter().labels("allowed").inc();
             return Optional.empty();
         } catch (Exception e) {
-            verifyOutcomeCounter.labels("error").inc();
+            metricsRegistry.getAegesVerifyOutcomeCounter().labels("error").inc();
             log.error("Error during Aeges validation for tx {}: {}", transaction.getHash(), e.getMessage(), e);
             // Unexpected error
             return Optional.empty();

@@ -335,7 +335,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         aegesClient = new AegesGrpcClient(channel, config.getAegesDeadlineMillis());
 
         transactionPoolValidatorService.registerPluginTransactionValidatorFactory(
-            new AegesPoolValidatorFactory(aegesClient, metricsRegistry.getAegesVerifyOutcomeCounter()));
+            new AegesPoolValidatorFactory(aegesClient, metricsRegistry));
 
         log.info("Aeges pool validator registered");
     }
