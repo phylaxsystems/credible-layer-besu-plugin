@@ -24,6 +24,7 @@ public class CredibleMetricsRegistry {
     private final LabelledMetric<Counter> sidecarRpcCounter;
     private final LabelledMetric<Counter> streamAckRetryCounter;
     private final LabelledMetric<Histogram> streamAckLatency;
+    private final LabelledMetric<Counter> aegesVerifyOutcomeCounter;
 
     // Transport request duration histograms
     private final LabelledMetric<Histogram> transportRequestDuration;
@@ -92,6 +93,13 @@ public class CredibleMetricsRegistry {
             "stream_ack_retry_total",
             "Number of stream event retries due to ack timeout"
         );
+
+        // Catches fail-open paths transport_request_duration_seconds misses.
+        aegesVerifyOutcomeCounter = metricsSystem.createLabelledCounter(
+            CredibleMetricsCategory.PLUGIN,
+            "aeges_verify_outcome_total",
+            "Outcome of aeges VerifyTransaction calls from the sequencer plugin",
+            "outcome");
 
         // Stream ack latency histogram with fine-grained buckets in seconds
         // Buckets: 0.1ms, 0.5ms, 1ms, 2ms, 5ms, 10ms, 20ms, 50ms, 100ms, 200ms, 500ms
@@ -177,6 +185,18 @@ public class CredibleMetricsRegistry {
 
     public LabelledMetric<Histogram> getPostProcessingDuration() {
         return postProcessingDuration;
+    }
+
+    public void recordAegesVerifyAllowed() {
+        aegesVerifyOutcomeCounter.labels("allowed").inc();
+    }
+
+    public void recordAegesVerifyDenied() {
+        aegesVerifyOutcomeCounter.labels("denied").inc();
+    }
+
+    public void recordAegesVerifyError() {
+        aegesVerifyOutcomeCounter.labels("error").inc();
     }
 
     public void registerActiveTransportsGauge(final IntSupplier supplier) {

@@ -29,6 +29,7 @@ import net.phylax.credible.strategy.ISidecarStrategy;
 import net.phylax.credible.transport.ISidecarTransport;
 import net.phylax.credible.transport.grpc.BaseGrpcTransport;
 import net.phylax.credible.transport.grpc.GrpcTransport;
+import net.phylax.credible.transport.grpc.LoggingClientInterceptor;
 import net.phylax.credible.txselection.CredibleTransactionSelector;
 import net.phylax.credible.txselection.CredibleTransactionSelectorFactory;
 import net.phylax.credible.types.SidecarApiModels.CommitHead;
@@ -328,12 +329,13 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         ManagedChannel channel = new BaseGrpcTransport.ChannelBuilder()
             .host(host)
             .port(port)
+            .interceptor(new LoggingClientInterceptor(metricsRegistry))
             .build();
 
         aegesClient = new AegesGrpcClient(channel, config.getAegesDeadlineMillis());
 
         transactionPoolValidatorService.registerPluginTransactionValidatorFactory(
-            new AegesPoolValidatorFactory(aegesClient));
+            new AegesPoolValidatorFactory(aegesClient, metricsRegistry));
 
         log.info("Aeges pool validator registered");
     }
