@@ -135,3 +135,37 @@ onBlockAdded event
 
 NEXT BLOCK PRODUCTION STARTS (cycle repeats)
 ```
+
+## Metrics
+
+All metrics are registered under the Besu metric category `credible` and surface as `credible_<name>` in Prometheus. Source of truth: [`src/main/java/net/phylax/credible/metrics/CredibleMetricsRegistry.java`](src/main/java/net/phylax/credible/metrics/CredibleMetricsRegistry.java).
+
+### Transaction selection
+
+| Metric | Type | Labels | Description |
+| --- | --- | --- | --- |
+| `credible_transaction_counter` | counter | — | Transactions passed to the plugin for selection. |
+| `credible_invalidation_counter` | counter | — | Successful assertion invalidations. |
+| `credible_polling_time` | timer | — | Duration of `getTransactions` calls to the sidecar. |
+| `credible_error_counter` | counter | — | General errors caught by the plugin. |
+| `credible_timeout_counter` | counter | — | Timeout exceptions during transaction selection. |
+| `credible_iteration_timeout_counter` | counter | — | Iterations that exceeded the configured timeout. |
+| `credible_reorg_request_counter` | counter | — | Reorg requests received from the sidecar. |
+| `credible_preprocessing_duration_seconds` | histogram | `status` | Transaction pre-processing duration. |
+| `credible_postprocessing_duration_seconds` | histogram | `status` | Transaction post-processing duration. |
+
+### Sidecar transport
+
+| Metric | Type | Labels | Description |
+| --- | --- | --- | --- |
+| `credible_sidecar_rpc_total` | counter | `method` | RPC calls made to the sidecar. |
+| `credible_transport_request_duration_seconds` | histogram | `method`, `transport_type`, `status` | Transport request duration, broken down by method and outcome. |
+| `credible_stream_ack_retry_total` | counter | — | Stream event retries triggered by ack timeout. |
+| `credible_stream_ack_latency_seconds` | histogram | — | Time between sending a stream event and receiving its ack. |
+| `credible_active_sidecar_transports` | gauge | — | Sidecar transports currently marked active. |
+
+### Pool validator
+
+| Metric | Type | Labels | Description |
+| --- | --- | --- | --- |
+| `credible_aeges_verify_outcome_total` | counter | `outcome={allowed,denied,error}` | Outcome of upstream verifier calls performed during txpool admission. `error` includes fail-open paths that `transport_request_duration_seconds` does not capture. |
