@@ -3,4 +3,5 @@ build/
 .idea/*
 bin/
 .vscode/
+.java-version
 libs/
