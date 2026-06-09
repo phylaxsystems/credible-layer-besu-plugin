@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import linea.security.ChainSecurityPolicy;
+import org.hyperledger.besu.datatypes.Transaction;
 import org.hyperledger.besu.plugin.data.TransactionProcessingResult;
 import org.hyperledger.besu.plugin.data.TransactionSelectionResult;
 import org.hyperledger.besu.plugin.services.txselection.PluginTransactionSelector;
@@ -22,6 +24,8 @@ import net.phylax.credible.types.SidecarApiModels.TxEnv;
 import net.phylax.credible.types.SidecarApiModels.TxExecutionId;
 import net.phylax.credible.types.TransactionConverter;
 import net.phylax.credible.utils.ByteUtils;
+
+import linea.txselection.LineaTransactionSelectionResult;
 
 @Slf4j
 public class CredibleTransactionSelector implements PluginTransactionSelector {
@@ -45,10 +49,11 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
 
   private final Config config;
   private final CredibleMetricsRegistry metricsRegistry;
+  private final ChainSecurityPolicy chainSecurityPolicy;
   private final Long iterationId;
   private boolean iterationTimedOut = false;
   private String transactionHash;
-  private List<TxExecutionId> transactions = new ArrayList<>();
+  private final List<TxExecutionId> transactions = new ArrayList<>();
   // Aggregated time for pre and post processing within a single iteration
   private long aggregatedTimeExecutionMicros = 0;
   // Keeps track of the transactions in a bundle that have been selected but rollbacked
@@ -57,10 +62,12 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
   public CredibleTransactionSelector(
     final Config config,
     final Long iterationId,
-    final CredibleMetricsRegistry metricsRegistry) {
+    final CredibleMetricsRegistry metricsRegistry,
+    final ChainSecurityPolicy chainSecurityPolicy) {
     this.config = config;
     this.iterationId = iterationId;
     this.metricsRegistry = metricsRegistry;
+    this.chainSecurityPolicy = chainSecurityPolicy;
   }
 
   @Override
@@ -78,6 +85,11 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
     var tx = txContext.getPendingTransaction().getTransaction();
     // Store hash as byte[] for efficiency
     byte[] txHashBytes = ByteUtils.toByteArray(tx.getHash());
+    if (chainSecurityPolicy.shallForceIncludeTransaction(txContext)) {
+      log.info("Transaction {} is marked for forced inclusion, skipping Credible evaluation", tx.getHash());
+      return TransactionSelectionResult.SELECTED;
+    }
+
     transactionHash = tx.getHash().toHexString(); // Keep for logging
     long blockNumber = txContext.getPendingBlockHeader().getNumber();
     long iterationId = getOperationTracer().getCurrentIterationId();
@@ -129,12 +141,17 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
     long iterationId = getOperationTracer().getCurrentIterationId();
 
     long index = transactions.size() - 1;
+    // Use byte[] for txHash
+    Transaction tx = txContext.getPendingTransaction().getTransaction();
+    byte[] txHashBytes = ByteUtils.toByteArray(tx.getHash());
+    if (chainSecurityPolicy.shallForceIncludeTransaction(txContext)) {
+      log.info("Transaction {} is marked for forced inclusion, skipping Credible evaluation", tx.getHash());
+      return TransactionSelectionResult.SELECTED;
+    }
 
     try {
         log.debug("Awaiting result for, hash: {}, iteration: {}, index: {}", transactionHash, iterationId, index);
 
-        // Use byte[] for txHash
-        byte[] txHashBytes = ByteUtils.toByteArray(txContext.getPendingTransaction().getTransaction().getHash());
         GetTransactionRequest txRequest = new GetTransactionRequest(blockNumber, iterationId, txHashBytes, index);
 
         var txResponseResult = config.strategy.getTransactionResult(txRequest);
@@ -152,7 +169,7 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
               log.info("Transaction {} excluded due to status: {}", transactionHash, txStatus);
               metricsRegistry.getInvalidationCounter().labels().inc();
               status = "rejected";
-              return TransactionSelectionResult.invalid("CREDIBLE_LAYER_ASSERTION_FAILED");
+              return LineaTransactionSelectionResult.CHAIN_SECURITY_RULE_VIOLATED.invalid("CREDIBLE_LAYER_ASSERTION_FAILED");
           } else {
               log.debug("Transaction {} included with status: {}", transactionHash, txStatus);
               return TransactionSelectionResult.SELECTED;

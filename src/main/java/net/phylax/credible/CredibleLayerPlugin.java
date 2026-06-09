@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+import linea.security.ChainSecurityPolicy;
 import org.hyperledger.besu.plugin.BesuPlugin;
 import org.hyperledger.besu.plugin.ServiceManager;
 import org.hyperledger.besu.plugin.data.AddedBlockContext;
@@ -182,10 +183,10 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         // Register metrics category
         var metricsCategoryRegistry = serviceManager.getService(MetricCategoryRegistry.class)
                 .orElseThrow(
-                    () -> 
+                    () ->
                         new RuntimeException("Failed to obtain MetricCategoryRegistry from the ServiceManager."));
         metricsCategoryRegistry.addMetricCategory(CredibleMetricsCategory.PLUGIN);
-            
+
         // Register CLI options
         Optional<PicoCLIOptions> cmdlineOptions = serviceManager.getService(PicoCLIOptions.class);
         if (cmdlineOptions.isPresent()) {
@@ -200,7 +201,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
     public static Optional<CrediblePluginConfiguration> pluginConfiguration() {
         return config == null ? Optional.empty() : Optional.of(config);
     }
-        
+
     @Override
     public void start() {
         // Validate configuration: gRPC endpoints must be configured
@@ -226,6 +227,11 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
 
         metricsRegistry = new CredibleMetricsRegistry(metricsSystem);
 
+        ChainSecurityPolicy chainSecurityPolicy = serviceManager.getService(ChainSecurityPolicy.class)
+                .orElseThrow(
+                        () ->
+                                new RuntimeException("Failed to obtain ChainSecurityPolicy from the ServiceManager."));
+
         // Create transports based on configuration
         List<ISidecarTransport> primaryTransports;
         List<ISidecarTransport> fallbackTransports;
@@ -238,7 +244,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         var credibleTxConfig = new CredibleTransactionSelector.Config(strategy, config.getAggregatedTimeout());
 
         transactionSelectionService.registerPluginTransactionSelectorFactory(
-            new CredibleTransactionSelectorFactory(credibleTxConfig, metricsRegistry)
+            new CredibleTransactionSelectorFactory(credibleTxConfig, metricsRegistry, chainSecurityPolicy)
         );
 
         // Start Aeges pool validator if configured
@@ -368,7 +374,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
             aegesClient = null;
         }
     }
-        
+
     @Override
     public void onBlockAdded(final AddedBlockContext block) {
         if (block.getEventType() != EventType.HEAD_ADVANCED) {
@@ -424,7 +430,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
                 parentBeaconBlockRoot,
                 timestamp
             );
-        
+
             this.strategy.commitHead(newHead, config.getCommitHeadTimeout());
             lastBlockSent = blockHash;
 

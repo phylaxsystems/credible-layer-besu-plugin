@@ -87,6 +87,7 @@ repositories {
         name = 'hyperledger'
         url = 'https://hyperledger.jfrog.io/artifactory/besu-maven/'
     }
+    mavenLocal()
 }
 
 def grpcVersion = '1.79.0'
@@ -98,6 +99,7 @@ dependencies {
     compileOnly "org.hyperledger.besu:besu-plugin-api:${besuVersion}"
     compileOnly "org.hyperledger.besu:besu-evm:${besuVersion}"
     compileOnly "org.hyperledger.besu:besu-datatypes:${besuVersion}"
+    implementation 'build.linea:sequencer-interfaces:0.0.1'
     
     // CLI Support
     compileOnly 'info.picocli:picocli:4.7.0'

@@ -1,5 +1,7 @@
 package net.phylax.credible.txselection;
 
+import linea.security.ChainSecurityPolicy;
+import linea.security.DefaultChainSecurityPolicy;
 import net.phylax.credible.metrics.CredibleMetricsRegistry;
 import net.phylax.credible.metrics.SimpleMockMetricsSystem;
 import net.phylax.credible.strategy.DefaultSidecarStrategy;
@@ -70,6 +72,7 @@ public class CredibleTransactionSelectorTest {
     private CredibleTransactionSelectorFactory factory = null;
     private MockTransport mockTransport = null;
     private ISidecarStrategy strategy = null;
+    private ChainSecurityPolicy chainSecurityPolicy = null;
 
     private TransactionSelectionResult simulatePreProcessing(CredibleTransactionSelector selector, MockTransactionEvaluationContext evaluationContext) {
         var preResult = selector.evaluateTransactionPreProcessing(evaluationContext);
@@ -102,7 +105,8 @@ public class CredibleTransactionSelectorTest {
 
 
         var config = new CredibleTransactionSelector.Config(strategy, 0);
-        factory = new CredibleTransactionSelectorFactory(config, metrics);
+        chainSecurityPolicy = new DefaultChainSecurityPolicy();
+        factory = new CredibleTransactionSelectorFactory(config, metrics, chainSecurityPolicy);
     }
 
     @Test
@@ -143,7 +147,7 @@ public class CredibleTransactionSelectorTest {
         // Aggregated timeout of 100ms - only counts time spent in pre/post processing
         // With 60ms per call, first tx will use ~120ms (pre + post), exceeding the 100ms budget
         var configWithTimeout = new CredibleTransactionSelector.Config(testStrategy, 100);
-        var factoryWithTimeout = new CredibleTransactionSelectorFactory(configWithTimeout, metrics);
+        var factoryWithTimeout = new CredibleTransactionSelectorFactory(configWithTimeout, metrics, new DefaultChainSecurityPolicy());
 
         // First iteration - should complete successfully (only 1 transaction)
         {
