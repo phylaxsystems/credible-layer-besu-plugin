@@ -2,6 +2,7 @@ package net.phylax.credible.txselection;
 
 import linea.security.ChainSecurityPolicy;
 import linea.security.DefaultChainSecurityPolicy;
+import linea.txselection.LineaTransactionSelectionResult;
 import net.phylax.credible.metrics.CredibleMetricsRegistry;
 import net.phylax.credible.metrics.SimpleMockMetricsSystem;
 import net.phylax.credible.strategy.DefaultSidecarStrategy;
@@ -10,7 +11,6 @@ import net.phylax.credible.transport.MockTransport;
 import net.phylax.credible.types.SidecarApiModels.CommitHead;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotEquals;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -315,7 +315,9 @@ public class CredibleTransactionSelectorTest {
             
             var postResult = simulatePostProcessing(selector, evaluationContext);
             
-            assertNotEquals(postResult, TransactionSelectionResult.SELECTED);
+            assertEquals(
+                LineaTransactionSelectionResult.CHAIN_SECURITY_RULE_VIOLATED,
+                postResult);
         }
 
         // TX4 ok
