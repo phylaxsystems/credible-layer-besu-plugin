@@ -87,7 +87,6 @@ repositories {
         name = 'hyperledger'
         url = 'https://hyperledger.jfrog.io/artifactory/besu-maven/'
     }
-    mavenLocal()
 }
 
 def grpcVersion = '1.79.0'
@@ -99,7 +98,7 @@ dependencies {
     compileOnly "org.hyperledger.besu:besu-plugin-api:${besuVersion}"
     compileOnly "org.hyperledger.besu:besu-evm:${besuVersion}"
     compileOnly "org.hyperledger.besu:besu-datatypes:${besuVersion}"
-    implementation 'build.linea:sequencer-interfaces:0.0.1'
+    compileOnly 'build.linea:sequencer-interfaces:0.0.1'
     
     // CLI Support
     compileOnly 'info.picocli:picocli:4.7.0'
@@ -131,6 +130,7 @@ dependencies {
     testImplementation "org.hyperledger.besu:besu-plugin-api:${besuVersion}"
     testImplementation "org.hyperledger.besu:besu-evm:${besuVersion}"
     testImplementation "org.hyperledger.besu:besu-datatypes:${besuVersion}"
+    testImplementation 'build.linea:sequencer-interfaces:0.0.1'
     testImplementation 'org.apache.logging.log4j:log4j-slf4j-impl:2.20.0'
     testImplementation platform("io.grpc:grpc-bom:${grpcVersion}")
     testImplementation 'io.grpc:grpc-testing'
