@@ -85,10 +85,6 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
     var tx = txContext.getPendingTransaction().getTransaction();
     // Store hash as byte[] for efficiency
     byte[] txHashBytes = ByteUtils.toByteArray(tx.getHash());
-    if (chainSecurityPolicy.shallForceIncludeTransaction(txContext)) {
-      log.info("Transaction {} is marked for forced inclusion, skipping Credible evaluation", tx.getHash());
-      return TransactionSelectionResult.SELECTED;
-    }
 
     transactionHash = tx.getHash().toHexString(); // Keep for logging
     long blockNumber = txContext.getPendingBlockHeader().getNumber();
@@ -144,10 +140,6 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
     // Use byte[] for txHash
     Transaction tx = txContext.getPendingTransaction().getTransaction();
     byte[] txHashBytes = ByteUtils.toByteArray(tx.getHash());
-    if (chainSecurityPolicy.shallForceIncludeTransaction(txContext)) {
-      log.info("Transaction {} is marked for forced inclusion, skipping Credible evaluation", tx.getHash());
-      return TransactionSelectionResult.SELECTED;
-    }
 
     try {
         log.debug("Awaiting result for, hash: {}, iteration: {}, index: {}", transactionHash, iterationId, index);
@@ -159,6 +151,11 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
         if (!txResponseResult.isSuccess()) {
           log.warn("Credible Layer failed to process, tx: {}, iteration: {}, reason: {}", transactionHash, iterationId, txResponseResult.getFailure());
           status = "error";
+          return TransactionSelectionResult.SELECTED;
+        }
+
+        if (chainSecurityPolicy.shallForceIncludeTransaction(txContext)) {
+          log.info("Transaction {} is marked for forced inclusion, ignoring Credible result", tx.getHash());
           return TransactionSelectionResult.SELECTED;
         }
 

@@ -130,6 +130,32 @@ public class CredibleTransactionSelectorTest {
     }
 
     @Test
+    public void shouldDispatchForceIncludedTransactionAndIgnoreAssertionFailure() {
+        var evaluationContext = new MockTransactionEvaluationContext("0x1");
+        var forceIncludePolicy = mock(ChainSecurityPolicy.class);
+        when(forceIncludePolicy.shallForceIncludeTransaction(evaluationContext)).thenReturn(true);
+
+        var metrics = new CredibleMetricsRegistry(new SimpleMockMetricsSystem());
+        var config = new CredibleTransactionSelector.Config(strategy, 0);
+        var forceIncludeFactory = new CredibleTransactionSelectorFactory(config, metrics, forceIncludePolicy);
+        var selector = (CredibleTransactionSelector) forceIncludeFactory.create(new SelectorsStateManager());
+        var operationTracer = selector.getOperationTracer();
+
+        strategy.commitHead(generateCommitHead(1L, 0, 1L), 100);
+        mockTransport.addFailingTx(Hash.fromHexStringLenient("0x1").getBytes().toArrayUnsafe());
+        operationTracer.traceStartBlock(new MockWorldView(), new MockProcessableBlockHeader(1L), null);
+
+        var preResult = simulatePreProcessing(selector, evaluationContext);
+        assertEquals(TransactionSelectionResult.SELECTED, preResult);
+        assertEquals(1, selector.getCurrentIndex());
+
+        var postResult = simulatePostProcessing(selector, evaluationContext);
+        assertEquals(TransactionSelectionResult.SELECTED, postResult);
+
+        operationTracer.traceEndBlock(new MockBlockHeader(1L), new MockBlockBody(1));
+    }
+
+    @Test
     public void shouldTimeoutOnSecondIterationButNotFirst() {
         // Setup with a short aggregated timeout (100ms)
         var metricsSystem = new SimpleMockMetricsSystem();
