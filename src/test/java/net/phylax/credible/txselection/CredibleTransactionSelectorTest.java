@@ -108,7 +108,9 @@ public class CredibleTransactionSelectorTest {
     @Test
     public void shouldProcessSelectorsSuccessfully() {
         for(int i = 0; i < 10; i++) {
-            var selector = factory.create(new SelectorsStateManager());
+            var selector = factory.create(
+                new MockProcessableBlockHeader(Long.valueOf(i)),
+                new SelectorsStateManager());
             final var operationTracer = selector.getOperationTracer();
             strategy.commitHead(generateCommitHead(Long.valueOf(i), i, Long.valueOf(i + 1)), 100);
             operationTracer.traceStartBlock(new MockWorldView(), new MockProcessableBlockHeader(Long.valueOf(i)), null);
@@ -147,7 +149,9 @@ public class CredibleTransactionSelectorTest {
 
         // First iteration - should complete successfully (only 1 transaction)
         {
-            var selector = (CredibleTransactionSelector) factoryWithTimeout.create(new SelectorsStateManager());
+            var selector = (CredibleTransactionSelector) factoryWithTimeout.create(
+                new MockProcessableBlockHeader(1L),
+                new SelectorsStateManager());
             var operationTracer = selector.getOperationTracer();
             testStrategy.commitHead(generateCommitHead(1L, 0, 1L), 100);
             operationTracer.traceStartBlock(new MockWorldView(), new MockProcessableBlockHeader(1L), null);
@@ -165,7 +169,9 @@ public class CredibleTransactionSelectorTest {
 
         // Second iteration - process multiple transactions to exceed aggregated timeout
         {
-            var selector = (CredibleTransactionSelector) factoryWithTimeout.create(new SelectorsStateManager());
+            var selector = (CredibleTransactionSelector) factoryWithTimeout.create(
+                new MockProcessableBlockHeader(2L),
+                new SelectorsStateManager());
             var operationTracer = selector.getOperationTracer();
             testStrategy.commitHead(generateCommitHead(2L, 1, 2L), 100);
             operationTracer.traceStartBlock(new MockWorldView(), new MockProcessableBlockHeader(2L), null);
@@ -210,7 +216,9 @@ public class CredibleTransactionSelectorTest {
 
         // Third iteration - should work again (new selector, new timer, re-activate strategy)
         {
-            var selector = (CredibleTransactionSelector) factoryWithTimeout.create(new SelectorsStateManager());
+            var selector = (CredibleTransactionSelector) factoryWithTimeout.create(
+                new MockProcessableBlockHeader(3L),
+                new SelectorsStateManager());
             var operationTracer = selector.getOperationTracer();
             testStrategy.commitHead(generateCommitHead(3L, 4, 3L), 100);
             operationTracer.traceStartBlock(new MockWorldView(), new MockProcessableBlockHeader(3L), null);
@@ -229,7 +237,9 @@ public class CredibleTransactionSelectorTest {
 
     @Test
     public void shouldUpdateIndexCorrectly() {
-        var selector = (CredibleTransactionSelector) factory.create(new SelectorsStateManager());
+        var selector = (CredibleTransactionSelector) factory.create(
+            new MockProcessableBlockHeader(1L),
+            new SelectorsStateManager());
         final var operationTracer = selector.getOperationTracer();
         strategy.commitHead(generateCommitHead(1L, 0, 1L), 100);
         mockTransport.addFailingTx(Hash.fromHexStringLenient("0x3").getBytes().toArrayUnsafe());
@@ -314,7 +324,9 @@ public class CredibleTransactionSelectorTest {
 
     @Test
     public void shouldSendReorgOnTransactionNotSelected() throws InterruptedException {
-        var selector = (CredibleTransactionSelector) factory.create(new SelectorsStateManager());
+        var selector = (CredibleTransactionSelector) factory.create(
+            new MockProcessableBlockHeader(1L),
+            new SelectorsStateManager());
         final var operationTracer = selector.getOperationTracer();
         strategy.commitHead(generateCommitHead(1L, 0, 1L), 100);
         mockTransport.clearReorgRequests();
@@ -362,7 +374,9 @@ public class CredibleTransactionSelectorTest {
 
     @Test
     public void shouldReorgBundleTransactions() throws InterruptedException {
-        var selector = (CredibleTransactionSelector) factory.create(new SelectorsStateManager());
+        var selector = (CredibleTransactionSelector) factory.create(
+            new MockProcessableBlockHeader(1L),
+            new SelectorsStateManager());
         final var operationTracer = selector.getOperationTracer();
         strategy.commitHead(generateCommitHead(1L, 0, 1L), 100);
         mockTransport.clearReorgRequests();
