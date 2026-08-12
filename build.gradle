@@ -7,8 +7,8 @@ plugins {
 
 // Configure Java compilation
 java {
-    sourceCompatibility = JavaVersion.VERSION_21
-    targetCompatibility = JavaVersion.VERSION_21
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
 }
 
 // Get version from property, CI environment variable, or default
@@ -92,7 +92,7 @@ repositories {
 def grpcVersion = '1.79.0'
 
 dependencies {
-    def besuVersion = '26.4.0'
+    def besuVersion = '26.7.1'
 
     // Besu Plugin API and core dependencies
     compileOnly "org.hyperledger.besu:besu-plugin-api:${besuVersion}"
@@ -159,7 +159,7 @@ jar {
             'Implementation-Version': project.version,
             'Implementation-Vendor': 'Phylax',
             'Specification-Title': 'Besu Plugin API',
-            'Specification-Version': '0.1.0',
+            'Specification-Version': getPluginVersion(),
             'Main-Class': 'net.phylax.credible.CredibleLayerPlugin'
         )
     }
