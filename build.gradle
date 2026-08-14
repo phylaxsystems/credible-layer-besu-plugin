@@ -87,12 +87,18 @@ repositories {
         name = 'hyperledger'
         url = 'https://hyperledger.jfrog.io/artifactory/besu-maven/'
     }
+    maven {
+        url "https://artifacts.consensys.net/public/linea-besu/maven/"
+        content {
+            includeGroupAndSubgroups('org.hyperledger')
+        }
+    }
 }
 
 def grpcVersion = '1.79.0'
 
 dependencies {
-    def besuVersion = '26.7.1'
+    def besuVersion = '26.7.0-6580da8'
 
     // Besu Plugin API and core dependencies
     compileOnly "org.hyperledger.besu:besu-plugin-api:${besuVersion}"
