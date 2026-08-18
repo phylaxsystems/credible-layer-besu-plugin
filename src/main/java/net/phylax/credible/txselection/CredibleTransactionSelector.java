@@ -157,20 +157,20 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
         var txResult = txResponseResult.getSuccess().getResult();
 
         var txStatus = txResult.getStatus();
-        if (TransactionStatus.ASSERTION_FAILED.equals(txStatus)) {
-              if (chainSecurityPolicy.shallForceIncludeTransaction(txContext)) {
-                log.info("Transaction {} is marked for forced inclusion, ignoring Credible result", tx.getHash());
-                return TransactionSelectionResult.SELECTED;
-              }
+        if (!TransactionStatus.ASSERTION_FAILED.equals(txStatus)) {
+          log.debug("Transaction {} included with status: {}", transactionHash, txStatus);
+          return TransactionSelectionResult.SELECTED;
+        }
 
-              log.info("Transaction {} excluded due to status: {}", transactionHash, txStatus);
-              metricsRegistry.getInvalidationCounter().labels().inc();
-              status = "rejected";
-              return LineaTransactionSelectionResult.CHAIN_SECURITY_RULE_VIOLATED;
-          } else {
-              log.debug("Transaction {} included with status: {}", transactionHash, txStatus);
-              return TransactionSelectionResult.SELECTED;
-          }
+        if (chainSecurityPolicy.shallForceIncludeTransaction(txContext)) {
+          log.info("Transaction {} is marked for forced inclusion, ignoring Credible result", tx.getHash());
+          return TransactionSelectionResult.SELECTED;
+        }
+
+        log.info("Transaction {} excluded due to status: {}", transactionHash, txStatus);
+        metricsRegistry.getInvalidationCounter().labels().inc();
+        status = "rejected";
+        return LineaTransactionSelectionResult.CHAIN_SECURITY_RULE_VIOLATED;
     } catch (Exception e) {
         log.error("Error in transaction postprocessing for {}: {}", transactionHash, e.getMessage());
         status = "error";
