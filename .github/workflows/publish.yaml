@@ -17,8 +17,17 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       packages: write
+
+    # Pin the version to the pushed tag. determineVersion() otherwise falls back to
+    # `git describe --exact-match`, which picks only one tag when a commit carries
+    # several (e.g. 0.2.1-besu26.4.0 and 0.2.1-besu26.4.0-3 share a commit) and would
+    # then build a version that disagrees with the tag being released. Empty on branch
+    # pushes -- there getGitTag() sees GITHUB_REF_TYPE=branch and declines to read tags
+    # at all, so the sha-suffixed scheme applies even when a tag sits on the branch tip.
+    env:
+      GIT_TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
 
     steps:
       - name: Checkout code with submodules
@@ -35,6 +44,43 @@ jobs:
 
       - name: Build plugin jar
         run: ./gradlew build
+
+      # On a tag build the project version is the tag itself, so the staged
+      # artifacts are named credible-layer-besu-plugin-<tag>.<ext>.
+      - name: Stage release artifacts
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          rm -rf build/staging-deploy
+          ./gradlew publishMavenJavaPublicationToLocalStagingRepository
+
+      # Runs before the Github Packages publish: a package version cannot be
+      # republished, so a re-run of a partially failed tag build can still
+      # create or repair the release.
+      - name: Create Github Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          DIR="build/staging-deploy/net/phylax/credible/credible-layer-besu-plugin/${TAG}"
+          BASE="credible-layer-besu-plugin-${TAG}"
+          ASSETS=(
+            "${DIR}/${BASE}.jar" "${DIR}/${BASE}.jar.md5"
+            "${DIR}/${BASE}.jar.sha1" "${DIR}/${BASE}.jar.sha256"
+            "${DIR}/${BASE}.pom" "${DIR}/${BASE}.pom.md5"
+            "${DIR}/${BASE}.pom.sha1" "${DIR}/${BASE}.pom.sha256"
+          )
+          for f in "${ASSETS[@]}"; do
+            [ -f "$f" ] || { echo "missing expected release asset: $f" >&2; exit 1; }
+          done
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "v${TAG}" --latest
+          else
+            gh release create "$TAG" --title "v${TAG}" --generate-notes --latest
+          fi
+          gh release upload "$TAG" "${ASSETS[@]}" --clobber
 
       - name: Publish to Github Packages
         run: |
