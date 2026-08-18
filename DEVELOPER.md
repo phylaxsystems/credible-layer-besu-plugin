@@ -169,3 +169,45 @@ All metrics are registered under the Besu metric category `credible` and surface
 | Metric | Type | Labels | Description |
 | --- | --- | --- | --- |
 | `credible_aeges_verify_outcome_total` | counter | `outcome={allowed,denied,error}` | Outcome of upstream verifier calls performed during txpool admission. `error` includes fail-open paths that `transport_request_duration_seconds` does not capture. |
+
+## Releasing
+
+Releases are driven entirely by pushing a git tag; `.github/workflows/publish.yaml` does the rest.
+
+`settings.gradle` holds the base version in `gradle.ext.pluginVersion`, and `determineVersion()` in
+`build.gradle` resolves the published version from it:
+
+- tagged commit → the tag verbatim (e.g. `0.4.0`, `0.3.1-besu27.7.1`)
+- any other commit → `<pluginVersion>-<8-char commit sha>`, published from every push to `main`
+
+To cut a release:
+
+1. For a mainline release, bump `gradle.ext.pluginVersion` in `settings.gradle` and merge it through a PR.
+2. Tag the release commit. Tags carry no `v` prefix:
+
+```
+git tag -a 0.4.0 -m "Release 0.4.0"
+git push origin 0.4.0
+```
+
+CI then, on the tag ref:
+
+- builds and tests the plugin (`./gradlew build` runs `check`, so the test suite gates the release)
+- creates the GitHub Release titled `v0.4.0` with auto-generated notes, marks it latest, and attaches
+  the shadow jar and pom along with their md5/sha1/sha256 checksums
+- publishes `net.phylax.credible:credible-layer-besu-plugin:0.4.0` to GitHub Packages
+
+Besu-pinned patch releases are cut the same way but from a maintenance branch rather than `main`, with
+the pinned Besu build encoded in the tag (e.g. `0.2.3-besu26.7.1`). Tag pushes trigger the workflow
+from any branch.
+
+To inspect exactly what a release would contain, without pushing anything:
+
+```
+GIT_TAG=0.4.0 ./gradlew publishMavenJavaPublicationToLocalStagingRepository
+ls build/staging-deploy/net/phylax/credible/credible-layer-besu-plugin/0.4.0
+```
+
+A published tag cannot be moved: GitHub Packages refuses to republish an existing version, so
+re-running a tag build fails at the publish step (the release itself is repaired idempotently). Cut a
+new tag instead.

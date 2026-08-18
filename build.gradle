@@ -41,6 +41,14 @@ def getGitCommitHash() {
 
 def getGitTag() {
     try {
+        // On CI, trust the ref that triggered the run. A branch build must not adopt a
+        // tag pointing at the same commit, or it would publish the tag's version from
+        // the branch and collide with the tag build's own publish.
+        def refType = System.getenv('GITHUB_REF_TYPE')
+        if (refType && refType != 'tag') {
+            return null
+        }
+
         def checkProc = ['git', 'rev-parse', '--is-inside-work-tree'].execute()
         checkProc.waitFor()
         if (checkProc.exitValue() != 0) {
@@ -223,6 +231,12 @@ publishing {
                 password = System.getenv("GH_TOKEN")
             }
         }
+        // Local staging repo. Produces correctly named artifacts plus checksums under
+        // build/staging-deploy, which the publish workflow attaches to the GitHub Release.
+        maven {
+            name = "LocalStaging"
+            url = layout.buildDirectory.dir("staging-deploy")
+        }
     }
 }
 
@@ -247,6 +261,10 @@ tasks.register('installPlugin', Copy) {
 }
 
 tasks.named('build').configure { finalizedBy 'copyPlugin' }
+
+// The shadow jar is both the published Maven artifact and the release asset, so the
+// relocation invariant has to be checked on every build, not on demand.
+tasks.named('check').configure { dependsOn 'verifyPluginJarDoesNotBundleGrpc' }
 
 // Protobuf configuration
 protobuf {
