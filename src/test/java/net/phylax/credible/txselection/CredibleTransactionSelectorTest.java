@@ -1,5 +1,8 @@
 package net.phylax.credible.txselection;
 
+import linea.security.ChainSecurityPolicy;
+import linea.security.DefaultChainSecurityPolicy;
+import linea.txselection.LineaTransactionSelectionResult;
 import net.phylax.credible.metrics.CredibleMetricsRegistry;
 import net.phylax.credible.metrics.SimpleMockMetricsSystem;
 import net.phylax.credible.strategy.DefaultSidecarStrategy;
@@ -8,7 +11,6 @@ import net.phylax.credible.transport.MockTransport;
 import net.phylax.credible.types.SidecarApiModels.CommitHead;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotEquals;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -19,6 +21,7 @@ import org.hyperledger.besu.plugin.services.txselection.SelectorsStateManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 public class CredibleTransactionSelectorTest {
@@ -70,6 +73,7 @@ public class CredibleTransactionSelectorTest {
     private CredibleTransactionSelectorFactory factory = null;
     private MockTransport mockTransport = null;
     private ISidecarStrategy strategy = null;
+    private ChainSecurityPolicy chainSecurityPolicy = null;
 
     private TransactionSelectionResult simulatePreProcessing(CredibleTransactionSelector selector, MockTransactionEvaluationContext evaluationContext) {
         var preResult = selector.evaluateTransactionPreProcessing(evaluationContext);
@@ -102,7 +106,8 @@ public class CredibleTransactionSelectorTest {
 
 
         var config = new CredibleTransactionSelector.Config(strategy, 0);
-        factory = new CredibleTransactionSelectorFactory(config, metrics);
+        chainSecurityPolicy = new DefaultChainSecurityPolicy();
+        factory = new CredibleTransactionSelectorFactory(config, metrics, chainSecurityPolicy);
     }
 
     @Test
@@ -128,6 +133,56 @@ public class CredibleTransactionSelectorTest {
     }
 
     @Test
+    public void shouldDispatchForceIncludedTransactionAndIgnoreAssertionFailure() {
+        var evaluationContext = new MockTransactionEvaluationContext("0x1");
+        var forceIncludePolicy = mock(ChainSecurityPolicy.class);
+        when(forceIncludePolicy.shallForceIncludeTransaction(evaluationContext)).thenReturn(true);
+
+        var metrics = new CredibleMetricsRegistry(new SimpleMockMetricsSystem());
+        var config = new CredibleTransactionSelector.Config(strategy, 0);
+        var forceIncludeFactory = new CredibleTransactionSelectorFactory(config, metrics, forceIncludePolicy);
+        var selector = (CredibleTransactionSelector) forceIncludeFactory.create(
+            new MockProcessableBlockHeader(1L),
+            new SelectorsStateManager());
+        var operationTracer = selector.getOperationTracer();
+
+        strategy.commitHead(generateCommitHead(1L, 0, 1L), 100);
+        mockTransport.addFailingTx(Hash.fromHexStringLenient("0x1").getBytes().toArrayUnsafe());
+        operationTracer.traceStartBlock(new MockWorldView(), new MockProcessableBlockHeader(1L), null);
+
+        var preResult = simulatePreProcessing(selector, evaluationContext);
+        assertEquals(TransactionSelectionResult.SELECTED, preResult);
+        assertEquals(1, selector.getCurrentIndex());
+
+        var postResult = simulatePostProcessing(selector, evaluationContext);
+        assertEquals(TransactionSelectionResult.SELECTED, postResult);
+
+        operationTracer.traceEndBlock(new MockBlockHeader(1L), new MockBlockBody(1));
+    }
+
+    @Test
+    public void shouldNotCheckForceInclusionWhenAssertionSucceeds() {
+        var forceIncludePolicy = mock(ChainSecurityPolicy.class);
+        var metrics = new CredibleMetricsRegistry(new SimpleMockMetricsSystem());
+        var config = new CredibleTransactionSelector.Config(strategy, 0);
+        var selectorFactory = new CredibleTransactionSelectorFactory(config, metrics, forceIncludePolicy);
+        var selector = (CredibleTransactionSelector) selectorFactory.create(
+            new MockProcessableBlockHeader(1L),
+            new SelectorsStateManager());
+        var operationTracer = selector.getOperationTracer();
+
+        strategy.commitHead(generateCommitHead(1L, 0, 1L), 100);
+        operationTracer.traceStartBlock(new MockWorldView(), new MockProcessableBlockHeader(1L), null);
+
+        var evaluationContext = new MockTransactionEvaluationContext("0x1");
+        assertEquals(TransactionSelectionResult.SELECTED, simulatePreProcessing(selector, evaluationContext));
+        assertEquals(TransactionSelectionResult.SELECTED, simulatePostProcessing(selector, evaluationContext));
+        verifyNoInteractions(forceIncludePolicy);
+
+        operationTracer.traceEndBlock(new MockBlockHeader(1L), new MockBlockBody(1));
+    }
+
+    @Test
     public void shouldTimeoutOnSecondIterationButNotFirst() {
         // Setup with a short aggregated timeout (100ms)
         var metricsSystem = new SimpleMockMetricsSystem();
@@ -145,7 +200,7 @@ public class CredibleTransactionSelectorTest {
         // Aggregated timeout of 100ms - only counts time spent in pre/post processing
         // With 60ms per call, first tx will use ~120ms (pre + post), exceeding the 100ms budget
         var configWithTimeout = new CredibleTransactionSelector.Config(testStrategy, 100);
-        var factoryWithTimeout = new CredibleTransactionSelectorFactory(configWithTimeout, metrics);
+        var factoryWithTimeout = new CredibleTransactionSelectorFactory(configWithTimeout, metrics, new DefaultChainSecurityPolicy());
 
         // First iteration - should complete successfully (only 1 transaction)
         {
@@ -295,7 +350,9 @@ public class CredibleTransactionSelectorTest {
             
             var postResult = simulatePostProcessing(selector, evaluationContext);
             
-            assertNotEquals(postResult, TransactionSelectionResult.SELECTED);
+            assertEquals(
+                LineaTransactionSelectionResult.CHAIN_SECURITY_RULE_VIOLATED,
+                postResult);
         }
 
         // TX4 ok
