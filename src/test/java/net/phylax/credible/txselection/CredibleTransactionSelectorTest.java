@@ -21,6 +21,7 @@ import org.hyperledger.besu.plugin.services.txselection.SelectorsStateManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 public class CredibleTransactionSelectorTest {
@@ -155,6 +156,28 @@ public class CredibleTransactionSelectorTest {
 
         var postResult = simulatePostProcessing(selector, evaluationContext);
         assertEquals(TransactionSelectionResult.SELECTED, postResult);
+
+        operationTracer.traceEndBlock(new MockBlockHeader(1L), new MockBlockBody(1));
+    }
+
+    @Test
+    public void shouldNotCheckForceInclusionWhenAssertionSucceeds() {
+        var forceIncludePolicy = mock(ChainSecurityPolicy.class);
+        var metrics = new CredibleMetricsRegistry(new SimpleMockMetricsSystem());
+        var config = new CredibleTransactionSelector.Config(strategy, 0);
+        var selectorFactory = new CredibleTransactionSelectorFactory(config, metrics, forceIncludePolicy);
+        var selector = (CredibleTransactionSelector) selectorFactory.create(
+            new MockProcessableBlockHeader(1L),
+            new SelectorsStateManager());
+        var operationTracer = selector.getOperationTracer();
+
+        strategy.commitHead(generateCommitHead(1L, 0, 1L), 100);
+        operationTracer.traceStartBlock(new MockWorldView(), new MockProcessableBlockHeader(1L), null);
+
+        var evaluationContext = new MockTransactionEvaluationContext("0x1");
+        assertEquals(TransactionSelectionResult.SELECTED, simulatePreProcessing(selector, evaluationContext));
+        assertEquals(TransactionSelectionResult.SELECTED, simulatePostProcessing(selector, evaluationContext));
+        verifyNoInteractions(forceIncludePolicy);
 
         operationTracer.traceEndBlock(new MockBlockHeader(1L), new MockBlockBody(1));
     }

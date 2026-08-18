@@ -154,15 +154,15 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
           return TransactionSelectionResult.SELECTED;
         }
 
-        if (chainSecurityPolicy.shallForceIncludeTransaction(txContext)) {
-          log.info("Transaction {} is marked for forced inclusion, ignoring Credible result", tx.getHash());
-          return TransactionSelectionResult.SELECTED;
-        }
-
         var txResult = txResponseResult.getSuccess().getResult();
 
         var txStatus = txResult.getStatus();
         if (TransactionStatus.ASSERTION_FAILED.equals(txStatus)) {
+              if (chainSecurityPolicy.shallForceIncludeTransaction(txContext)) {
+                log.info("Transaction {} is marked for forced inclusion, ignoring Credible result", tx.getHash());
+                return TransactionSelectionResult.SELECTED;
+              }
+
               log.info("Transaction {} excluded due to status: {}", transactionHash, txStatus);
               metricsRegistry.getInvalidationCounter().labels().inc();
               status = "rejected";
