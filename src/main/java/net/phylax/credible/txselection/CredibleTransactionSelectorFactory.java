@@ -13,7 +13,7 @@ import org.hyperledger.besu.plugin.services.txselection.SelectorsStateManager;
 public class CredibleTransactionSelectorFactory implements PluginTransactionSelectorFactory {
     private final CredibleTransactionSelector.Config txSelectorConfig;
     private final CredibleMetricsRegistry metricsRegistry;
-    private AtomicLong iterationId = new AtomicLong(0L);
+    private final AtomicLong iterationId = new AtomicLong();
     private final ChainSecurityPolicy chainSecurityPolicy;
     private final TransactionSelectionResult chainSecurityRuleViolated;
 
