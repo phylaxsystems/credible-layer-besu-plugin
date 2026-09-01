@@ -5,7 +5,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
-import linea.security.ChainSecurityPolicy;
 import org.hyperledger.besu.plugin.BesuPlugin;
 import org.hyperledger.besu.plugin.ServiceManager;
 import org.hyperledger.besu.plugin.data.AddedBlockContext;
@@ -227,10 +226,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
 
         metricsRegistry = new CredibleMetricsRegistry(metricsSystem);
 
-        ChainSecurityPolicy chainSecurityPolicy = serviceManager.getService(ChainSecurityPolicy.class)
-                .orElseThrow(
-                        () ->
-                                new RuntimeException("Failed to obtain ChainSecurityPolicy from the ServiceManager."));
+        var linethRuntime = LinethRuntimeAdapter.resolve(serviceManager);
 
         // Create transports based on configuration
         List<ISidecarTransport> primaryTransports;
@@ -244,7 +240,11 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
         var credibleTxConfig = new CredibleTransactionSelector.Config(strategy, config.getAggregatedTimeout());
 
         transactionSelectionService.registerPluginTransactionSelectorFactory(
-            new CredibleTransactionSelectorFactory(credibleTxConfig, metricsRegistry, chainSecurityPolicy)
+            new CredibleTransactionSelectorFactory(
+                credibleTxConfig,
+                metricsRegistry,
+                linethRuntime.chainSecurityPolicy(),
+                linethRuntime.chainSecurityRuleViolated())
         );
 
         // Start Aeges pool validator if configured

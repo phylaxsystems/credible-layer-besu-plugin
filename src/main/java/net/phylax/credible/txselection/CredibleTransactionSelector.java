@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import linea.security.ChainSecurityPolicy;
 import org.hyperledger.besu.datatypes.Transaction;
 import org.hyperledger.besu.plugin.data.TransactionProcessingResult;
 import org.hyperledger.besu.plugin.data.TransactionSelectionResult;
@@ -13,6 +12,7 @@ import org.hyperledger.besu.plugin.services.txselection.TransactionEvaluationCon
 
 import lombok.extern.slf4j.Slf4j;
 import net.phylax.credible.metrics.CredibleMetricsRegistry;
+import net.phylax.credible.LinethRuntimeAdapter.ChainSecurityPolicy;
 import net.phylax.credible.strategy.ISidecarStrategy;
 import net.phylax.credible.tracer.CredibleOperationTracer;
 import net.phylax.credible.types.SidecarApiModels.GetTransactionRequest;
@@ -24,8 +24,6 @@ import net.phylax.credible.types.SidecarApiModels.TxEnv;
 import net.phylax.credible.types.SidecarApiModels.TxExecutionId;
 import net.phylax.credible.types.TransactionConverter;
 import net.phylax.credible.utils.ByteUtils;
-
-import linea.txselection.LineaTransactionSelectionResult;
 
 @Slf4j
 public class CredibleTransactionSelector implements PluginTransactionSelector {
@@ -50,6 +48,7 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
   private final Config config;
   private final CredibleMetricsRegistry metricsRegistry;
   private final ChainSecurityPolicy chainSecurityPolicy;
+  private final TransactionSelectionResult chainSecurityRuleViolated;
   private final Long iterationId;
   private boolean iterationTimedOut = false;
   private String transactionHash;
@@ -63,11 +62,13 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
     final Config config,
     final Long iterationId,
     final CredibleMetricsRegistry metricsRegistry,
-    final ChainSecurityPolicy chainSecurityPolicy) {
+    final ChainSecurityPolicy chainSecurityPolicy,
+    final TransactionSelectionResult chainSecurityRuleViolated) {
     this.config = config;
     this.iterationId = iterationId;
     this.metricsRegistry = metricsRegistry;
     this.chainSecurityPolicy = chainSecurityPolicy;
+    this.chainSecurityRuleViolated = chainSecurityRuleViolated;
   }
 
   @Override
@@ -170,7 +171,7 @@ public class CredibleTransactionSelector implements PluginTransactionSelector {
         log.info("Transaction {} excluded due to status: {}", transactionHash, txStatus);
         metricsRegistry.getInvalidationCounter().labels().inc();
         status = "rejected";
-        return LineaTransactionSelectionResult.CHAIN_SECURITY_RULE_VIOLATED;
+        return chainSecurityRuleViolated;
     } catch (Exception e) {
         log.error("Error in transaction postprocessing for {}: {}", transactionHash, e.getMessage());
         status = "error";

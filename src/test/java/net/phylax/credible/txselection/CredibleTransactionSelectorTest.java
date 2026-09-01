@@ -1,8 +1,7 @@
 package net.phylax.credible.txselection;
 
-import linea.security.ChainSecurityPolicy;
-import linea.security.DefaultChainSecurityPolicy;
-import linea.txselection.LineaTransactionSelectionResult;
+import lineth.txselection.LineaTransactionSelectionResult;
+import net.phylax.credible.LinethRuntimeAdapter.ChainSecurityPolicy;
 import net.phylax.credible.metrics.CredibleMetricsRegistry;
 import net.phylax.credible.metrics.SimpleMockMetricsSystem;
 import net.phylax.credible.strategy.DefaultSidecarStrategy;
@@ -106,8 +105,12 @@ public class CredibleTransactionSelectorTest {
 
 
         var config = new CredibleTransactionSelector.Config(strategy, 0);
-        chainSecurityPolicy = new DefaultChainSecurityPolicy();
-        factory = new CredibleTransactionSelectorFactory(config, metrics, chainSecurityPolicy);
+        chainSecurityPolicy = txContext -> false;
+        factory = new CredibleTransactionSelectorFactory(
+            config,
+            metrics,
+            chainSecurityPolicy,
+            LineaTransactionSelectionResult.CHAIN_SECURITY_RULE_VIOLATED);
     }
 
     @Test
@@ -140,7 +143,11 @@ public class CredibleTransactionSelectorTest {
 
         var metrics = new CredibleMetricsRegistry(new SimpleMockMetricsSystem());
         var config = new CredibleTransactionSelector.Config(strategy, 0);
-        var forceIncludeFactory = new CredibleTransactionSelectorFactory(config, metrics, forceIncludePolicy);
+        var forceIncludeFactory = new CredibleTransactionSelectorFactory(
+            config,
+            metrics,
+            forceIncludePolicy,
+            LineaTransactionSelectionResult.CHAIN_SECURITY_RULE_VIOLATED);
         var selector = (CredibleTransactionSelector) forceIncludeFactory.create(
             new MockProcessableBlockHeader(1L),
             new SelectorsStateManager());
@@ -165,7 +172,11 @@ public class CredibleTransactionSelectorTest {
         var forceIncludePolicy = mock(ChainSecurityPolicy.class);
         var metrics = new CredibleMetricsRegistry(new SimpleMockMetricsSystem());
         var config = new CredibleTransactionSelector.Config(strategy, 0);
-        var selectorFactory = new CredibleTransactionSelectorFactory(config, metrics, forceIncludePolicy);
+        var selectorFactory = new CredibleTransactionSelectorFactory(
+            config,
+            metrics,
+            forceIncludePolicy,
+            LineaTransactionSelectionResult.CHAIN_SECURITY_RULE_VIOLATED);
         var selector = (CredibleTransactionSelector) selectorFactory.create(
             new MockProcessableBlockHeader(1L),
             new SelectorsStateManager());
@@ -200,7 +211,11 @@ public class CredibleTransactionSelectorTest {
         // Aggregated timeout of 100ms - only counts time spent in pre/post processing
         // With 60ms per call, first tx will use ~120ms (pre + post), exceeding the 100ms budget
         var configWithTimeout = new CredibleTransactionSelector.Config(testStrategy, 100);
-        var factoryWithTimeout = new CredibleTransactionSelectorFactory(configWithTimeout, metrics, new DefaultChainSecurityPolicy());
+        var factoryWithTimeout = new CredibleTransactionSelectorFactory(
+            configWithTimeout,
+            metrics,
+            txContext -> false,
+            LineaTransactionSelectionResult.CHAIN_SECURITY_RULE_VIOLATED);
 
         // First iteration - should complete successfully (only 1 transaction)
         {
