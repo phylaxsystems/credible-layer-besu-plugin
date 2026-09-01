@@ -106,7 +106,7 @@ repositories {
 def grpcVersion = '1.79.0'
 
 dependencies {
-    def besuVersion = '26.7.0-6580da8'
+    def besuVersion = '26.8.0-f2557d7'
 
     // Besu Plugin API and core dependencies
     compileOnly "org.hyperledger.besu:besu-plugin-api:${besuVersion}"
