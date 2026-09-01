@@ -1,6 +1,6 @@
 package net.phylax.credible.txselection;
 
-import linea.txselection.LineaTransactionSelectionResult;
+import lineth.txselection.LineaTransactionSelectionResult;
 import net.phylax.credible.LineaRuntimeCompatibility.ChainSecurityPolicy;
 import net.phylax.credible.metrics.CredibleMetricsRegistry;
 import net.phylax.credible.metrics.SimpleMockMetricsSystem;
