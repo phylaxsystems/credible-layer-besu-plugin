@@ -1,7 +1,7 @@
 package net.phylax.credible.txselection;
 
 import lineth.txselection.LineaTransactionSelectionResult;
-import net.phylax.credible.LineaRuntimeCompatibility.ChainSecurityPolicy;
+import net.phylax.credible.LinethRuntimeAdapter.ChainSecurityPolicy;
 import net.phylax.credible.metrics.CredibleMetricsRegistry;
 import net.phylax.credible.metrics.SimpleMockMetricsSystem;
 import net.phylax.credible.strategy.DefaultSidecarStrategy;

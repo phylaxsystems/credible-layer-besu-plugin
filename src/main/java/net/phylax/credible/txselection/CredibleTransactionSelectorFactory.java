@@ -1,6 +1,6 @@
 package net.phylax.credible.txselection;
 
-import net.phylax.credible.LineaRuntimeCompatibility.ChainSecurityPolicy;
+import net.phylax.credible.LinethRuntimeAdapter.ChainSecurityPolicy;
 import net.phylax.credible.metrics.CredibleMetricsRegistry;
 
 import java.util.concurrent.atomic.AtomicLong;

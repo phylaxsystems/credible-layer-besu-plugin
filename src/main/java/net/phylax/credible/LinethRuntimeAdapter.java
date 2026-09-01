@@ -13,8 +13,8 @@ import org.hyperledger.besu.plugin.services.txselection.TransactionEvaluationCon
  * contains the old {@code linea.*} packages; remove this adapter once a {@code lineth.*}
  * interface artifact is available.
  */
-public final class LineaRuntimeCompatibility {
-    private LineaRuntimeCompatibility() {}
+public final class LinethRuntimeAdapter {
+    private LinethRuntimeAdapter() {}
 
     @FunctionalInterface
     public interface ChainSecurityPolicy {
@@ -27,7 +27,7 @@ public final class LineaRuntimeCompatibility {
     ) {}
 
     public static Bindings resolve(ServiceManager serviceManager) {
-        ClassLoader classLoader = LineaRuntimeCompatibility.class.getClassLoader();
+        ClassLoader classLoader = LinethRuntimeAdapter.class.getClassLoader();
         try {
             Class<? extends BesuService> policyClass = Class
                 .forName("lineth.security.ChainSecurityPolicy", false, classLoader)

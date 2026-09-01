@@ -11,7 +11,7 @@ import org.hyperledger.besu.plugin.ServiceManager;
 import org.hyperledger.besu.plugin.services.txselection.TransactionEvaluationContext;
 import org.junit.jupiter.api.Test;
 
-class LineaRuntimeCompatibilityTest {
+class LinethRuntimeAdapterTest {
     @Test
     void resolvesLinethRuntimeServices() {
         var serviceManager = mock(ServiceManager.class);
@@ -21,7 +21,7 @@ class LineaRuntimeCompatibilityTest {
             .thenReturn(Optional.of(policy));
         when(policy.shallForceIncludeTransaction(txContext)).thenReturn(true);
 
-        var bindings = LineaRuntimeCompatibility.resolve(serviceManager);
+        var bindings = LinethRuntimeAdapter.resolve(serviceManager);
 
         assertTrue(bindings.chainSecurityPolicy().shallForceIncludeTransaction(txContext));
         assertSame(

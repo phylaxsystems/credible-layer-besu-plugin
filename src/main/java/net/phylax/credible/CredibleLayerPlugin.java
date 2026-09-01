@@ -226,7 +226,7 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
 
         metricsRegistry = new CredibleMetricsRegistry(metricsSystem);
 
-        var lineaRuntime = LineaRuntimeCompatibility.resolve(serviceManager);
+        var linethRuntime = LinethRuntimeAdapter.resolve(serviceManager);
 
         // Create transports based on configuration
         List<ISidecarTransport> primaryTransports;
@@ -243,8 +243,8 @@ public class CredibleLayerPlugin implements BesuPlugin, BesuEvents.BlockAddedLis
             new CredibleTransactionSelectorFactory(
                 credibleTxConfig,
                 metricsRegistry,
-                lineaRuntime.chainSecurityPolicy(),
-                lineaRuntime.chainSecurityRuleViolated())
+                linethRuntime.chainSecurityPolicy(),
+                linethRuntime.chainSecurityRuleViolated())
         );
 
         // Start Aeges pool validator if configured

@@ -12,7 +12,7 @@ import org.hyperledger.besu.plugin.services.txselection.TransactionEvaluationCon
 
 import lombok.extern.slf4j.Slf4j;
 import net.phylax.credible.metrics.CredibleMetricsRegistry;
-import net.phylax.credible.LineaRuntimeCompatibility.ChainSecurityPolicy;
+import net.phylax.credible.LinethRuntimeAdapter.ChainSecurityPolicy;
 import net.phylax.credible.strategy.ISidecarStrategy;
 import net.phylax.credible.tracer.CredibleOperationTracer;
 import net.phylax.credible.types.SidecarApiModels.GetTransactionRequest;
