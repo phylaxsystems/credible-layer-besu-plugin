@@ -7,7 +7,12 @@ import org.hyperledger.besu.plugin.data.TransactionSelectionResult;
 import org.hyperledger.besu.plugin.services.BesuService;
 import org.hyperledger.besu.plugin.services.txselection.TransactionEvaluationContext;
 
-/** Resolves services from the upstream Lineth runtime without compile-time linkage. */
+/**
+ * Resolves services from the upstream Lineth runtime without compile-time linkage.
+ * Maven Central only publishes {@code build.linea:sequencer-interfaces:0.0.1}, which
+ * contains the old {@code linea.*} packages; remove this adapter once a {@code lineth.*}
+ * interface artifact is available.
+ */
 public final class LineaRuntimeCompatibility {
     private LineaRuntimeCompatibility() {}
 
